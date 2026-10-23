@@ -400,7 +400,7 @@ mod tests {
         assert!(r.warnings.iter().any(|w| w.contains("not devices")), "{:?}", r.warnings);
     }
 
-    /// A real drawing: `CV_DRAWIO=file.drawio cargo test -p corelens
+    /// A real drawing: `CV_DRAWIO=file.drawio cargo test -p corelens-formats
     /// real_drawio -- --ignored --nocapture`.
     #[test]
     #[ignore]

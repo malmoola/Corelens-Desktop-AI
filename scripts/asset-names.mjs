@@ -2,7 +2,7 @@
 /**
  * Release files under names a download URL can carry as they are.
  *
- * The bundler names installers after the product, "Corelens Desktop", and
+ * The bundler names installers after the product, "Corelens Desktop AI", and
  * GitHub rewrites a space in an uploaded file's name to a full stop. The
  * manifest the updater reads is written from the names on disk, so a space
  * left in would point every installed copy at a file that is not there.

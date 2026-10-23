@@ -82,7 +82,7 @@ jobs:
         run: cargo test -p corelens-probe --test live_linux -- --test-threads=1
 
       - name: Backend tests
-        run: cargo test -p corelens
+        run: cargo test -p corelens-desktop-ai
 
       # Findings are echoed as annotations as well as logged. A failure here is
       # otherwise only visible by downloading the job log, which needs admin
@@ -218,7 +218,7 @@ jobs:
       #
       # rusqlite is built with `bundled`, so there is no external SQLite.
       # The SBOM tools. cargo-auditable embeds the exact dependency
-      # list in corelens.exe; cargo-audit reads it back from the shipped binary;
+      # list in corelens-desktop-ai.exe; cargo-audit reads it back from the shipped binary;
       # cargo-cyclonedx writes the Rust SBOM.
       - name: Install SBOM tools
         if: matrix.os == 'windows-latest'
@@ -275,8 +275,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           $out = "target/release/bundle/nsis/sbom"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          cargo audit bin target/release/corelens.exe
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=SBOM::cargo audit found advisories in corelens.exe"; exit 1 }
+          cargo audit bin target/release/corelens-desktop-ai.exe
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=SBOM::cargo audit found advisories in corelens-desktop-ai.exe"; exit 1 }
           Push-Location src-tauri
           cargo cyclonedx --format json --target x86_64-pc-windows-msvc --override-filename corelens-rust.cdx
           Pop-Location
@@ -426,7 +426,7 @@ jobs:
       - run: npm ci
 
       # With the minisign key configured, the build also writes the
-      # update archive (Corelens-Desktop.app.tar.gz) and its signature, which is
+      # update archive (Corelens-Desktop-AI.app.tar.gz) and its signature, which is
       # what an installed copy downloads when it updates itself.
       - name: Build bundles
         env:
@@ -554,15 +554,15 @@ jobs:
           if (-not $setup) { Fail "no NSIS installer in the artifact" }
           $p = Start-Process $setup.FullName -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Fail "the installer exited $($p.ExitCode)" }
-          $exe = Get-ChildItem "$env:ProgramFiles\Corelens Desktop", "$env:ProgramFiles", "$env:LOCALAPPDATA\Programs" -Recurse -Filter corelens.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { Fail "corelens.exe is not installed anywhere expected" }
+          $exe = Get-ChildItem "$env:ProgramFiles\Corelens Desktop AI", "$env:ProgramFiles", "$env:LOCALAPPDATA\Programs" -Recurse -Filter corelens-desktop-ai.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Fail "corelens-desktop-ai.exe is not installed anywhere expected" }
           $dir = $exe.DirectoryName
           # The paths src-tauri/src/collection.rs resolves under the resource directory.
           foreach ($need in @("sidecar\python.exe", "sidecar\python312._pth", "sidecar\Lib\site-packages\corelens_sidecar\__main__.py", "sidecar\Lib\site-packages\scrapli", "sidecar\Lib\site-packages\paramiko", "catalog\cisco_ios.yaml", "catalog\fortios.yaml", "templates\ntc\index", "templates\ntc\cisco_ios_show_version.textfsm", "templates\LICENSE", "THIRD-PARTY-NOTICES.md", "corelens-root-ca.crt")) {
             if (-not (Test-Path (Join-Path $dir $need))) { Fail "installed tree lacks $need (under $dir)" }
           }
           $sig = Get-AuthenticodeSignature $exe.FullName
-          Write-Host "::notice title=Install check::installed at $dir; corelens.exe signed by $($sig.SignerCertificate.Subject)"
+          Write-Host "::notice title=Install check::installed at $dir; corelens-desktop-ai.exe signed by $($sig.SignerCertificate.Subject)"
           "CORELENS_INSTALL=$dir" >> $env:GITHUB_ENV
 
       - name: Collect through the installed sidecar with no Python on PATH
@@ -671,7 +671,7 @@ jobs:
           gh release create "v${{ steps.ver.outputs.version }}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Corelens Desktop ${{ steps.ver.outputs.version }}" \
+            --title "Corelens Desktop AI ${{ steps.ver.outputs.version }}" \
             --notes-file release/notes.md \
             "${files[@]}"
           echo "::notice title=Release::v${{ steps.ver.outputs.version }} published with ${#files[@]} files"

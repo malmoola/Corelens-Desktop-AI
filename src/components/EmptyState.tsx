@@ -7,7 +7,7 @@
 import { ChromeIcon, type ChromeIconName } from './chromeIcons';
 import { t } from '../i18n';
 
-export const DESKTOP_APP_URL = 'https://github.com/husseinm9186/Corelens-Desktop/releases';
+export const DESKTOP_APP_URL = 'https://github.com/malmoola/Corelens-Desktop-AI/releases';
 
 export function EmptyState({
   icon = 'find',

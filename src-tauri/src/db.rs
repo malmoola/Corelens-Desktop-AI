@@ -1,5 +1,5 @@
 //! Local SQLite persistence. One database per installation, under
-//! %LOCALAPPDATA%\Corelens Desktop\corelens.db. No server, no network.
+//! %LOCALAPPDATA%\Corelens Desktop AI\corelens.db. No server, no network.
 //!
 //! Storage strategy: project *metadata*, *sessions*, *events* and *samples* are
 //! normalized because they are queried, filtered and exported. The diagram
@@ -110,7 +110,7 @@ fn base_dir_for(
 
 /// The folder under the platform's data home that holds everything the
 /// operator types: the database, logs, transcripts, diagnostics.
-pub const DATA_FOLDER: &str = "Corelens Desktop";
+pub const DATA_FOLDER: &str = "Corelens Desktop AI";
 /// The database inside it.
 pub const DB_FILE: &str = "corelens.db";
 
@@ -221,7 +221,7 @@ fn renamed_db_file(name: &str, old_stem: &str) -> String {
 
 /// The bundle identifier, which names the folder the window's own storage
 /// lives in: view settings, undo history, recovery copies.
-pub const IDENTIFIER: &str = "com.corelens.desktop";
+pub const IDENTIFIER: &str = "com.ritajit.corelens-desktop-ai";
 /// The identifiers the app had before.
 const PREVIOUS_IDENTIFIERS: &[&str] = &["net.coreview.app"];
 
@@ -2330,6 +2330,17 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["identifier"], IDENTIFIER);
         assert!(!PREVIOUS_IDENTIFIERS.contains(&IDENTIFIER));
+    }
+
+    /// This product installs beside Corelens Desktop and must never open,
+    /// copy or write its data: a shared folder would be two programs on one
+    /// database.
+    #[test]
+    fn corelens_desktop_s_data_is_neither_used_nor_adopted() {
+        assert_ne!(DATA_FOLDER, "Corelens Desktop");
+        assert_ne!(IDENTIFIER, "com.corelens.desktop");
+        assert!(PREVIOUS_NAMES.iter().all(|(folder, _)| *folder != "Corelens Desktop"));
+        assert!(!PREVIOUS_IDENTIFIERS.contains(&"com.corelens.desktop"));
     }
 
     #[test]

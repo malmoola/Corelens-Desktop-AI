@@ -9,7 +9,7 @@
 
 use corelens_discover::vault::{self, VaultHeader, VaultKey};
 
-pub const SERVICE: &str = "Corelens Desktop";
+pub const SERVICE: &str = "Corelens Desktop AI";
 pub const ACCOUNT: &str = "vault-key";
 /// The service names the key was kept under before the app was renamed.
 pub const PREVIOUS_SERVICES: &[&str] = &["Coreview"];
@@ -125,8 +125,16 @@ mod tests {
         assert!(matches!(recall(&old, &header).unwrap(), Recalled::Opened(_)), "the old entry is not touched when the new one answers");
     }
 
+    /// Corelens Desktop's key is neither shared nor moved: adopting it would
+    /// stop that program's vault opening by itself.
+    #[test]
+    fn corelens_desktop_s_key_is_left_where_it_is() {
+        assert_ne!(SERVICE, "Corelens Desktop");
+        assert!(!PREVIOUS_SERVICES.contains(&"Corelens Desktop"));
+    }
+
     /// The machine's real keychain, under a test account: `cargo test -p
-    /// corelens real_keychain -- --ignored` with a Secret Service, Credential
+    /// corelens-desktop-ai real_keychain -- --ignored` with a Secret Service, Credential
     /// Manager or Keychain available.
     #[test]
     #[ignore]

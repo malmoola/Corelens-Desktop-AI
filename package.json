@@ -1,8 +1,8 @@
 {
-  "name": "corelens",
+  "name": "corelens-desktop-ai",
   "private": true,
   "version": "2.13.0",
-  "description": "Corelens — Network Diagramming & Validation. Local-first topology drawing, live link validation and IP address management.",
+  "description": "Corelens Desktop AI — Network Diagramming & Validation. Local-first topology drawing, live link validation and IP address management.",
   "author": {
     "name": "Mohammed Almoola",
     "url": "https://www.linkedin.com/in/malmoola"

@@ -1,4 +1,4 @@
-# Corelens Desktop
+# Corelens Desktop AI
 
 A local-first desktop app for drawing a network topology and watching it stay
 up while you work — during maintenance windows, cutovers, upgrades and

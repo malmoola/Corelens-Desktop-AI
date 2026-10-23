@@ -1,7 +1,7 @@
 [package]
-name = "corelens"
+name = "corelens-desktop-ai"
 version = "2.13.0"
-description = "Corelens — local-first network diagram designer with live connectivity validation"
+description = "Corelens Desktop AI — local-first network diagram designer with live connectivity validation"
 authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
 edition = "2021"
 license = "LicenseRef-Almoola-Free-Proprietary"

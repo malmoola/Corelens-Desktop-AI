@@ -238,7 +238,7 @@ export const en = {
   'pathCheckPanel.fromADeviceThe': 'From a device, the check is that device\'s own ping, run over SSH. Only an address is sent.',
   'projectScreen.confirmDelete': 'Confirm delete',
   'projectScreen.createProject': 'Create project',
-  'projectScreen.corelens': 'Corelens Desktop',
+  'projectScreen.corelens': 'Corelens Desktop AI',
   'projectScreen.thisPackageAlsoCarries': 'This package also carries saved credentials',
   'projectScreen.passphraseOfTheExporting': 'Passphrase of the exporting vault',
   'projectScreen.startFromASample': 'Start from a sample',

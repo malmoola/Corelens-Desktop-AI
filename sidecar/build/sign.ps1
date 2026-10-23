@@ -2,7 +2,7 @@
 #
 #   pwsh sidecar/build/sign.ps1 [-Thumbprint <cert thumbprint>]
 #
-# Tauri's own signing covers corelens.exe and the installer; it does not
+# Tauri's own signing covers corelens-desktop-ai.exe and the installer; it does not
 # touch resources, so the interpreter's folder is signed here, before
 # `tauri build` packs it. Every PE ends up signed:
 #
@@ -16,7 +16,7 @@
 # The check afterwards is that the signer is *our* certificate, not that
 # Windows trusts it: a self-signed certificate is reported "UnknownError"
 # on a machine that does not trust its root, which is every CI runner, and
-# is exactly as trusted as the signature on corelens.exe itself.
+# is exactly as trusted as the signature on corelens-desktop-ai.exe itself.
 #
 # Every failure is an annotation (::error), readable without the job log,
 # which needs admin rights to download.

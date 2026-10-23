@@ -1,6 +1,6 @@
-# Installing Corelens Desktop on Windows
+# Installing Corelens Desktop AI on Windows
 
-Corelens Desktop's Windows installer is signed with the app's own
+Corelens Desktop AI's Windows installer is signed with the app's own
 certificate — `CN=corelens.us Code Signing`, issued by its own root,
 `CN=corelens.us-Root-CA` (valid to October 2036). Builds up to 2.12.0 were
 signed under the earlier name, by `CN=COREVIEW-APP Code Signing` from
@@ -142,24 +142,14 @@ install does, and everything in sections 1 to 3 applies to it unchanged.
 Nothing is checked or downloaded unless the button is pressed or the
 automatic check beside it has been switched on; it is off by default.
 
-## Coming from Coreview
+## Beside Corelens Desktop
 
-Corelens Desktop is the same app under a new name, and installs beside
-Coreview rather than over it — Windows sees a different product. Whether it
-arrives through Coreview's **Check for updates** or from the installer:
+Corelens Desktop AI is a separate product, not an update to Corelens
+Desktop. Windows sees two different programs and installs them side by
+side; each has its own data (`%LOCALAPPDATA%\Corelens Desktop AI` and
+`%LOCALAPPDATA%\com.ritajit.corelens-desktop-ai`), its own vault key in
+Windows Credential Manager under *Corelens Desktop AI*, and its own
+updates. Corelens Desktop AI starts empty: nothing is read from, copied
+out of or changed in an installed Corelens Desktop. To carry a project
+across, export it from one and open it in the other.
 
-1. Close Coreview, so what is copied is what was last saved.
-2. Install Corelens Desktop and start it. On its first start it copies
-   Coreview's data — `%LOCALAPPDATA%\Coreview` into
-   `%LOCALAPPDATA%\Corelens Desktop`, and the window's own storage from
-   `%LOCALAPPDATA%\net.coreview.app` into
-   `%LOCALAPPDATA%\com.corelens.desktop` — and moves a vault key kept in
-   Windows Credential Manager under *Coreview* to *Corelens Desktop*.
-   It copies only when its own folders do not exist yet, so it never
-   overwrites anything.
-3. Check the projects, folders and saved logins are there.
-4. Uninstall **Coreview** from *Settings → Apps*. Leave *Delete the
-   application data* unticked. Coreview's data folder is not touched either
-   way; delete `%LOCALAPPDATA%\Coreview` and
-   `%LOCALAPPDATA%\net.coreview.app` yourself once you are satisfied, or
-   keep them as a backup.

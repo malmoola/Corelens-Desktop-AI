@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Corelens Desktop",
+  "productName": "Corelens Desktop AI",
   "version": "2.13.0",
-  "identifier": "com.corelens.desktop",
+  "identifier": "com.ritajit.corelens-desktop-ai",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Corelens Desktop",
+        "title": "Corelens Desktop AI",
         "width": 1440,
         "height": 900,
         "minWidth": 900,
@@ -34,9 +34,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc4RTEzMDYyNTBDRTA3QUYKUldTdkI4NVFZakRoZURhSlFSMzZ5S3NoN0hPWW9QSEQrMndpbTZpUXV4R1lFTkgyanA1VDl0NEcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCNjAzMUJBNjJFRUM2OTgKUldTWXh1NWl1akZnSzJBKzdMejdyY2Fja09yZmMxbk1zZGhtWUx4V3JXZVdqbnphV3Z3Q28vNDMK",
       "endpoints": [
-        "https://github.com/husseinm9186/Corelens-Desktop/releases/latest/download/latest.json"
+        "https://github.com/malmoola/Corelens-Desktop-AI/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
@@ -69,8 +69,8 @@
         "type": "downloadBootstrapper"
       }
     },
-    "shortDescription": "Corelens Desktop \u2014 Network Diagramming & Validation",
-    "longDescription": "Corelens Desktop \u2014 Network Diagramming & Validation. Draw the topology you are actually working on, point it at real addresses, and watch the links while you work. Discovery by SSH, SNMP, CDP and LLDP; an address register with subnets, ranges and allocation; configuration backups and before-and-after comparison. Everything stays on this machine: no account, no cloud, no telemetry.",
+    "shortDescription": "Corelens Desktop AI \u2014 Network Diagramming & Validation",
+    "longDescription": "Corelens Desktop AI \u2014 Network Diagramming & Validation. Draw the topology you are actually working on, point it at real addresses, and watch the links while you work. Discovery by SSH, SNMP, CDP and LLDP; an address register with subnets, ranges and allocation; configuration backups and before-and-after comparison. Everything stays on this machine: no account, no cloud, no telemetry.",
     "linux": {
       "deb": {
         "depends": [

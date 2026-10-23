@@ -197,7 +197,7 @@ mod tests {
         let endpoints = updater["endpoints"].as_array().expect("endpoints");
         assert_eq!(endpoints.len(), 1, "one place to ask, and only one");
         let endpoint = endpoints[0].as_str().unwrap();
-        assert_eq!(endpoint, "https://github.com/husseinm9186/Corelens-Desktop/releases/latest/download/latest.json");
+        assert_eq!(endpoint, "https://github.com/malmoola/Corelens-Desktop-AI/releases/latest/download/latest.json");
         assert!(updater["dangerousInsecureTransportProtocol"].is_null());
         assert!(updater["dangerousAcceptInvalidCerts"].is_null());
         let pubkey = updater["pubkey"].as_str().expect("pubkey");
@@ -207,6 +207,9 @@ mod tests {
         };
         let text = String::from_utf8(decoded).expect("a minisign public key is text");
         assert!(text.starts_with("untrusted comment: minisign public key"), "{text}");
+        // Corelens Desktop's key: a release signed for that product must not
+        // install over this one.
+        assert!(!text.contains("78E1306250CE07AF"), "{text}");
         assert!(conf["bundle"]["createUpdaterArtifacts"].is_null());
         let overlay: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.updater.conf.json")).expect("the overlay parses");

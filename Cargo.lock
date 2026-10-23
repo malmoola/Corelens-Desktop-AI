@@ -1016,43 +1016,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelens"
-version = "2.13.0"
-dependencies = [
- "base64 0.22.1",
- "corelens-catalog",
- "corelens-collect",
- "corelens-discover",
- "corelens-formats",
- "corelens-meraki",
- "corelens-path",
- "corelens-probe",
- "corelens-topology",
- "flate2",
- "keyring",
- "open",
- "pdf-writer",
- "proptest",
- "reqwest",
- "roxmltree",
- "rusqlite",
- "rustls",
- "serde",
- "serde_json",
- "svg2pdf",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-updater",
- "tempfile",
- "tokio",
- "tokio-util",
- "uuid",
- "zeroize",
- "zip 9.0.5",
-]
-
-[[package]]
 name = "corelens-catalog"
 version = "2.5.0"
 dependencies = [
@@ -1088,6 +1051,43 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+]
+
+[[package]]
+name = "corelens-desktop-ai"
+version = "2.13.0"
+dependencies = [
+ "base64 0.22.1",
+ "corelens-catalog",
+ "corelens-collect",
+ "corelens-discover",
+ "corelens-formats",
+ "corelens-meraki",
+ "corelens-path",
+ "corelens-probe",
+ "corelens-topology",
+ "flate2",
+ "keyring",
+ "open",
+ "pdf-writer",
+ "proptest",
+ "reqwest",
+ "roxmltree",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "svg2pdf",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-updater",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "zeroize",
+ "zip 9.0.5",
 ]
 
 [[package]]

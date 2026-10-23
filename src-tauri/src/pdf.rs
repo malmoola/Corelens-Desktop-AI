@@ -161,7 +161,7 @@ mod tests {
     }
 
     /// Real pages, in order, as one PDF: `CV_SVG_DIR=dir CV_PDF_OUT=out.pdf
-    /// cargo test -p corelens svg_pages_from_a_folder -- --ignored`. Pages are
+    /// cargo test -p corelens-desktop-ai svg_pages_from_a_folder -- --ignored`. Pages are
     /// `page1.svg`, `page2.svg`, …
     #[test]
     #[ignore]

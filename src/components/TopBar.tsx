@@ -699,7 +699,7 @@ export function TopBar({ onExit }: { onExit: () => void }) {
     <header className="cv-topbar">
       <div className="cv-topbar-left">
         {/* The mark, drawn rather than imported, beside the name. */}
-        <span className="cv-brand" title="Corelens Desktop — © 2026 Almoola">
+        <span className="cv-brand" title="Corelens Desktop AI — © 2026 Almoola">
           <svg className="cv-brand-mark" viewBox="0 0 512 512" aria-hidden focusable="false">
             <g stroke="currentColor" strokeWidth="26" strokeLinecap="round" fill="none">
               <path d="M256 196V150M256 316v46M196 256h-46M316 256h46" />
@@ -714,7 +714,7 @@ export function TopBar({ onExit }: { onExit: () => void }) {
               <rect x="50" y="206" width="100" height="84" rx="18" />
             </g>
           </svg>
-          <span className="cv-sr">Corelens Desktop</span>
+          <span className="cv-sr">Corelens Desktop AI</span>
         </span>
         <span className="cv-project-name" title={meta.description}>
           {meta.name}
@@ -1077,8 +1077,8 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="cv-modal-backdrop" onClick={onClose} role="presentation">
-      <div className="cv-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="About Corelens Desktop">
-        <h2>About Corelens Desktop</h2>
+      <div className="cv-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="About Corelens Desktop AI">
+        <h2>About Corelens Desktop AI</h2>
         <p className="cv-mono cv-help">
           Version {info?.version ?? '…'} · built {__BUILT_ON__}
         </p>
