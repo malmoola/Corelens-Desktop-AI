@@ -21,6 +21,7 @@ corelens-catalog = { path = "../crates/corelens-catalog" }
 corelens-collect = { path = "../crates/corelens-collect" }
 corelens-topology = { path = "../crates/corelens-topology" }
 corelens-path = { path = "../crates/corelens-path" }
+corelens-mcp = { path = "../crates/corelens-mcp" }
 # Every message from the page passes a sandboxed frame first.
 tauri = { version = "2", features = ["isolation"] }
 tauri-plugin-dialog = "2"
@@ -54,6 +55,7 @@ zeroize = "1"
 # same reqwest the collectors use, named here so that does not depend on
 # feature unification happening to hold.
 tauri-plugin-updater = { version = ">=2.12, <2.13", default-features = false, features = ["system-proxy", "zip"] }
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 [features]
@@ -62,6 +64,9 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
 tempfile = "3"
+# The fake device the AI tools are tested against.
+russh = "0.63"
+rand = "0.10"
 # For the test that the app's TLS stack has exactly one crypto provider.
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
 # Arbitrary input for the IPC contract tests.

@@ -166,7 +166,7 @@ pub fn catalog_dir(app: &AppHandle) -> CmdResult<PathBuf> {
         .ok_or_else(|| "The discovery catalogs are not installed.".to_string())
 }
 
-fn templates_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+pub(crate) fn templates_dir(app: &AppHandle) -> CmdResult<PathBuf> {
     resource(app, "templates/ntc")
         .or_else(|| Some(repo_root().join("resources/templates/ntc")).filter(|p| p.exists()))
         .ok_or_else(|| "The parser templates are not installed.".to_string())

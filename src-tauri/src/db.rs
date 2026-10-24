@@ -12,7 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 /// Bumped whenever the diagram document shape changes; the frontend migrates.
 pub const DOCUMENT_VERSION: i64 = 1;
 
@@ -118,6 +118,20 @@ pub const DB_FILE: &str = "corelens.db";
 /// database file carried. Their folders are read once, on the first start
 /// under the current name, and never written to again.
 const PREVIOUS_NAMES: &[(&str, &str)] = &[("Coreview", "coreview"), ("LiveTopo", "livetopo")];
+
+/// The data folder, without carrying anything across from an earlier
+/// name: what the MCP process uses, which must never copy or create a
+/// data folder of its own accord.
+pub fn data_dir_as_it_is() -> PathBuf {
+    base_dir_for(
+        DataHome::here(),
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+    .unwrap_or_else(|| PathBuf::from("."))
+    .join(DATA_FOLDER)
+}
 
 pub fn data_dir() -> PathBuf {
     let base = base_dir_for(
@@ -514,8 +528,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::collection_db::shadow_columns(conn)?;
     crate::collection_db::typed_columns(conn)?;
     crate::collection_db::topology_tables(conn)?;
+    crate::mcp::audit::tables(conn)?;
 
     apply_migrations(conn, MIGRATIONS)
+}
+
+/// The whole schema on a bare connection, for tests elsewhere in the crate.
+#[cfg(test)]
+pub fn migrate_for_tests(conn: &Connection) {
+    migrate(conn).expect("the schema applies to an empty database");
 }
 
 /// One step of the schema's history: the version it brings the database *to*,
@@ -525,7 +546,7 @@ type Migration = (i64, fn(&Connection) -> rusqlite::Result<()>);
 /// Every migration ever written, oldest first. Adding a column is a new entry
 /// here and a bump of `SCHEMA_VERSION`, never an edit to an old one — a
 /// database in the field may be at any version in this list.
-const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables)];
+const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables)];
 
 /// The steps that take a database from its version to
 /// `SCHEMA_VERSION`, in one transaction with the version bump last.
@@ -742,6 +763,9 @@ pub fn load_project(conn: &Connection, id: &str) -> rusqlite::Result<Option<Proj
 /// it, because a dropped pragma would break it silently.
 pub fn delete_project(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+    // What an assistant was given about it goes with it. Not a foreign key:
+    // a call made with no project open has no project to belong to.
+    crate::mcp::audit::clear(conn, Some(id))?;
     Ok(())
 }
 
@@ -766,6 +790,7 @@ pub fn purge_orphans(conn: &Connection) -> rusqlite::Result<usize> {
         [],
     )?;
     removed += tx.execute("DELETE FROM crawl_runs WHERE project_id NOT IN (SELECT id FROM projects)", [])?;
+    removed += crate::mcp::audit::purge_orphans(&tx)?;
     tx.commit()?;
     Ok(removed)
 }

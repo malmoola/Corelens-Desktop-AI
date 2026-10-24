@@ -24,6 +24,7 @@ mod vault_commands;
 mod meraki;
 mod updater;
 mod shared;
+mod mcp;
 mod db;
 
 use std::sync::{Arc, Mutex};
@@ -102,6 +103,16 @@ fn register_snmp_uptime(handle: tauri::AppHandle) {
 }
 
 fn main() {
+    // Started by an MCP client: speak MCP on stdin/stdout and forward each
+    // call to the window already running. No window, no database, nothing
+    // carried over from an earlier install, nothing but MCP on stdout.
+    if std::env::args().skip(1).any(|a| a == "--mcp") {
+        if let Err(e) = corelens_mcp::run_stdio(&db::data_dir_as_it_is()) {
+            eprintln!("corelens-desktop-ai --mcp: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     // Before the window exists, or it opens on an empty profile.
     db::adopt_webview_data();
     let db_path = db::data_dir().join(db::DB_FILE);
@@ -131,6 +142,7 @@ fn main() {
         // Asks GitHub for a newer release only when told to; see updater.rs.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::Pending::default())
+        .manage(mcp::McpState::default())
         .manage(AppState {
             engine,
             db: Mutex::new(conn),
@@ -154,6 +166,7 @@ fn main() {
             commands::pump_events(app.handle().clone(), rx);
             register_snmp_uptime(app.handle().clone());
             fit_to_screen(app);
+            mcp::on_startup(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -200,6 +213,11 @@ fn main() {
             commands::record_event,
             commands::app_info,
             updater::check_for_update,
+            mcp::mcp_status,
+            mcp::mcp_set_enabled,
+            mcp::mcp_activity,
+            mcp::mcp_clear_activity,
+            mcp::mcp_change_record,
             updater::install_update,
             commands::list_icon_library,
             commands::list_bundled_icons,
