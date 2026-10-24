@@ -47,7 +47,7 @@ fn conversation(home: &std::path::Path) -> Vec<Value> {
     for (id, method, params) in [
         (1, "server/discover", json!({ "_meta": meta })),
         (2, "tools/list", json!({ "_meta": meta })),
-        (3, "tools/call", json!({ "_meta": meta, "name": "get_device", "arguments": { "device": "SW1" } })),
+        (3, "tools/call", json!({ "_meta": meta, "name": "get_device", "arguments": { "target": "SW1" } })),
     ] {
         writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })).unwrap();
     }
@@ -83,7 +83,7 @@ async fn a_client_reaches_the_app_through_the_binary() {
     let replies = tokio::task::spawn_blocking(move || conversation(&h)).await.unwrap();
     let call = reply(&replies, 3);
     assert_eq!(call["result"]["isError"], false, "{call}");
-    assert_eq!(call["result"]["content"][0]["text"], r#"the app ran get_device with {"device":"SW1"}"#);
+    assert_eq!(call["result"]["content"][0]["text"], r#"the app ran get_device with {"target":"SW1"}"#);
     listening.stop().await;
 }
 
@@ -101,13 +101,13 @@ fn the_debug_log_names_tools_and_keys_and_never_values() {
         }
         let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
         let mut stdin = child.stdin.take().unwrap();
-        writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "run_show_command", "arguments": { "device": "value-never-logged", "command": "show value-never-logged" } } })).unwrap();
+        writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "run_show_command", "arguments": { "target": "value-never-logged", "command": "show value-never-logged" } } })).unwrap();
         drop(stdin);
         let out = child.wait_with_output().unwrap();
         String::from_utf8(out.stderr).unwrap()
     };
     let logged = run(true);
-    assert!(logged.contains("tools/call run_show_command: params keys: arguments, name; argument keys: command, device"), "{logged}");
+    assert!(logged.contains("tools/call run_show_command: params keys: arguments, name; argument keys: command, target"), "{logged}");
     assert!(!logged.contains("value-never-logged"), "{logged}");
     assert!(!run(false).contains("tools/call"));
 }

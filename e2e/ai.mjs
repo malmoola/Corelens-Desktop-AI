@@ -23,8 +23,8 @@ const project = {
 
 const EXE = "C:\\Program Files\\Corelens Desktop AI\\corelens-desktop-ai.exe";
 const ACTIVITY = [
-  { id: 2, atMs: NOW + 2000, projectId: "ai", tool: "run_show_command", arguments: '{"device":"SW1","command":"show ip arp"}', device: "SW1", address: "192.0.2.10", command: "show ip arp", outcome: "ok", result: "SW1 (192.0.2.10) · Cisco IOS / IOS-XE · `show ip arp`\nInternet  192.0.2.1  0  0000.0000.0001  ARPA  Vlan10\n", bytes: 90, durationMs: 1200 },
-  { id: 1, atMs: NOW + 1000, projectId: "ai", tool: "get_config", arguments: '{"device":"SW1"}', device: "SW1", address: "", command: "", outcome: "withheld", result: "This result was withheld", bytes: 24, durationMs: 4 },
+  { id: 2, atMs: NOW + 2000, projectId: "ai", tool: "run_show_command", arguments: '{"target":"SW1","command":"show ip arp"}', device: "SW1", address: "192.0.2.10", command: "show ip arp", outcome: "ok", result: "SW1 (192.0.2.10) · Cisco IOS / IOS-XE · `show ip arp`\nInternet  192.0.2.1  0  0000.0000.0001  ARPA  Vlan10\n", bytes: 90, durationMs: 1200 },
+  { id: 1, atMs: NOW + 1000, projectId: "ai", tool: "get_config", arguments: '{"target":"SW1"}', device: "SW1", address: "", command: "", outcome: "withheld", result: "This result was withheld", bytes: 24, durationMs: 4 },
 ];
 
 const browser = await chromium.launch();

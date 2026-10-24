@@ -340,7 +340,7 @@ mod tests {
                 if tool == "get_findings" {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 }
-                if arguments.get("device").and_then(Value::as_str) == Some("nowhere") {
+                if arguments.get("target").and_then(Value::as_str) == Some("nowhere") {
                     return Outcome::error("nowhere is not a device of the open project");
                 }
                 Outcome::ok(format!("{tool} {arguments}"))
@@ -394,7 +394,7 @@ mod tests {
         let (replies, _) = talk(&[
             modern(1, "server/discover", json!({})),
             modern(2, "tools/list", json!({})),
-            modern(3, "tools/call", json!({ "name": "get_device", "arguments": { "device": "SW1" } })),
+            modern(3, "tools/call", json!({ "name": "get_device", "arguments": { "target": "SW1" } })),
             modern(4, "ping", json!({})),
         ])
         .await;
@@ -451,7 +451,7 @@ mod tests {
     async fn protocol_errors_and_tool_errors_are_kept_apart() {
         let (replies, _) = talk(&[
             modern(1, "tools/call", json!({ "name": "reload_everything", "arguments": {} })),
-            modern(2, "tools/call", json!({ "name": "get_device", "arguments": { "device": "nowhere" } })),
+            modern(2, "tools/call", json!({ "name": "get_device", "arguments": { "target": "nowhere" } })),
             modern(3, "tools/call", json!({ "name": "get_device", "arguments": "SW1" })),
             modern(4, "resources/list", json!({})),
             "this is not json".into(),

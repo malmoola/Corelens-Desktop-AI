@@ -196,7 +196,7 @@ fn sample(key: &str, schema: &Value) -> Value {
     match schema["type"].as_str() {
         Some("integer") => schema.get("minimum").cloned().unwrap_or(json!(1)),
         Some("string") => json!(match key {
-            "device" => "SW1",
+            "target" => "SW1",
             "command" => "show ip arp",
             _ => "SW1",
         }),
@@ -263,7 +263,7 @@ async fn with_window_over<T: Send + 'static>(state: AppState, run: impl FnOnce(P
 
 #[tokio::test(flavor = "multi_thread")]
 async fn run_show_command_reaches_the_switch_from_a_spec_shaped_call() {
-    let calls = [(1, "run_show_command", json!({ "device": "SW1", "command": "show ip arp" }))];
+    let calls = [(1, "run_show_command", json!({ "target": "SW1", "command": "show ip arp" }))];
     let ((old, new), dev) = with_window(move |home| (session(&home, &legacy(&calls)), session(&home, &modern(&calls)))).await;
     for replies in [&old, &new] {
         let r = reply(replies, 1);
@@ -309,17 +309,23 @@ async fn every_tool_reads_the_arguments_its_schema_advertises() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_bad_call_names_the_tool_and_the_keys_never_the_values() {
     let calls = [
-        (1, "run_show_command", json!({ "device": "SW1" })),
-        (2, "run_show_command", json!({ "device": "SW1", "command": "show ip arp", "secretish": "value-never-echoed" })),
-        (3, "get_config", json!({ "device": "SW1", "from_line": "value-never-echoed" })),
+        (1, "run_show_command", json!({ "target": "SW1" })),
+        (2, "run_show_command", json!({ "target": "SW1", "command": "show ip arp", "secretish": "value-never-echoed" })),
+        (3, "get_config", json!({ "target": "SW1", "from_line": "value-never-echoed" })),
+        (4, "run_show_command", json!({ "command": "show version" })),
+        (5, "get_device", json!({})),
     ];
     let (replies, dev) = with_window(move |home| session(&home, &legacy(&calls))).await;
     let one = text(reply(&replies, 1));
-    assert!(one.starts_with("run_show_command:") && one.contains("missing field `command`") && one.contains("Keys received: device."), "{one}");
+    assert!(one.starts_with("run_show_command:") && one.contains("missing field `command`") && one.contains("Keys received: target."), "{one}");
     let two = text(reply(&replies, 2));
-    assert!(two.starts_with("run_show_command:") && two.contains("Keys received: command, device, secretish."), "{two}");
+    assert!(two.starts_with("run_show_command:") && two.contains("Keys received: command, secretish, target."), "{two}");
     let three = text(reply(&replies, 3));
-    assert!(three.starts_with("get_config:") && three.contains("Keys received: device, from_line."), "{three}");
+    assert!(three.starts_with("get_config:") && three.contains("Keys received: from_line, target."), "{three}");
+    let four = text(reply(&replies, 4));
+    assert_eq!(four, "run_show_command: missing 'target' (the device name or IP). Keys received: command.");
+    let five = text(reply(&replies, 5));
+    assert_eq!(five, "get_device: missing 'target' (the device name or IP). Keys received: none.");
     for r in [one, two, three] {
         assert!(!r.contains("value-never-echoed"), "a value was echoed: {r}");
     }
@@ -350,8 +356,8 @@ async fn claude_desktops_call_in_parallel_keeps_its_arguments() {
     let name = "EXAMPLE-MAIN-SW";
     let mut calls = Vec::new();
     for i in 1..=8 {
-        calls.push(desktop_call(i, "run_show_command", json!({ "device": name, "command": "show version" })));
-        calls.push(desktop_call(100 + i, "get_device", json!({ "device": name })));
+        calls.push(desktop_call(i, "run_show_command", json!({ "target": name, "command": "show version" })));
+        calls.push(desktop_call(100 + i, "get_device", json!({ "target": name })));
     }
     let requests = desktop_session(calls);
     let ((replies, log), dev) = with_window_over(app_state_as(name, true), move |home| session_logged(&home, &requests)).await;
@@ -370,7 +376,7 @@ async fn claude_desktops_call_in_parallel_keeps_its_arguments() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_locked_vault_is_said_plainly_and_never_as_missing_arguments() {
     let name = "EXAMPLE-MAIN-SW";
-    let calls = (1..=6).map(|i| desktop_call(i, "run_show_command", json!({ "device": name, "command": "show version" }))).collect();
+    let calls = (1..=6).map(|i| desktop_call(i, "run_show_command", json!({ "target": name, "command": "show version" }))).collect();
     let requests = desktop_session(calls);
     let (replies, dev) = with_window_over(app_state_as(name, false), move |home| session(&home, &requests)).await;
     for i in 1..=6 {

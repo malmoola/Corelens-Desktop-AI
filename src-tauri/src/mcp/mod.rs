@@ -96,7 +96,7 @@ type Prepared = (project::Device, String, Vec<(String, corelens_discover::ssh::C
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ShowArgs {
-    device: String,
+    target: String,
     command: String,
 }
 
@@ -128,7 +128,7 @@ async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
             db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?
         };
         let all = project::devices(&package.document);
-        let device = project::resolve(&all, &args.device)?.clone();
+        let device = project::resolve(&all, &args.target)?.clone();
         let address = device.target().ok_or_else(|| format!("{} has no address in the project, so Corelens cannot reach it.", device.label()))?;
         if state.vault_key.lock().map(|k| k.is_none()).unwrap_or(true) {
             return Err("The vault in Corelens is locked, so no login can be used. The engineer unlocks it in the Corelens window, then ask again.".into());
@@ -167,7 +167,7 @@ async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
 }
 
 fn run_read(state: &AppState, project_id: &str, tool: &str, arguments: &Value) -> Raw {
-    let device = arguments.get("device").and_then(Value::as_str).unwrap_or("").to_string();
+    let device = arguments.get("target").and_then(Value::as_str).unwrap_or("").to_string();
     let result = (|| -> Result<String, String> {
         // The vault before the database, as everywhere else, or two calls
         // at once can each hold the lock the other is waiting for.
@@ -186,7 +186,7 @@ pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
     let started = now_ms();
     let state = host.state;
     let project_id = open_project(state);
-    let device_arg = arguments.get("device").and_then(Value::as_str).unwrap_or("").to_string();
+    let device_arg = arguments.get("target").and_then(Value::as_str).unwrap_or("").to_string();
     (host.emit)(&Activity { tool: tool.into(), device: device_arg.clone(), running: true, outcome: String::new() });
     let raw = match &project_id {
         None => Raw { result: Err("No project is open in Corelens. The engineer opens the customer's project in the Corelens window; then ask again.".into()), device: device_arg, address: String::new(), command: String::new() },
@@ -402,7 +402,7 @@ mod tests {
             std::thread::spawn(move || {
                 let emit = |_: &Activity| {};
                 let host = Host { state: &state, templates: None, ssh_port: 22, emit: &emit };
-                tauri::async_runtime::block_on(execute(&host, "get_device", json!({ "device": "SW1" })))
+                tauri::async_runtime::block_on(execute(&host, "get_device", json!({ "target": "SW1" })))
             })
         };
         std::thread::sleep(std::time::Duration::from_millis(300));

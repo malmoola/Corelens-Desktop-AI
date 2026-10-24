@@ -28,8 +28,12 @@ pub struct Ctx<'a> {
 pub(crate) fn args<T: for<'de> Deserialize<'de>>(tool: &str, v: &Value) -> Result<T, String> {
     serde_json::from_value(v.clone()).map_err(|e| {
         let said = e.to_string();
+        let keys = corelens_mcp::tools::keys_of(v);
+        if said.starts_with("missing field `target`") {
+            return format!("{tool}: missing 'target' (the device name or IP). Keys received: {keys}.");
+        }
         let why = if said.starts_with("missing field") || said.starts_with("unknown field") { said } else { "a value has the wrong type or is out of range".to_string() };
-        format!("{tool}: the arguments do not match its schema ({why}). Keys received: {}.", corelens_mcp::tools::keys_of(v))
+        format!("{tool}: the arguments do not match its schema ({why}). Keys received: {keys}.")
     })
 }
 
@@ -53,13 +57,13 @@ struct SearchArgs {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DeviceArgs {
-    device: String,
+    target: String,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TopologyArgs {
-    device: Option<String>,
+    target: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -71,7 +75,7 @@ struct RunArgs {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigArgs {
-    device: String,
+    target: String,
     capture: Option<String>,
     from_line: Option<usize>,
     max_lines: Option<usize>,
@@ -108,11 +112,11 @@ pub fn run(ctx: &Ctx, tool: &str, arguments: &Value) -> Result<String, String> {
         }
         "get_device" => {
             let a: DeviceArgs = args(tool, arguments)?;
-            get_device(ctx, &a.device)
+            get_device(ctx, &a.target)
         }
         "get_topology" => {
             let a: TopologyArgs = args(tool, arguments)?;
-            get_topology(ctx, a.device.as_deref())
+            get_topology(ctx, a.target.as_deref())
         }
         "get_discovery_results" => {
             let a: RunArgs = args(tool, arguments)?;
@@ -120,7 +124,7 @@ pub fn run(ctx: &Ctx, tool: &str, arguments: &Value) -> Result<String, String> {
         }
         "get_config" => {
             let a: ConfigArgs = args(tool, arguments)?;
-            get_config(ctx, &a.device, a.capture.as_deref(), a.from_line.unwrap_or(1), a.max_lines.unwrap_or(400).min(400))
+            get_config(ctx, &a.target, a.capture.as_deref(), a.from_line.unwrap_or(1), a.max_lines.unwrap_or(400).min(400))
         }
         "get_findings" => {
             args::<NoArgs>(tool, arguments)?;
@@ -716,11 +720,11 @@ mod tests {
         let c = conn();
         let p = package();
         let cx = ctx(&c, &p, None);
-        let out = run(&cx, "get_device", &json!({ "device": "192.0.2.10" })).unwrap();
+        let out = run(&cx, "get_device", &json!({ "target": "192.0.2.10" })).unwrap();
         for want in ["SW1 [n1] on page Core", "Model: WS-C2960X-24TS-L", "Address: 192.0.2.10 (Management)", "Gi1/0/2 down vlan 20 \"printer\" errors: crc 12, drops 3", "VLANs: 10 users, 20 printers", "0.0.0.0/0 static via 192.0.2.1", "VLAN0010: root RTR1, root port Gi1/0/1"] {
             assert!(out.contains(want), "missing {want}:\n{out}");
         }
-        let err = run(&cx, "get_device", &json!({ "device": "203.0.113.50" })).unwrap_err();
+        let err = run(&cx, "get_device", &json!({ "target": "203.0.113.50" })).unwrap_err();
         assert!(err.contains("not a device of the project open in Corelens"));
     }
 
@@ -731,7 +735,7 @@ mod tests {
         let cx = ctx(&c, &p, None);
         let out = run(&cx, "get_topology", &json!({})).unwrap();
         assert!(out.contains("- SW1 Gi1/0/1 — RTR1 Gi0/0"), "{out}");
-        assert!(run(&cx, "get_topology", &json!({ "device": "FW1" })).unwrap().starts_with("0 link(s) of FW1"));
+        assert!(run(&cx, "get_topology", &json!({ "target": "FW1" })).unwrap().starts_with("0 link(s) of FW1"));
     }
 
     #[test]
@@ -768,12 +772,12 @@ mod tests {
         let body: String = (1..=450).map(|i| if i == 3 { "interface Vlan10\n".to_string() } else { format!("! line {i}\n") }).collect();
         std::fs::write(dir.join("SW1_show-running-config_20261024-0900.txt"), body).unwrap();
         let cx = ctx(&c, &p, Some(root.path().to_path_buf()));
-        let first = run(&cx, "get_config", &json!({ "device": "SW1" })).unwrap();
+        let first = run(&cx, "get_config", &json!({ "target": "SW1" })).unwrap();
         assert!(first.contains("(lines 1–400 of 450)") && first.contains("ask again with from_line 401"), "{}", &first[..200]);
-        let tail = run(&cx, "get_config", &json!({ "device": "SW1", "from_line": 441 })).unwrap();
+        let tail = run(&cx, "get_config", &json!({ "target": "SW1", "from_line": 441 })).unwrap();
         assert!(tail.contains("lines 441–450 of 450") && tail.contains("! line 450"));
-        assert!(run(&cx, "get_config", &json!({ "device": "RTR1" })).unwrap_err().contains("no backed-up configuration of RTR1"));
-        assert!(run(&cx, "get_config", &json!({ "device": "SW1", "capture": "../../etc/passwd" })).unwrap_err().contains("has no capture named"));
+        assert!(run(&cx, "get_config", &json!({ "target": "RTR1" })).unwrap_err().contains("no backed-up configuration of RTR1"));
+        assert!(run(&cx, "get_config", &json!({ "target": "SW1", "capture": "../../etc/passwd" })).unwrap_err().contains("has no capture named"));
         let s = run(&cx, "search", &json!({ "query": "vlan10" })).unwrap();
         assert!(s.contains("config: SW1 SW1_show-running-config_20261024-0900.txt line 3: interface Vlan10"), "{s}");
         assert!(s.contains("vlan: SW1 10 users") || s.contains("device:") || s.contains("config:"));

@@ -32,8 +32,8 @@ pub struct Tool {
     pub schema: fn() -> Value,
 }
 
-fn device_arg() -> Value {
-    json!({ "type": "string", "description": "A device of the open project: its name, hostname, management address or id, as list_devices shows it." })
+fn target_arg() -> Value {
+    json!({ "type": "string", "description": "The device: its name or management IP as list_devices shows it (a hostname or id also works). It must be a device of the open project." })
 }
 
 fn none() -> Value {
@@ -63,8 +63,8 @@ fn search() -> Value {
 fn one_device() -> Value {
     json!({
         "type": "object",
-        "properties": { "device": device_arg() },
-        "required": ["device"],
+        "properties": { "target": target_arg() },
+        "required": ["target"],
         "additionalProperties": false
     })
 }
@@ -72,7 +72,7 @@ fn one_device() -> Value {
 fn topology() -> Value {
     json!({
         "type": "object",
-        "properties": { "device": { "type": "string", "description": "Only the links and neighbours of this device. Omit for the whole project." } },
+        "properties": { "target": { "type": "string", "description": "Only the links and neighbours of this device: its name or management IP. Omit for the whole project." } },
         "additionalProperties": false
     })
 }
@@ -89,12 +89,12 @@ fn config() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "device": device_arg(),
+            "target": target_arg(),
             "capture": { "type": "string", "description": "A capture's file name, as an earlier get_config listed it. Omit for the newest running configuration." },
             "from_line": { "type": "integer", "minimum": 1, "description": "First line to return, from 1." },
             "max_lines": { "type": "integer", "minimum": 1, "maximum": 400, "description": "At most this many lines (400 at most)." }
         },
-        "required": ["device"],
+        "required": ["target"],
         "additionalProperties": false
     })
 }
@@ -103,10 +103,10 @@ fn show() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "device": device_arg(),
+            "target": target_arg(),
             "command": { "type": "string", "minLength": 1, "description": "One read-only command in the device's own syntax: `show ...` on Cisco IOS/IOS-XE/NX-OS, Aruba, PAN-OS and Junos; `get ...`, `show ...` or a listed read-only `diagnose ...` on FortiOS. Filters after a pipe (include, exclude, begin, section, count, match, except) are allowed. Anything that changes, clears, debugs, saves or copies is refused." }
         },
-        "required": ["device", "command"],
+        "required": ["target", "command"],
         "additionalProperties": false
     })
 }
@@ -238,6 +238,38 @@ pub fn cap(text: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Argument names a client or a bridge between it and this server may
+    /// keep for itself. One was seen removed on the way — a call arrived
+    /// with `command` and without `device` — so none of these is used.
+    const RESERVED: &[&str] = &["device", "computer", "host", "path", "file", "url", "session", "id"];
+
+    fn argument_names(schema: &Value, out: &mut Vec<String>) {
+        if let Some(props) = schema.get("properties").and_then(Value::as_object) {
+            for (k, v) in props {
+                out.push(k.clone());
+                argument_names(v, out);
+            }
+        }
+        if let Some(items) = schema.get("items") {
+            argument_names(items, out);
+        }
+    }
+
+    #[test]
+    fn no_tool_takes_an_argument_a_client_may_keep_for_itself() {
+        for t in TOOLS {
+            let mut names = Vec::new();
+            argument_names(&(t.schema)(), &mut names);
+            for n in &names {
+                assert!(!RESERVED.contains(&n.to_ascii_lowercase().as_str()), "{} takes `{n}`, a name a client may strip on the way", t.name);
+            }
+            let required = (t.schema)()["required"].as_array().cloned().unwrap_or_default();
+            assert!(required.iter().all(|r| !RESERVED.contains(&r.as_str().unwrap_or(""))), "{} requires a reserved name", t.name);
+        }
+        let device_tools: Vec<&str> = TOOLS.iter().filter(|t| (t.schema)()["properties"].get("target").is_some()).map(|t| t.name).collect();
+        assert_eq!(device_tools, ["get_device", "get_topology", "get_config", "run_show_command"]);
+    }
 
     #[test]
     fn every_tool_reads_has_a_closed_schema_and_a_legal_name() {

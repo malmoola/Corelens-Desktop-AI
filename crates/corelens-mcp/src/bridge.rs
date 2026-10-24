@@ -376,9 +376,9 @@ mod tests {
     async fn both_ends_with_the_key_run_a_call() {
         let (a, b) = tokio::io::duplex(1 << 16);
         let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
-        let out = call_over(a, &key(7), "get_device", json!({ "device": "SW1" })).await;
+        let out = call_over(a, &key(7), "get_device", json!({ "target": "SW1" })).await;
         server.await.unwrap();
-        assert_eq!(out, Outcome::ok(r#"ran get_device with {"device":"SW1"}"#));
+        assert_eq!(out, Outcome::ok(r#"ran get_device with {"target":"SW1"}"#));
     }
 
     #[tokio::test]
@@ -394,7 +394,7 @@ mod tests {
             let _ = tokio::time::timeout(Duration::from_millis(300), r.read_to_string(&mut rest)).await;
             (hello, rest)
         });
-        let out = call_over(a, &key(7), "get_config", json!({ "device": "SW1" })).await;
+        let out = call_over(a, &key(7), "get_config", json!({ "target": "SW1" })).await;
         assert_eq!(out, Outcome::error(NOT_PROVEN));
         let (hello, rest) = seen.await.unwrap();
         assert!(hello.get("tool").is_none() && !rest.contains("get_config") && !rest.contains("SW1"), "the request reached a server that had no key: {rest}");

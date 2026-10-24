@@ -142,6 +142,16 @@ For Claude Code: `claude mcp add --transport stdio --scope user -e CORELENS_MCP_
 (after `claude mcp remove corelens`).
 
 A line looks like
-`corelens-mcp: tools/call run_show_command: params keys: _meta, arguments, name; argument keys: command, device`.
+`corelens-mcp: tools/call run_show_command: params keys: _meta, arguments, name; argument keys: command, target`.
 An argument error says the same without the flag: it names the tool and
 lists the keys it received.
+
+**Why the device argument is called `target`.** The tools that act on one
+device take it as `target`: its name or management IP, as `list_devices`
+shows it. An earlier version called it `device`, and from Claude Desktop
+that key never arrived — the call reached Corelens with `command` alone,
+removed on the way, most likely by a bridge in the client that keeps the name for
+itself. So no tool takes an argument named `device`, `computer`, `host`,
+`path`, `file`, `url`, `session` or `id`, and a test fails if one ever
+does. A call without `target` is answered
+`run_show_command: missing 'target' (the device name or IP). Keys received: command.`
