@@ -30,8 +30,9 @@ interface Command {
 /** Every `#[tauri::command]`, whether it is marked to run off the main thread, and its body. */
 function commands(): Command[] {
   const out: Command[] = [];
-  for (const file of readdirSync(root).filter((f) => f.endsWith('.rs'))) {
-    const src = readFileSync(new URL(file, root), 'utf8');
+  // Modules in folders of their own (`mcp/`) included.
+  for (const file of readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.rs'))) {
+    const src = readFileSync(new URL(file.replaceAll('\\', '/'), root), 'utf8');
     const re = /#\[tauri::command([^\]]*)\]\s*(?:#\[[^\]]*\]\s*)*pub (async )?fn (\w+)/g;
     for (const m of src.matchAll(re)) {
       const attr = m[1] ?? '';

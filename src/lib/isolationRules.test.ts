@@ -26,8 +26,10 @@ const rules: Rules = (() => {
 function backendCommands(): Map<string, string[]> {
   const out = new Map<string, string[]>();
   const dir = new URL('src-tauri/src/', root);
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.rs'))) {
-    const src = readFileSync(new URL(file, dir), 'utf8');
+  // Modules in folders of their own (`mcp/`) register commands too.
+  const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.rs'));
+  for (const file of files) {
+    const src = readFileSync(new URL(file.replaceAll('\\', '/'), dir), 'utf8');
     const re = /#\[tauri::command[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)\s*(?:<[^>]*>)?\(([\s\S]*?)\)\s*(?:->|\{)/g;
     for (const m of src.matchAll(re)) {
       const params = m[2]!.replace(/\/\/[^\n]*/g, '').split(/,(?![^<]*>)/).map((p) => p.trim()).filter((p) => p.includes(':'));

@@ -199,6 +199,40 @@ export type ImportedLink = {
   waypoints?: [number, number][];
 };
 export type ImportedPage = { name: string; devices: ImportedDevice[]; links: ImportedLink[] };
+/** The AI bridge as Settings shows it. */
+export interface McpStatus {
+  enabled: boolean;
+  listening: boolean;
+  error: string | null;
+  executable: string;
+  claudeCodeCommand: string;
+  claudeDesktopConfig: string;
+}
+
+/** One call a client made, as the audit log keeps it (already redacted). */
+export interface McpActivity {
+  id: number;
+  atMs: number;
+  projectId: string | null;
+  tool: string;
+  arguments: string;
+  device: string;
+  address: string;
+  command: string;
+  outcome: 'ok' | 'error' | 'withheld';
+  result: string;
+  bytes: number;
+  durationMs: number;
+}
+
+/** A call starting or ending, for the status strip. */
+export interface McpCall {
+  tool: string;
+  device: string;
+  running: boolean;
+  outcome: string;
+}
+
 export type VisioImport = { pages: ImportedPage[]; warnings: string[] };
 
 /** What happened when a stencil pack was removed. */
@@ -1531,6 +1565,32 @@ export const ipc = {
   async installUpdate(): Promise<void> {
     if (!isDesktop) throw new Error('There is no installer to update in the browser.');
     await invoke('install_update');
+  },
+
+  // Claude and other MCP clients using Corelens (`src-tauri/src/mcp`).
+  // Off until switched on; the page only ever sees the status, the setup
+  // text and the audit log, never the bridge's key.
+  async mcpStatus(): Promise<McpStatus | null> {
+    if (!isDesktop) return null;
+    return invoke<McpStatus>('mcp_status');
+  },
+  async mcpSetEnabled(enabled: boolean): Promise<McpStatus> {
+    return invoke<McpStatus>('mcp_set_enabled', { enabled });
+  },
+  async mcpActivity(allProjects = false, limit = 200): Promise<McpActivity[]> {
+    if (!isDesktop) return [];
+    return invoke<McpActivity[]>('mcp_activity', { allProjects, limit });
+  },
+  mcpClearActivity(allProjects = false) {
+    return invoke<number>('mcp_clear_activity', { allProjects });
+  },
+  mcpChangeRecord() {
+    return invoke<string>('mcp_change_record');
+  },
+  async onMcpActivity(handler: (e: McpCall) => void): Promise<() => void> {
+    if (!isDesktop) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen('corelens://mcp-activity', (e) => handler(e.payload as McpCall));
   },
 
   async onUpdateProgress(handler: (e: UpdateProgress) => void): Promise<() => void> {

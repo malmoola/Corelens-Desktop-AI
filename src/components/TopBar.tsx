@@ -21,6 +21,7 @@ import { SAVE_ACK_MS, saveIndicator } from '../lib/saveIndicator';
 import { drawioFile } from '../lib/drawio';
 import { netboxJson, netboxYaml } from '../lib/netboxExport';
 import { JobsBar } from './JobsBar';
+import { AiActivity } from './AiSettings';
 import { interactiveHtml } from '../lib/htmlExport';
 import { projectFolderFiles } from '../lib/projectFolder';
 import { reportPages, type ReportSection, type ReportTemplate } from '../lib/reportPdf';
@@ -728,6 +729,8 @@ export function TopBar({ onExit }: { onExit: () => void }) {
         {/* What is running, beside the save state, one line each —
             Only while a screen hides the dock and its strip. */}
         {dockCovered && <JobsBar compact />}
+        {/* Claude using Corelens through MCP: the tool and the device, while it runs. */}
+        <AiActivity />
         <span
           className={`cv-save-state is-${save.tone}`}
           data-tone={save.tone}
