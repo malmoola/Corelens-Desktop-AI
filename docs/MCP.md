@@ -116,3 +116,32 @@ Ask Claude, one at a time, and check each answer:
 
 If step 3 fails, the error names what to check: the VPN, the address, the
 login, or a changed host key (*Settings → Host keys*).
+
+## 6. When a call goes wrong: the debug log
+
+Set `CORELENS_MCP_DEBUG=1` for the `--mcp` process and each tool call
+writes one line to its standard error: the tool, the keys of the request's
+`params` and the keys of its `arguments`. Never a value, so no device name,
+command or anything else typed reaches the log. Claude Desktop keeps that
+stream in `%APPDATA%\Claude\logs\mcp-server-corelens.log`; add an `env` to
+its entry and restart it:
+
+```json
+{
+  "mcpServers": {
+    "corelens": {
+      "command": "C:\\Program Files\\Corelens Desktop AI\\corelens-desktop-ai.exe",
+      "args": ["--mcp"],
+      "env": { "CORELENS_MCP_DEBUG": "1" }
+    }
+  }
+}
+```
+
+For Claude Code: `claude mcp add --transport stdio --scope user -e CORELENS_MCP_DEBUG=1 corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp`
+(after `claude mcp remove corelens`).
+
+A line looks like
+`corelens-mcp: tools/call run_show_command: params keys: _meta, arguments, name; argument keys: command, device`.
+An argument error says the same without the flag: it names the tool and
+lists the keys it received.

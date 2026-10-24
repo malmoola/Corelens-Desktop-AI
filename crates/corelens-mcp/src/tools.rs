@@ -178,6 +178,20 @@ pub const TOOLS: &[Tool] = &[
     },
 ];
 
+/// The keys of an arguments object, sorted, for an argument error or the
+/// debug log; never their values.
+pub fn keys_of(v: &Value) -> String {
+    match v.as_object() {
+        Some(m) if m.is_empty() => "none".into(),
+        Some(m) => {
+            let mut k: Vec<&str> = m.keys().map(String::as_str).collect();
+            k.sort_unstable();
+            k.join(", ")
+        }
+        None => "not an object".into(),
+    }
+}
+
 /// The tool of that name.
 pub fn find(name: &str) -> Option<&'static Tool> {
     TOOLS.iter().find(|t| t.name == name)

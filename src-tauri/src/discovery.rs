@@ -334,11 +334,15 @@ pub fn load_host_keys(state: &AppState) -> CmdResult<Arc<std::sync::Mutex<HostKe
 /// of being remembered anyway, because the connection was refused.
 pub fn persist_host_keys(app: &AppHandle, store: &Arc<std::sync::Mutex<HostKeyStore>>) {
     use tauri::Manager;
+    persist_host_keys_to(&app.state::<AppState>(), store);
+}
+
+/// `persist_host_keys`, given the state rather than the app.
+pub fn persist_host_keys_to(state: &AppState, store: &Arc<std::sync::Mutex<HostKeyStore>>) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let state = app.state::<AppState>();
     let Ok(conn) = state.db.lock() else { return };
     let Ok(guard) = store.lock() else { return };
     for (id, fingerprint) in guard.entries() {

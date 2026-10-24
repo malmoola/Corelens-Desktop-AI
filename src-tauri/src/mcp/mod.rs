@@ -12,6 +12,8 @@ pub mod audit;
 pub mod fake_device;
 pub mod project;
 pub mod redact;
+#[cfg(test)]
+mod roundtrip;
 pub mod show;
 pub mod tools;
 
@@ -73,7 +75,7 @@ fn vault_secrets(state: &AppState) -> redact::Secrets {
 /// What the window's status strip shows while a call runs.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Activity {
+pub struct Activity {
     tool: String,
     device: String,
     running: bool,
@@ -98,17 +100,27 @@ struct ShowArgs {
     command: String,
 }
 
-async fn run_show(app: &AppHandle, project_id: &str, arguments: &Value) -> Raw {
+/// What a call needs from the window: its state, where the parser
+/// templates are, the port SSH sessions dial, and where to say a call has
+/// started or ended (the status strip).
+pub struct Host<'a> {
+    pub state: &'a AppState,
+    pub templates: Option<std::path::PathBuf>,
+    pub ssh_port: u16,
+    pub emit: &'a (dyn Fn(&Activity) + Send + Sync),
+}
+
+async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
     let mut raw = Raw { result: Err(String::new()), device: String::new(), address: String::new(), command: String::new() };
-    let args: ShowArgs = match serde_json::from_value(arguments.clone()) {
+    let args: ShowArgs = match tools::args("run_show_command", arguments) {
         Ok(a) => a,
         Err(e) => {
-            raw.result = Err(format!("run_show_command: the arguments do not match its schema ({e})."));
+            raw.result = Err(e);
             return raw;
         }
     };
     raw.command = args.command.trim().to_string();
-    let state = app.state::<AppState>();
+    let state = host.state;
     let prepared = (|| -> Result<Prepared, String> {
         show::precheck(&args.command)?;
         let package = {
@@ -122,10 +134,10 @@ async fn run_show(app: &AppHandle, project_id: &str, arguments: &Value) -> Raw {
             return Err("The vault in Corelens is locked, so no login can be used. The engineer unlocks it in the Corelens window, then ask again.".into());
         }
         let first = Some(device.field("sshCredentialId").to_string())
-            .filter(|c| !c.is_empty() && crate::vault_commands::credential_exists(&state, c))
-            .or_else(|| crate::vault_commands::project_login_order(&state, &[], None).into_iter().find(|id| crate::vault_commands::credential_exists(&state, id)))
+            .filter(|c| !c.is_empty() && crate::vault_commands::credential_exists(state, c))
+            .or_else(|| crate::vault_commands::project_login_order(state, &[], None).into_iter().find(|id| crate::vault_commands::credential_exists(state, id)))
             .ok_or_else(|| format!("No login is saved for {} or for the project, so Corelens cannot log in to it.", device.label()))?;
-        let chain = crate::vault_commands::ssh_login_chain(&state, &first)?;
+        let chain = crate::vault_commands::ssh_login_chain(state, &first)?;
         Ok((device, address, chain))
     })();
     let (device, address, chain) = match prepared {
@@ -137,7 +149,7 @@ async fn run_show(app: &AppHandle, project_id: &str, arguments: &Value) -> Raw {
     };
     raw.device = device.label().to_string();
     raw.address = address.clone();
-    let store = match crate::discovery::load_host_keys(&state) {
+    let store = match crate::discovery::load_host_keys(state) {
         Ok(s) => s,
         Err(e) => {
             raw.result = Err(e);
@@ -146,11 +158,10 @@ async fn run_show(app: &AppHandle, project_id: &str, arguments: &Value) -> Raw {
     };
     let logins: Vec<_> = chain.iter().map(|(_, c)| c.clone()).collect();
     for (id, _) in chain.iter().take(1) {
-        crate::vault_commands::note_use(&state, id, "Claude: read-only show command", &address);
+        crate::vault_commands::note_use(state, id, "Claude: read-only show command", &address);
     }
-    let templates = crate::collection::templates_dir(app).ok();
-    let ran = show::run(device.label(), &address, 22, &logins, &args.command, Arc::clone(&store), templates.as_deref()).await;
-    crate::discovery::persist_host_keys(app, &store);
+    let ran = show::run(device.label(), &address, host.ssh_port, &logins, &args.command, Arc::clone(&store), host.templates.as_deref()).await;
+    crate::discovery::persist_host_keys_to(state, &store);
     raw.result = ran.map(|r| r.text);
     raw
 }
@@ -169,18 +180,18 @@ fn run_read(state: &AppState, project_id: &str, tool: &str, arguments: &Value) -
 }
 
 /// One call from a client, start to finish.
-pub async fn execute(app: &AppHandle, tool: &str, arguments: Value) -> Outcome {
+pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
     let started = now_ms();
-    let state = app.state::<AppState>();
-    let project_id = open_project(&state);
+    let state = host.state;
+    let project_id = open_project(state);
     let device_arg = arguments.get("device").and_then(Value::as_str).unwrap_or("").to_string();
-    let _ = app.emit("corelens://mcp-activity", Activity { tool: tool.into(), device: device_arg.clone(), running: true, outcome: String::new() });
+    (host.emit)(&Activity { tool: tool.into(), device: device_arg.clone(), running: true, outcome: String::new() });
     let raw = match &project_id {
         None => Raw { result: Err("No project is open in Corelens. The engineer opens the customer's project in the Corelens window; then ask again.".into()), device: device_arg, address: String::new(), command: String::new() },
-        Some(p) if tool == "run_show_command" => run_show(app, p, &arguments).await,
-        Some(p) => run_read(&state, p, tool, &arguments),
+        Some(p) if tool == "run_show_command" => run_show(host, p, &arguments).await,
+        Some(p) => run_read(state, p, tool, &arguments),
     };
-    let secrets = vault_secrets(&state);
+    let secrets = vault_secrets(state);
     let (outcome, kind) = match raw.result {
         Ok(text) => match redact::gate(&text, &secrets) {
             Ok(clean) => (Outcome::ok(corelens_mcp::tools::cap(clean)), "ok"),
@@ -208,7 +219,7 @@ pub async fn execute(app: &AppHandle, tool: &str, arguments: Value) -> Outcome {
     if let Ok(conn) = state.db.lock() {
         let _ = audit::record(&conn, &entry);
     }
-    let _ = app.emit("corelens://mcp-activity", Activity { tool: tool.into(), device: raw.device, running: false, outcome: kind.into() });
+    (host.emit)(&Activity { tool: tool.into(), device: raw.device, running: false, outcome: kind.into() });
     outcome
 }
 
@@ -218,7 +229,14 @@ struct AppBackend {
 
 impl Backend for AppBackend {
     fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
-        Box::pin(execute(&self.app, tool, arguments))
+        Box::pin(async move {
+            let state = self.app.state::<AppState>();
+            let emit = |a: &Activity| {
+                let _ = self.app.emit("corelens://mcp-activity", a);
+            };
+            let host = Host { state: state.inner(), templates: crate::collection::templates_dir(&self.app).ok(), ssh_port: 22, emit: &emit };
+            execute(&host, tool, arguments).await
+        })
     }
 }
 

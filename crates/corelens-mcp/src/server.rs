@@ -91,6 +91,13 @@ fn result(id: Value, era: &Era, mut body: Map<String, Value>) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "result": Value::Object(body) })
 }
 
+/// `CORELENS_MCP_DEBUG=1`: each tools/call's tool and the keys of its
+/// params and arguments go to stderr, which an MCP client keeps in its log.
+/// Never a value.
+fn debug() -> bool {
+    std::env::var("CORELENS_MCP_DEBUG").as_deref() == Ok("1")
+}
+
 fn obj(v: Value) -> Map<String, Value> {
     match v {
         Value::Object(m) => m,
@@ -277,6 +284,9 @@ impl<B: Backend> Server<B> {
         if tools::find(name).is_none() {
             let _ = tx.send(error(id, -32602, &format!("Unknown tool: {name}"), None));
             return;
+        }
+        if debug() {
+            eprintln!("corelens-mcp: tools/call {name}: params keys: {}; argument keys: {}", tools::keys_of(params), params.get("arguments").map_or_else(|| "absent".into(), tools::keys_of));
         }
         let arguments = match params.get("arguments") {
             None | Some(Value::Null) => json!({}),

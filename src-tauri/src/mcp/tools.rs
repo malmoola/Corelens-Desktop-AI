@@ -21,9 +21,16 @@ pub struct Ctx<'a> {
     pub vault_unlocked: bool,
 }
 
-/// Arguments that do not match a tool's schema.
-fn args<T: for<'de> Deserialize<'de>>(tool: &str, v: &Value) -> Result<T, String> {
-    serde_json::from_value(v.clone()).map_err(|e| format!("{tool}: the arguments do not match its schema ({e})."))
+/// A tool's arguments, or an error naming the tool and the keys it was
+/// given. Never a value: serde quotes the value it could not read in a
+/// type error, and a value can be anything the client sent, so only a
+/// missing or unknown field is passed on in serde's words.
+pub(crate) fn args<T: for<'de> Deserialize<'de>>(tool: &str, v: &Value) -> Result<T, String> {
+    serde_json::from_value(v.clone()).map_err(|e| {
+        let said = e.to_string();
+        let why = if said.starts_with("missing field") || said.starts_with("unknown field") { said } else { "a value has the wrong type or is out of range".to_string() };
+        format!("{tool}: the arguments do not match its schema ({why}). Keys received: {}.", corelens_mcp::tools::keys_of(v))
+    })
 }
 
 #[derive(Deserialize)]

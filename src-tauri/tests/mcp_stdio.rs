@@ -86,3 +86,28 @@ async fn a_client_reaches_the_app_through_the_binary() {
     assert_eq!(call["result"]["content"][0]["text"], r#"the app ran get_device with {"device":"SW1"}"#);
     listening.stop().await;
 }
+
+/// `CORELENS_MCP_DEBUG=1` logs each call's tool and keys to stderr, never a
+/// value; without it stderr says nothing about calls.
+#[test]
+fn the_debug_log_names_tools_and_keys_and_never_values() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(data_dir(home.path())).unwrap();
+    let run = |debug: bool| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_corelens-desktop-ai"));
+        cmd.arg("--mcp").env("XDG_DATA_HOME", home.path()).env("HOME", home.path()).env("LOCALAPPDATA", home.path()).env_remove("CORELENS_MCP_DEBUG");
+        if debug {
+            cmd.env("CORELENS_MCP_DEBUG", "1");
+        }
+        let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "run_show_command", "arguments": { "device": "value-never-logged", "command": "show value-never-logged" } } })).unwrap();
+        drop(stdin);
+        let out = child.wait_with_output().unwrap();
+        String::from_utf8(out.stderr).unwrap()
+    };
+    let logged = run(true);
+    assert!(logged.contains("tools/call run_show_command: params keys: arguments, name; argument keys: command, device"), "{logged}");
+    assert!(!logged.contains("value-never-logged"), "{logged}");
+    assert!(!run(false).contains("tools/call"));
+}
