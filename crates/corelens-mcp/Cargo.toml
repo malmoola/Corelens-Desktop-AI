@@ -1,0 +1,25 @@
+[package]
+name = "corelens-mcp"
+version = "2.13.0"
+authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
+edition = "2021"
+rust-version = "1.77"
+description = "The Model Context Protocol server Corelens runs over stdio, and the authenticated local bridge to the running app"
+license = "LicenseRef-Almoola-Free-Proprietary"
+# Proprietary: never published to crates.io.
+publish = false
+
+# No Tauri, no database and no network: the protocol, the tool list and
+# the local bridge, tested with plain `cargo test`.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "time", "sync", "rt", "rt-multi-thread", "io-util", "io-std"] }
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2"
+getrandom = "0.2"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
