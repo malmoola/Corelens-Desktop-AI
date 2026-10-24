@@ -1,48 +1,46 @@
 /**
- * The public certificates the repository publishes beside each installer:
- * the root that administrators import, and the signing certificate it
- * issued. A root that did not issue the signing certificate, or a signing
- * certificate not marked for code signing, would make the install notes
- * wrong and the signature worthless, so the chain is checked here, and the
- * root is confirmed to travel inside the installer.
+ * Authenticode signing, with no certificate of this product's own yet.
+ *
+ * The certificates under `brand/` are another product's and must not
+ * travel with this one: not inside the installer, not beside it, not named
+ * by the build. A certificate this product publishes goes under
+ * `brand/signing/` (the build copies what it finds there and refuses a
+ * signing secret that is not one of them), and when there is one the chain
+ * is checked here.
  */
 import { X509Certificate } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-const read = (name) => new X509Certificate(readFileSync(new URL(`../${name}`, import.meta.url)));
-const root = read('brand/corelens-root-ca.crt');
-const signing = read('brand/corelens-desktop-codesign.crt');
+const at = (name) => new URL(`../${name}`, import.meta.url);
+const text = (name) => readFileSync(at(name), 'utf8');
+const OTHER_PRODUCT = ['corelens-root-ca', 'corelens-desktop-codesign', 'corelens.us', 'COREVIEW-APP'];
 
-describe('the published signing chain', () => {
-  it('is a self-signed root that issued the signing certificate', () => {
-    expect(root.ca).toBe(true);
-    expect(root.checkIssued(root)).toBe(true);
-    expect(root.verify(root.publicKey)).toBe(true);
-    expect(signing.ca).toBe(false);
-    expect(signing.checkIssued(root)).toBe(true);
-    expect(signing.verify(root.publicKey)).toBe(true);
+describe('signing', () => {
+  it('ships no certificate inside the installer', () => {
+    const conf = JSON.parse(text('src-tauri/tauri.conf.json'));
+    const shipped = [...Object.keys(conf.bundle.resources), ...Object.values(conf.bundle.resources)];
+    expect(shipped.filter((p) => /\.(crt|cer|pem|pfx|p12)$/i.test(p))).toEqual([]);
   });
 
-  it('names the product, and the signing certificate is for code signing', () => {
-    expect(root.subject).toContain('CN=corelens.us-Root-CA');
-    expect(signing.subject).toContain('CN=corelens.us Code Signing');
-    expect(signing.keyUsage).toContain('1.3.6.1.5.5.7.3.3'); // id-kp-codeSigning
-  });
-
-  it('is current, and outlives any release signed this year', () => {
-    const now = Date.now();
-    for (const cert of [root, signing]) {
-      expect(new Date(cert.validFrom).getTime()).toBeLessThan(now);
-      expect(new Date(cert.validTo).getTime()).toBeGreaterThan(now + 365 * 24 * 3600 * 1000);
+  it('never names the other product\'s certificates in the build, the scripts or the guides', () => {
+    for (const file of ['.github/workflows/build.yml', 'sidecar/build/sign.ps1', 'docs/SIGNING.md', 'docs/INSTALL-WINDOWS.md']) {
+      const body = text(file);
+      for (const name of OTHER_PRODUCT) expect(body, `${file} names ${name}`).not.toContain(name);
     }
   });
 
-  it('ships the root inside the installer, and the guide carries its thumbprint', () => {
-    const conf = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
-    expect(conf.bundle.resources['../brand/corelens-root-ca.crt']).toBe('corelens-root-ca.crt');
-    const guide = readFileSync(new URL('../docs/INSTALL-WINDOWS.md', import.meta.url), 'utf8');
-    expect(guide).toContain(root.fingerprint.replaceAll(':', ''));
+  it('checks a published chain, when there is one', () => {
+    const dir = at('brand/signing/');
+    const certs = existsSync(dir)
+      ? readdirSync(dir).filter((n) => n.endsWith('.crt')).map((n) => new X509Certificate(readFileSync(new URL(n, dir))))
+      : [];
+    const roots = certs.filter((c) => c.ca);
+    for (const leaf of certs.filter((c) => !c.ca)) {
+      expect(leaf.keyUsage).toContain('1.3.6.1.5.5.7.3.3'); // id-kp-codeSigning
+      expect(roots.some((r) => leaf.checkIssued(r) && leaf.verify(r.publicKey)), leaf.subject).toBe(true);
+      expect(new Date(leaf.validTo).getTime()).toBeGreaterThan(Date.now());
+    }
   });
 });

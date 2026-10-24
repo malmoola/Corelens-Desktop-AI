@@ -5,19 +5,22 @@ name: build
 # produces the NSIS .exe and the MSI; macOS produces a universal .dmg that
 # runs on both Apple Silicon and Intel.
 #
-# Every installer, on every push — NSIS, MSI, .deb, AppImage, the
-# universal .dmg, and the offline Windows installer that carries the WebView2
-# runtime. The Windows-only narrowing is over; all of them are built.
+# The repository is private, so every runner minute is billed, and Windows
+# and macOS minutes cost several times Linux's. A push or a pull request
+# runs the checks on Linux only. The Windows checks, the installers, the
+# install check and the release run on a `v*` tag, or when the workflow is
+# started by hand (Actions -> build -> Run workflow).
 #
-# A push to main whose version has no GitHub Release yet gets one, made by
-# the `release` job at the end from the artifacts the bundle jobs uploaded:
-# the installers, their updater signatures and `latest.json`, which the
-# app's own "Check for updates" reads. The job creates the `v<version>` tag
-# itself, so nothing here triggers on tags and a release costs one run.
+# A release is cut by pushing the tag `v<version>` for the version in
+# package.json: the `release` job checks the two agree, then publishes the
+# installers, their updater signatures and `latest.json`, which the app's
+# own "Check for updates" reads. Started by hand on main, the job makes the
+# tag itself when the version has no release yet.
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -31,7 +34,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Linux on every push; Windows as well on a tag or a run by hand.
+        os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -71,6 +75,21 @@ jobs:
       # has to happen before any cargo command that expands it.
       - name: Build frontend
         run: npm run build
+
+      # The collector sidecar, on the Python its lockfiles were compiled for
+      # and the Windows build embeds (sidecar/.python-version).
+      - uses: actions/setup-python@v6
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          python-version-file: sidecar/.python-version
+
+      - name: Sidecar tests
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: sidecar
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --disable-pip-version-check -q --require-hashes -r requirements.txt -r requirements-dev.txt
+          .venv/bin/python -m pytest -q
 
       - name: Probe crate tests
         run: cargo test -p corelens-probe
@@ -129,6 +148,7 @@ jobs:
   bundle:
     name: bundle (${{ matrix.os }})
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -196,7 +216,7 @@ jobs:
       - uses: actions/setup-python@v6
         if: matrix.os == 'windows-latest'
         with:
-          python-version: '3.12'
+          python-version-file: sidecar/.python-version
 
       - name: Lay the collector sidecar
         if: matrix.os == 'windows-latest'
@@ -297,17 +317,17 @@ jobs:
         env:
           VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
         run: |
-          # The public halves of the certificates, beside the installer, for the
-          # install notes (docs/INSTALL-WINDOWS.md). Never a private key. The
-          # root also travels inside the installer (bundle.resources).
-          Copy-Item brand/corelens-root-ca.crt target/release/bundle/nsis/corelens-root-ca.crt
-          Copy-Item brand/corelens-desktop-codesign.crt target/release/bundle/nsis/corelens-desktop-codesign.crt
-          # The certificate the secret holds must be the one the repository
+          # The public halves of the signing chain, beside the installer, for
+          # the install notes (docs/SIGNING.md). Never a private key. None are
+          # published until this product has a certificate of its own.
+          $published = @(Get-ChildItem brand/signing/*.crt -ErrorAction SilentlyContinue)
+          foreach ($crt in $published) { Copy-Item $crt.FullName target/release/bundle/nsis/ }
+          # The certificate the secret holds must be one the repository
           # publishes, or the notes beside the installer describe another signer.
           if ($env:CORELENS_SIGN_THUMBPRINT) {
-            $published = (Get-PfxCertificate brand/corelens-desktop-codesign.crt).Thumbprint
-            if ($published -ne $env:CORELENS_SIGN_THUMBPRINT) {
-              Write-Host "::error title=Code signing::the installer was signed with $env:CORELENS_SIGN_THUMBPRINT but brand/corelens-desktop-codesign.crt is $published"
+            $thumbprints = @($published | ForEach-Object { (Get-PfxCertificate $_.FullName).Thumbprint })
+            if ($thumbprints -notcontains $env:CORELENS_SIGN_THUMBPRINT) {
+              Write-Host "::error title=Code signing::the installer was signed with $env:CORELENS_SIGN_THUMBPRINT, which no certificate under brand/signing/ is"
               exit 1
             }
           }
@@ -406,8 +426,7 @@ jobs:
   bundle-macos:
     name: bundle (macOS, universal .dmg)
     needs: test
-    # Asked for on its own — "can you build the macos". The Windows
-    # NSIS and this one; Linux, the MSI and the offline installer stay paused.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -525,6 +544,7 @@ jobs:
   install-check-windows:
     name: install check (Windows, no Python)
     needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -558,7 +578,7 @@ jobs:
           if (-not $exe) { Fail "corelens-desktop-ai.exe is not installed anywhere expected" }
           $dir = $exe.DirectoryName
           # The paths src-tauri/src/collection.rs resolves under the resource directory.
-          foreach ($need in @("sidecar\python.exe", "sidecar\python312._pth", "sidecar\Lib\site-packages\corelens_sidecar\__main__.py", "sidecar\Lib\site-packages\scrapli", "sidecar\Lib\site-packages\paramiko", "catalog\cisco_ios.yaml", "catalog\fortios.yaml", "templates\ntc\index", "templates\ntc\cisco_ios_show_version.textfsm", "templates\LICENSE", "THIRD-PARTY-NOTICES.md", "corelens-root-ca.crt")) {
+          foreach ($need in @("sidecar\python.exe", "sidecar\python312._pth", "sidecar\Lib\site-packages\corelens_sidecar\__main__.py", "sidecar\Lib\site-packages\scrapli", "sidecar\Lib\site-packages\paramiko", "catalog\cisco_ios.yaml", "catalog\fortios.yaml", "templates\ntc\index", "templates\ntc\cisco_ios_show_version.textfsm", "templates\LICENSE", "THIRD-PARTY-NOTICES.md")) {
             if (-not (Test-Path (Join-Path $dir $need))) { Fail "installed tree lacks $need (under $dir)" }
           }
           $sig = Get-AuthenticodeSignature $exe.FullName
@@ -611,7 +631,7 @@ jobs:
   release:
     name: release (GitHub Release and latest.json)
     needs: [bundle, bundle-macos, install-check-windows]
-    if: github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -629,6 +649,10 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error title=Release::the tag is $GITHUB_REF_NAME but package.json says $version"
+            exit 1
+          fi
           if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice title=Release::v$version is already published; nothing to do"
             echo "exists=true" >> "$GITHUB_OUTPUT"

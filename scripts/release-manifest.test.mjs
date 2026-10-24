@@ -13,8 +13,8 @@ const NAMES = [
   'Corelens-Desktop-AI_2.9.0_x64-setup.exe.sig',
   'SHA256SUMS.txt',
   'corelens-rust.cdx.json',
-  'corelens-root-ca.crt',
-  'corelens-desktop-codesign.crt',
+  'signing-root.crt',
+  'signing.crt',
   'Corelens-Desktop-AI_2.9.0_universal.dmg',
   'Corelens-Desktop-AI.app.tar.gz',
   'Corelens-Desktop-AI.app.tar.gz.sig',
@@ -28,7 +28,7 @@ describe('pickArtifacts', () => {
     expect(picked.mac).toBe('Corelens-Desktop-AI.app.tar.gz');
     expect(picked.macSig).toBe('Corelens-Desktop-AI.app.tar.gz.sig');
     expect(picked.dmg).toBe('Corelens-Desktop-AI_2.9.0_universal.dmg');
-    expect(picked.extras).toEqual(['SHA256SUMS.txt', 'corelens-rust.cdx.json', 'corelens-root-ca.crt', 'corelens-desktop-codesign.crt']);
+    expect(picked.extras).toEqual(['SHA256SUMS.txt', 'corelens-rust.cdx.json', 'signing-root.crt', 'signing.crt']);
   });
 
   it('refuses a release the app could not verify', () => {

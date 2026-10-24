@@ -1,26 +1,24 @@
 # Installing Corelens Desktop AI on Windows
 
-Corelens Desktop AI's Windows installer is signed with the app's own
-certificate — `CN=corelens.us Code Signing`, issued by its own root,
-`CN=corelens.us-Root-CA` (valid to October 2036). Builds up to 2.12.0 were
-signed under the earlier name, by `CN=COREVIEW-APP Code Signing` from
-`CN=COREVIEW-APP-Root-CA`; a machine that trusted that root needs the new
-one imported as well before a newer installer validates. It is not a certificate
-from a public authority, so a Windows machine does not trust it until the
-root is added. This page is how a customer's administrator does that, what
-it changes, and what it does not.
+Corelens Desktop AI's Windows installer is **not yet Authenticode-signed**:
+this product has no code-signing certificate of its own, and the one
+Corelens Desktop signs with is not used for it. Windows therefore shows
+*Unknown publisher*. What still holds is below: the installer's checksum,
+the VirusTotal scan it passed before it was published, and the minisign
+signature the app checks before it installs an update of itself. This page
+is how a customer's administrator checks and deploys it, and what to expect
+from SmartScreen meanwhile.
 
 ## What comes with each build
 
-From a green CI run's `corelens-windows-v<version>` artifact (for example
-`corelens-windows-v2.12.1`):
+From a green CI run's `corelens-windows-v<version>` artifact, or the
+release's assets:
 
 | File | What it is |
 | --- | --- |
-| `Corelens-Desktop_<version>_x64-setup.exe` | The installer. Signed, timestamped. |
+| `Corelens-Desktop-AI_<version>_x64-setup.exe` | The installer. |
+| `Corelens-Desktop-AI_<version>_x64-setup.exe.sig` | Its updater signature, which the app checks before installing an update. |
 | `SHA256SUMS.txt` | The installer's SHA-256, recorded after the VirusTotal scan passed. |
-| `corelens-root-ca.crt` | The root's **public** certificate — also in the repository at `brand/`, and installed beside the app as `corelens-root-ca.crt` in its folder. |
-| `corelens-desktop-codesign.crt` | The signing certificate's **public** half. |
 | `sbom/*.cdx.json` | CycloneDX software bills of materials: the Rust executable, the collector sidecar's Python, the page's npm packages. |
 
 No private key is ever in any of these.
@@ -28,106 +26,43 @@ No private key is ever in any of these.
 ## 1. Check the file is the one that was built
 
 ```powershell
-(Get-FileHash .\Corelens-Desktop_2.12.1_x64-setup.exe -Algorithm SHA256).Hash.ToLower()
+(Get-FileHash .\Corelens-Desktop-AI_<version>_x64-setup.exe -Algorithm SHA256).Hash.ToLower()
 Get-Content .\SHA256SUMS.txt
 ```
 
-The two must be equal. Compare the root's thumbprint too before trusting it:
+The two must be equal.
 
-```powershell
-(Get-PfxCertificate .\corelens-root-ca.crt).Thumbprint
-# 876586A112CBBDDA42E9016BFC6B49468B13F173
-```
+## 2. SmartScreen and Microsoft Defender
 
-## 2. Trust the certificate
-
-Both stores, on the machine (not the user):
-
-- the **root** into *Trusted Root Certification Authorities*, so the
-  signature chains to something Windows trusts;
-- the **signing certificate** into *Trusted Publishers*, so Windows treats
-  software signed with it as from a trusted publisher without asking.
-
-On one machine, as administrator:
-
-```powershell
-Import-Certificate -FilePath .\corelens-root-ca.crt           -CertStoreLocation Cert:\LocalMachine\Root
-Import-Certificate -FilePath .\corelens-desktop-codesign.crt -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
-```
-
-or with `certutil`:
-
-```bat
-certutil -addstore -f Root corelens-root-ca.crt
-certutil -addstore -f TrustedPublisher corelens-desktop-codesign.crt
-```
-
-Across an estate, Group Policy: *Computer Configuration → Policies →
-Windows Settings → Security Settings → Public Key Policies*, then import the
-root under **Trusted Root Certification Authorities** and the signing
-certificate under **Trusted Publishers**.
-
-Check it took:
-
-```powershell
-Get-AuthenticodeSignature .\Corelens-Desktop_2.12.1_x64-setup.exe | Format-List Status, SignerCertificate
-```
-
-`Status : Valid`, signer `CN=corelens.us Code Signing`. Before step 2 the
-same command says `UnknownError` — expected, not a broken build.
-
-## 3. SmartScreen and Microsoft Defender — what trusting the certificate does and does not do
-
-Being plain about this, because it is the question every administrator asks:
-
-- **User Account Control** shows *Verified publisher: corelens.us* instead
-  of *Unknown*. That is what the two stores above change.
-- **Defender SmartScreen**'s "Windows protected your PC" prompt is decided
-  by *reputation*, which Microsoft keeps for certificates from public
-  authorities. A private certificate has none and cannot earn any, and
-  adding it to the stores above does **not** give it any. SmartScreen only
-  looks at files that carry the *Mark of the Web* — files downloaded through
-  a browser. So:
+- **User Account Control** shows *Unknown publisher*. That changes only
+  with a code-signing certificate.
+- **Defender SmartScreen**'s "Windows protected your PC" prompt looks only
+  at files that carry the *Mark of the Web* — files downloaded through a
+  browser. So:
   - on one machine, clear the mark before running it:
-    `Unblock-File .\Corelens-Desktop_2.12.1_x64-setup.exe` (or *Properties →
-    Unblock*);
+    `Unblock-File .\Corelens-Desktop-AI_<version>_x64-setup.exe` (or
+    *Properties → Unblock*), or choose *More info → Run anyway*;
   - across an estate, deploy the installer the way managed software is
     deployed — Intune, Configuration Manager, a file share, a GPO software
     installation — none of which set the mark, so SmartScreen never asks.
 - **Microsoft Defender Antivirus** scans the installer like any file. Each
-  build's installer has already passed VirusTotal with no detection before it
-  was published (the build fails otherwise). Organisations on **Defender for
-  Endpoint** can add an *Allow* indicator for the signing certificate
-  (*Settings → Endpoints → Indicators → Certificates*, upload
-  `corelens-desktop-codesign.crt`), which tells Defender to allow files signed
-  with it.
-- **App Control for Business / WDAC** estates add a publisher rule for the
-  signing certificate in their policy.
-
-If the SmartScreen prompt itself must go away for machines nobody manages,
-that takes a certificate from a public authority; the decision on record
-(2026-09-29) is to stay on the Corelens certificate.
-
+  build's installer has already passed VirusTotal with no detection before
+  it was published (the build fails otherwise). **App Control for Business /
+  WDAC** estates need a hash rule for an unsigned installer.
 - **Chrome may refuse the download outright** — "This file is dangerous",
-  with no *Keep* button. That is Google Safe Browsing's download
-  protection, which judges an installer by the reputation of its signing
-  certificate and finds none for a private one; it is the same verdict a
-  public certificate would cure, and nothing in the build changes it. Each
-  build has passed VirusTotal before it was published, so it is not a
-  detection. Three ways past it, from best to worst:
-  1. Fetch the artifact without a browser. From a terminal with the GitHub
-     CLI signed in: `gh run download <run id> -n corelens-windows-v<version>
-     -R <owner>/<repo>` (the run id is in the Actions URL). Nothing is
-     flagged, and the file arrives without the Mark of the Web.
+  with no *Keep* button. That is Google Safe Browsing judging an installer
+  with no signing reputation; it is not a detection. Three ways past it,
+  from best to worst:
+  1. Fetch it without a browser. From a terminal with the GitHub CLI signed
+     in: `gh release download v<version> -R <owner>/<repo>`, or
+     `gh run download <run id> -n corelens-windows-v<version> -R
+     <owner>/<repo>`. Nothing is flagged, and the file arrives without the
+     Mark of the Web.
   2. Download with Edge, which warns but offers *Keep*.
   3. In Chrome, *chrome://settings/security* → Safe Browsing → *No
      protection* for the one download, then put it back. Do not leave it off.
-  Google takes false-positive reports at
-  https://safebrowsing.google.com/safebrowsing/report_error/; they do not
-  change the verdict quickly, and only a public certificate changes it for
-  good.
 
-## 4. Install
+## 3. Install
 
 Run the installer (per-machine; it asks for elevation). It installs the
 collector sidecar — a private copy of Python with its own libraries — in
@@ -138,7 +73,7 @@ Corelens, is not put on `PATH`, and is removed with Corelens.
 downloads the next version's installer — the same signed `-setup.exe` that
 is on the Releases page — checks its updater signature against the key
 built into the app, and runs it. It asks for elevation exactly as a manual
-install does, and everything in sections 1 to 3 applies to it unchanged.
+install does, and everything in sections 1 and 2 applies to it unchanged.
 Nothing is checked or downloaded unless the button is pressed or the
 automatic check beside it has been switched on; it is off by default.
 
