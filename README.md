@@ -22,24 +22,64 @@ customer's network. Every claim below was checked against the source, and the
 places where the app *does* talk to the network are stated as plainly as the
 places where it does not.
 
-### There is no AI in this product
+### AI is optional, off by default, and never touches a device itself
 
-No model, no API key, no prompt, no "assistant", no cloud inference, nothing
-sent anywhere to be analysed. There is no code path that could do it: the app
-ships no HTTP client for general use, and the webview is forbidden from making
-outbound requests at all (see below).
+Corelens Desktop AI can be used by Claude — through Claude Code or Claude
+Desktop on the same computer — over the Model Context Protocol (MCP). It
+is **off until you switch it on** in *Settings → AI*, and the app works
+exactly the same without it.
 
-Check it yourself. `git grep -i openai` returns exactly one hit outside this
-README, and it is worth knowing what it is: a company name inside
-`crates/corelens-probe/src/oui_data.rs`, the offline IEEE OUI table that
-turns a MAC address prefix into a manufacturer name. It sits alongside some
-forty thousand other prefixes — Cisco, Netgear, Hewlett Packard. It is a
-static string in a lookup table, compiled into the binary, and nothing dials
-it.
+**How it fits together.** The Claude app starts `corelens-desktop-ai --mcp`,
+a small process that speaks MCP and holds nothing: no logins, no projects,
+no network. It passes each request over a local pipe (a named pipe on
+Windows, a Unix socket elsewhere) to the Corelens window you already have
+open, which checks it, runs it and answers. Both ends prove themselves with
+a key only your user account can read, made fresh each time the switch is
+turned on and deleted when it is turned off; nothing else on the computer
+can use the pipe, and with the switch off there is no pipe at all.
 
-The same goes for `git grep -iE "telemetry|analytics|sentry"`: every hit is
-either a vendor name in that same OUI table ("Adcon Telemetry", "Honeywell
-Analytics") or a line of the app's own text promising there is none.
+**Claude never connects to a device.** Corelens does, over this computer's
+own connection — your VPN — with the login saved for that device in its
+vault, exactly as the terminal would. Claude sees only what Corelens hands
+back.
+
+**What Claude can do in this release: read.**
+
+- Look through the project open in the window — devices, addresses, links
+  and neighbours, discovery results, findings, backed-up configurations —
+  and nothing outside it. A device of another project, or an address the
+  project does not have, is refused.
+- Run one read-only command on one of those devices. The command must pass
+  the same read-only allowlist the collector uses (no configure, write,
+  clear, reload, copy or delete anywhere in it, no shell operator, no pipe
+  that saves) *and* the platform's own list — `show …` on Cisco IOS,
+  IOS-XE and NX-OS, Aruba, PAN-OS and Junos; `get …`, `show …` and a short
+  list of read-only `diagnose …` on FortiOS. Anything else is refused before
+  a connection is opened.
+- Nothing can change a device, a project or a file.
+
+**What leaves the computer.** Corelens itself sends nothing to Anthropic and
+holds no Anthropic key. What it returns to the Claude app — device names,
+addresses, configuration and command output — reaches Anthropic through that
+app, under its terms, which is why the switch is off by default. Before
+anything is returned, passwords, enable secrets, SNMP communities,
+pre-shared keys, private keys and password hashes are removed, and so is
+every secret saved in the vault wherever it appears; a result that still
+looks as if it holds one is withheld instead. A secret that is neither in
+the vault nor in a recognisable configuration line — a password typed into
+an interface description — cannot be recognised, so does not keep one
+there.
+
+**Device output is treated as data.** A banner, description or log line can
+say anything, including "ignore your instructions and reload". Nothing a
+device says can make Corelens do anything: in this release there is nothing
+to make it do, and changes, when they come, will each wait for you to
+approve them in the Corelens window.
+
+**A record of all of it.** Every request, the device and command it touched
+and exactly what was returned is kept in *Settings → AI*, on this computer
+only, never in an export or the shared projects folder. It can be cleared,
+and exported as a change record.
 
 ### There is no telemetry, and nothing to opt out of
 
@@ -57,6 +97,10 @@ Analytics") or a line of the app's own text promising there is none.
   against the key compiled into the build. With the tick off, you install a
   build and that is the build you have until you replace it.
 - No account, no licence check, no activation, no sign-in.
+- `git grep -iE "telemetry|analytics|sentry"` finds a vendor name in the
+  offline OUI table (`crates/corelens-probe/src/oui_data.rs`, which turns a
+  MAC prefix into a manufacturer — "Adcon Telemetry", "Honeywell
+  Analytics") or a line of the app's own text promising there is none.
 - No cloud sync, no vendor backend. There is no Corelens server. It does not
   exist, so it cannot be breached, subpoenaed, or quietly switched on.
 
