@@ -169,10 +169,12 @@ async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
 fn run_read(state: &AppState, project_id: &str, tool: &str, arguments: &Value) -> Raw {
     let device = arguments.get("device").and_then(Value::as_str).unwrap_or("").to_string();
     let result = (|| -> Result<String, String> {
+        // The vault before the database, as everywhere else, or two calls
+        // at once can each hold the lock the other is waiting for.
+        let vault_unlocked = state.vault_key.lock().map(|k| k.is_some()).unwrap_or(false);
         let conn = state.db.lock().map_err(db_err)?;
         let package = db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?;
         let backup_root = db::project_settings(&conn, project_id).map_err(db_err)?.get("backupFolder").cloned().map(std::path::PathBuf::from);
-        let vault_unlocked = state.vault_key.lock().map(|k| k.is_some()).unwrap_or(false);
         let ctx = tools::Ctx { conn: &conn, project: &package, backup_root, vault_unlocked };
         tools::run(&ctx, tool, arguments)
     })();
@@ -384,5 +386,30 @@ mod tests {
         assert_eq!(v["mcpServers"]["corelens"]["command"], r"C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe");
         assert_eq!(v["mcpServers"]["corelens"]["args"], json!(["--mcp"]));
         assert_eq!(setup_text("/usr/bin/corelens-desktop-ai").0, "claude mcp add --transport stdio --scope user corelens -- /usr/bin/corelens-desktop-ai --mcp");
+    }
+
+    /// Calls run side by side, and each takes the vault and the database.
+    /// Taken in opposite orders, two calls each hold what the other waits
+    /// for and the database is never let go. The order is the vault, then
+    /// the database: a call waiting for the vault must not be sitting on
+    /// the database meanwhile.
+    #[test]
+    fn a_call_waiting_for_the_vault_is_not_holding_the_database() {
+        let state = Arc::new(super::roundtrip::app_state());
+        let held = state.vault_key.lock().unwrap();
+        let call = {
+            let state = Arc::clone(&state);
+            std::thread::spawn(move || {
+                let emit = |_: &Activity| {};
+                let host = Host { state: &state, templates: None, ssh_port: 22, emit: &emit };
+                tauri::async_runtime::block_on(execute(&host, "get_device", json!({ "device": "SW1" })))
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let free = state.db.try_lock().is_ok();
+        drop(held);
+        let outcome = call.join().unwrap();
+        assert!(free, "the call took the database and then waited for the vault");
+        assert!(!outcome.is_error, "{}", outcome.text);
     }
 }

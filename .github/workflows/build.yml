@@ -11,11 +11,20 @@ name: build
 # install check and the release run on a `v*` tag, or when the workflow is
 # started by hand (Actions -> build -> Run workflow).
 #
+# For now only the standard Windows installer (NSIS, with the WebView2
+# bootstrapper) is built: the macOS bundle, the offline installer, the
+# Linux bundles, the AppImage and install checks and the release are
+# switched off with `if: false`, their steps kept, each saying what to
+# restore. The installer is the run's artifact `corelens-windows-v<version>`.
+#
 # A release is cut by pushing the tag `v<version>` for the version in
 # package.json: the `release` job checks the two agree, then publishes the
 # installers, their updater signatures and `latest.json`, which the app's
 # own "Check for updates" reads. Started by hand on main, the job makes the
 # tag itself when the version has no release yet.
+#
+# Every job has `timeout-minutes`, set at about twice its usual length, so
+# a test that hangs costs that much and no more (the default is six hours).
 
 on:
   push:
@@ -31,6 +40,7 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -152,6 +162,7 @@ jobs:
   audit:
     name: audit (reported, not blocking)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v5
@@ -185,6 +196,7 @@ jobs:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -401,6 +413,7 @@ jobs:
     # Paused again with the rest — NSIS only.
     if: false
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -464,8 +477,12 @@ jobs:
   bundle-macos:
     name: bundle (macOS, universal .dmg)
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Paused: the standard Windows installer is the only bundle for now.
+    # To turn it back on, restore:
+    # if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: false
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -528,6 +545,7 @@ jobs:
     # No AppImage to test while the Linux bundle is paused.
     if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -582,8 +600,11 @@ jobs:
   install-check-windows:
     name: install check (Windows, no Python)
     needs: bundle
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Paused with the bundles above. To turn it back on, restore:
+    # if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: false
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -669,8 +690,14 @@ jobs:
   release:
     name: release (GitHub Release and latest.json)
     needs: [bundle, bundle-macos, install-check-windows]
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # Paused: a release needs the macOS update archive as well as the
+    # Windows installer (release-manifest.mjs refuses one without the
+    # other), so while only Windows is built the installer is the run's
+    # artifact. To turn it back on with bundle-macos, restore:
+    # if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

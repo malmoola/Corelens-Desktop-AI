@@ -99,13 +99,13 @@ pub fn unlock_vault_from_keychain(state: State<'_, AppState>) -> CmdResult<Strin
         }
     };
     let outcome = crate::keychain::recall_or_adopt(&crate::keychain::entry()?, &crate::keychain::previous_entries(), &header)?;
-    let conn = state.db.lock().map_err(db_err)?;
     Ok(match outcome {
         crate::keychain::Recalled::Opened(key) => {
             *state.vault_key.lock().map_err(db_err)? = Some(key);
             "opened".into()
         }
         crate::keychain::Recalled::NothingKept | crate::keychain::Recalled::Stale => {
+            let conn = state.db.lock().map_err(db_err)?;
             db::set_setting(&conn, KEYCHAIN_SETTING, None).map_err(db_err)?;
             "stale".into()
         }
@@ -135,10 +135,12 @@ pub struct CredentialSummary {
 
 #[tauri::command(async)]
 pub fn vault_status(state: State<'_, AppState>) -> CmdResult<VaultStatus> {
+    // Read before the database is taken: the vault comes first wherever
+    // both are wanted.
+    let unlocked = state.vault_key.lock().map_err(db_err)?.is_some();
     let conn = state.db.lock().map_err(db_err)?;
     let exists = db::vault_header(&conn).map_err(db_err)?.is_some();
     let credentials = db::list_credentials(&conn).map_err(db_err)?.len();
-    let unlocked = state.vault_key.lock().map_err(db_err)?.is_some();
     Ok(VaultStatus {
         exists,
         unlocked,
@@ -151,13 +153,15 @@ pub fn vault_status(state: State<'_, AppState>) -> CmdResult<VaultStatus> {
 /// Creates the vault and leaves it unlocked for this session.
 #[tauri::command(async)]
 pub fn create_vault(state: State<'_, AppState>, passphrase: String) -> CmdResult<()> {
+    // The vault before the database, wherever both are held.
+    let mut slot = state.vault_key.lock().map_err(db_err)?;
     let conn = state.db.lock().map_err(db_err)?;
     if db::vault_header(&conn).map_err(db_err)?.is_some() {
         return Err("A vault already exists. Unlock it, or discard it and start again.".into());
     }
     let (header, key) = vault::create(&passphrase).map_err(|e| e.to_string())?;
     db::create_vault(&conn, &header.salt, &header.verifier, now_ms()).map_err(db_err)?;
-    *state.vault_key.lock().map_err(db_err)? = Some(key);
+    *slot = Some(key);
     Ok(())
 }
 
@@ -197,9 +201,12 @@ pub fn lock_vault(state: State<'_, AppState>) -> CmdResult<()> {
 /// contents. Returns how many credentials went, for the confirmation.
 #[tauri::command(async)]
 pub fn discard_vault(state: State<'_, AppState>) -> CmdResult<usize> {
+    // The vault before the database, wherever both are held.
+    let mut slot = state.vault_key.lock().map_err(db_err)?;
     let conn = state.db.lock().map_err(db_err)?;
     let removed = db::destroy_vault(&conn).map_err(db_err)?;
-    *state.vault_key.lock().map_err(db_err)? = None;
+    *slot = None;
+    drop(slot);
     // A key kept for the vault that is gone goes with it.
     if kept_in_keychain(&conn)? {
         if let Ok(entry) = crate::keychain::entry() {

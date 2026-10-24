@@ -10,7 +10,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use corelens_mcp::{bridge, Backend, BoxFuture, Outcome};
 use rusqlite::Connection;
@@ -44,7 +46,13 @@ fn data_dir(home: &Path) -> PathBuf {
 
 /// The app's state as the window has it once the engineer has opened the
 /// project and unlocked the vault: one switch, its login saved.
-fn app_state() -> AppState {
+pub(super) fn app_state() -> AppState {
+    app_state_as("SW1", true)
+}
+
+/// The same, with the switch under another name and the vault either
+/// unlocked or still locked.
+fn app_state_as(label: &str, unlocked: bool) -> AppState {
     let conn = Connection::open_in_memory().unwrap();
     db::migrate_for_tests(&conn);
     let (header, key) = corelens_discover::vault::create("fixture vault passphrase").unwrap();
@@ -63,6 +71,7 @@ fn app_state() -> AppState {
     db::set_credential_owner(&conn, "cred-1", Some("p1")).unwrap();
     let mut document = super::project::fixture::document();
     document["pages"][0]["nodes"][0]["data"]["addresses"][0]["address"] = json!("127.0.0.1");
+    document["pages"][0]["nodes"][0]["data"]["label"] = json!(label);
     let package: db::ProjectPackage = serde_json::from_value(json!({
         "meta": { "id": "p1", "name": "Example project", "customer": "Example Co", "site": "HQ", "created_at": 1, "updated_at": 1 },
         "document_version": 1,
@@ -77,7 +86,7 @@ fn app_state() -> AppState {
         session_id: Mutex::new(None),
         project_id: Mutex::new(None),
         jobs: Arc::new(crate::jobs::Jobs::default()),
-        vault_key: Mutex::new(Some(key)),
+        vault_key: Mutex::new(unlocked.then_some(key)),
         limiter: crate::ratelimit::RateLimiter::default(),
         sessions: Arc::new(crate::terminal::Sessions::default()),
         export_targets: crate::commands::ExportTargets::default(),
@@ -102,34 +111,70 @@ impl Backend for Window {
     }
 }
 
+/// The longest a session may take: every call is bounded well inside
+/// this (a show command by its own limit, the bridge by its call limit),
+/// so passing it means a reply was lost, not that a device was slow.
+const SESSION_LIMIT: Duration = Duration::from_secs(300);
+
 /// One session with the binary: the requests in, every reply out. Stdin
 /// stays open until each request has its answer, as a client keeps it
-/// open; the server lets calls still running at end of input go.
+/// open; the server lets calls still running at end of input go. A reply
+/// that never comes fails the test with the ids still missing and the
+/// binary's own log of what it received, rather than waiting for ever.
 fn session(home: &Path, requests: &[Value]) -> Vec<Value> {
+    let log = home.join("stderr.log");
     let mut child = Command::new(binary())
         .arg("--mcp")
         .env("XDG_DATA_HOME", home)
         .env("HOME", home)
         .env("LOCALAPPDATA", home)
+        .env("CORELENS_MCP_DEBUG", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(std::fs::File::create(&log).unwrap())
         .spawn()
         .expect("the binary starts");
     let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel::<String>();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
     for r in requests {
         writeln!(stdin, "{r}").unwrap();
     }
-    let wanted = requests.iter().filter(|r| r.get("id").is_some()).count();
+    let mut waiting: Vec<Value> = requests.iter().filter_map(|r| r.get("id").cloned()).collect();
+    let deadline = Instant::now() + SESSION_LIMIT;
     let mut replies: Vec<Value> = Vec::new();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    while replies.len() < wanted {
-        let Some(line) = lines.next() else { break };
-        replies.push(serde_json::from_str(&line.unwrap()).expect("every stdout line is an MCP message"));
+    while !waiting.is_empty() {
+        let line = match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "no reply within {}s to ids {waiting:?}; the binary's log:\n{}",
+                    SESSION_LIMIT.as_secs(),
+                    std::fs::read_to_string(&log).unwrap_or_default()
+                );
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
+        let r: Value = serde_json::from_str(&line).expect("every stdout line is an MCP message");
+        waiting.retain(|id| *id != r["id"]);
+        replies.push(r);
     }
     drop(stdin);
-    assert!(lines.next().is_none(), "nothing more after the last answer");
-    assert!(child.wait().unwrap().success());
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    let rest: Vec<String> = rx.try_iter().collect();
+    assert!(rest.is_empty(), "nothing more after the last answer: {rest:?}");
+    assert!(status.success(), "the binary exited with {status}");
     replies
 }
 
@@ -189,12 +234,21 @@ fn modern(calls: &[(i64, &str, Value)]) -> Vec<Value> {
         .collect()
 }
 
+/// On Windows the bridge is one pipe per user, so the tests that open it
+/// take turns; elsewhere each has its own socket and this costs nothing.
+static BRIDGE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn with_window<T: Send + 'static>(run: impl FnOnce(PathBuf) -> T + Send + 'static) -> (T, FakeDevice) {
+    with_window_over(app_state(), run).await
+}
+
+async fn with_window_over<T: Send + 'static>(state: AppState, run: impl FnOnce(PathBuf) -> T + Send + 'static) -> (T, FakeDevice) {
+    let _turn = BRIDGE.lock().await;
     let home = tempfile::tempdir().unwrap();
     let dir = data_dir(home.path());
     std::fs::create_dir_all(&dir).unwrap();
     let dev = FakeDevice::start().await;
-    let listening = bridge::listen(bridge::endpoint(&dir), Arc::new(Window { state: app_state(), ssh_port: dev.port })).await.unwrap();
+    let listening = bridge::listen(bridge::endpoint(&dir), Arc::new(Window { state, ssh_port: dev.port })).await.unwrap();
     let h = home.path().to_path_buf();
     let out = tokio::task::spawn_blocking(move || run(h)).await.unwrap();
     listening.stop().await;
@@ -265,4 +319,60 @@ async fn a_bad_call_names_the_tool_and_the_keys_never_the_values() {
         assert!(!r.contains("value-never-echoed"), "a value was echoed: {r}");
     }
     assert!(dev.asked().iter().all(|c| c != "show ip arp"), "a refused call reached the switch");
+}
+
+/// A call as Claude Desktop sends it: the initialize era, a `_meta` with
+/// a progress token beside the name, the arguments as an object.
+fn desktop_call(id: i64, name: &str, arguments: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call", "params": { "name": name, "arguments": arguments, "_meta": { "progressToken": id } } })
+}
+
+fn desktop_session(calls: Vec<Value>) -> Vec<Value> {
+    let mut out = vec![
+        json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": "2025-06-18", "capabilities": { "extensions": {} }, "clientInfo": { "name": "claude-ai", "version": "0.1.0" } } }),
+        json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+        json!({ "jsonrpc": "2.0", "id": 900, "method": "tools/list", "params": {} }),
+    ];
+    out.extend(calls);
+    out
+}
+
+/// Claude Desktop's own shape, a device named with hyphens, `show
+/// version`, eight at once alongside reads of the same device: each one
+/// reaches the switch and none loses its arguments on the way.
+#[tokio::test(flavor = "multi_thread")]
+async fn claude_desktops_call_in_parallel_keeps_its_arguments() {
+    let name = "EXAMPLE-MAIN-SW";
+    let mut calls = Vec::new();
+    for i in 1..=8 {
+        calls.push(desktop_call(i, "run_show_command", json!({ "device": name, "command": "show version" })));
+        calls.push(desktop_call(100 + i, "get_device", json!({ "device": name })));
+    }
+    let requests = desktop_session(calls);
+    let (replies, dev) = with_window_over(app_state_as(name, true), move |home| session(&home, &requests)).await;
+    for i in 1..=8 {
+        let r = reply(&replies, i);
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        assert!(text(r).contains(name) && text(r).contains("show version"), "{r}");
+        let d = reply(&replies, 100 + i);
+        assert_eq!(d["result"]["isError"], false, "{d}");
+    }
+    assert!(dev.asked().iter().filter(|c| *c == "show version").count() >= 8, "{:?}", dev.asked());
+}
+
+/// With the vault still locked the answer says so, for every call at
+/// once, and never that the arguments were wrong.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_locked_vault_is_said_plainly_and_never_as_missing_arguments() {
+    let name = "EXAMPLE-MAIN-SW";
+    let calls = (1..=6).map(|i| desktop_call(i, "run_show_command", json!({ "device": name, "command": "show version" }))).collect();
+    let requests = desktop_session(calls);
+    let (replies, dev) = with_window_over(app_state_as(name, false), move |home| session(&home, &requests)).await;
+    for i in 1..=6 {
+        let r = reply(&replies, i);
+        assert_eq!(r["result"]["isError"], true, "{r}");
+        let t = text(r);
+        assert!(t.contains("vault in Corelens is locked") && !t.contains("missing field") && !t.contains("do not match its schema"), "{t}");
+    }
+    assert!(dev.asked().is_empty(), "a locked vault still reached the switch: {:?}", dev.asked());
 }
