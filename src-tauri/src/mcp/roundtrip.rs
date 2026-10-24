@@ -122,6 +122,11 @@ const SESSION_LIMIT: Duration = Duration::from_secs(300);
 /// that never comes fails the test with the ids still missing and the
 /// binary's own log of what it received, rather than waiting for ever.
 fn session(home: &Path, requests: &[Value]) -> Vec<Value> {
+    session_logged(home, requests).0
+}
+
+/// The same, with what the binary wrote to its debug log.
+fn session_logged(home: &Path, requests: &[Value]) -> (Vec<Value>, String) {
     let log = home.join("stderr.log");
     let mut child = Command::new(binary())
         .arg("--mcp")
@@ -175,7 +180,7 @@ fn session(home: &Path, requests: &[Value]) -> Vec<Value> {
     let rest: Vec<String> = rx.try_iter().collect();
     assert!(rest.is_empty(), "nothing more after the last answer: {rest:?}");
     assert!(status.success(), "the binary exited with {status}");
-    replies
+    (replies, std::fs::read_to_string(&log).unwrap_or_default())
 }
 
 fn reply(replies: &[Value], id: i64) -> &Value {
@@ -349,13 +354,13 @@ async fn claude_desktops_call_in_parallel_keeps_its_arguments() {
         calls.push(desktop_call(100 + i, "get_device", json!({ "device": name })));
     }
     let requests = desktop_session(calls);
-    let (replies, dev) = with_window_over(app_state_as(name, true), move |home| session(&home, &requests)).await;
+    let ((replies, log), dev) = with_window_over(app_state_as(name, true), move |home| session_logged(&home, &requests)).await;
     for i in 1..=8 {
         let r = reply(&replies, i);
-        assert_eq!(r["result"]["isError"], false, "{r}");
+        assert_eq!(r["result"]["isError"], false, "{r}\nthe binary's log:\n{log}");
         assert!(text(r).contains(name) && text(r).contains("show version"), "{r}");
         let d = reply(&replies, 100 + i);
-        assert_eq!(d["result"]["isError"], false, "{d}");
+        assert_eq!(d["result"]["isError"], false, "{d}\nthe binary's log:\n{log}");
     }
     assert!(dev.asked().iter().filter(|c| *c == "show version").count() >= 8, "{:?}", dev.asked());
 }

@@ -34,6 +34,8 @@ pub const CALL_LIMIT: Duration = Duration::from_secs(120);
 
 pub const NOT_LISTENING: &str = "Corelens Desktop AI is not running, or \"Let Claude use Corelens\" is off in its Settings → AI. \
 Start the app, open the customer's project, switch it on, and try again.";
+pub const BUSY: &str = "Corelens Desktop AI is running, but every connection to it stayed busy for 10 seconds. \
+Try again; if it keeps happening, ask for fewer things at once.";
 pub const NOT_PROVEN: &str = "Whatever answered on the Corelens bridge could not prove it is this computer's Corelens Desktop AI, \
 so nothing was sent to it. Close Corelens Desktop AI, start it again, and retry.";
 
@@ -202,9 +204,30 @@ impl Backend for Client {
             let Some(key) = read_key(&self.endpoint.key_file) else { return Outcome::error(NOT_LISTENING) };
             match connect(&self.endpoint.address).await {
                 Ok(stream) => call_over(stream, &key, tool, arguments).await,
-                Err(_) => Outcome::error(NOT_LISTENING),
+                Err(e) => {
+                    if crate::server::debug() {
+                        eprintln!("corelens-mcp: tools/call {tool}: the bridge did not connect: {e}");
+                    }
+                    Outcome::error(if is_busy(&e) { BUSY } else { NOT_LISTENING })
+                }
             }
         })
+    }
+}
+
+/// Every instance of the pipe taken: the app is there, only busy.
+#[cfg(windows)]
+const ERROR_PIPE_BUSY: i32 = 231;
+
+fn is_busy(e: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        e.raw_os_error() == Some(ERROR_PIPE_BUSY)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = e;
+        false
     }
 }
 
@@ -216,12 +239,14 @@ async fn connect(address: &str) -> std::io::Result<tokio::net::UnixStream> {
 #[cfg(windows)]
 async fn connect(address: &str) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
     use tokio::net::windows::named_pipe::ClientOptions;
-    // Every instance busy: wait briefly for one, as a pipe client does.
-    const ERROR_PIPE_BUSY: i32 = 231;
+    // Every instance busy: the app is there and opens the next one as soon
+    // as its accept loop runs, so wait for it. A Unix socket queues the
+    // client instead; a pipe turns it away. No pipe at all is answered at
+    // once.
     let start = std::time::Instant::now();
     loop {
         match ClientOptions::new().open(address) {
-            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) && start.elapsed() < Duration::from_secs(2) => {
+            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) && start.elapsed() < Duration::from_secs(10) => {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
             other => return other,

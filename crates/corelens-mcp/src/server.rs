@@ -94,7 +94,7 @@ fn result(id: Value, era: &Era, mut body: Map<String, Value>) -> Value {
 /// `CORELENS_MCP_DEBUG=1`: each tools/call's tool and the keys of its
 /// params and arguments go to stderr, which an MCP client keeps in its log.
 /// Never a value.
-fn debug() -> bool {
+pub(crate) fn debug() -> bool {
     std::env::var("CORELENS_MCP_DEBUG").as_deref() == Ok("1")
 }
 
