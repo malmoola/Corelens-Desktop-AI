@@ -119,27 +119,62 @@ jobs:
             exit 1
           fi
 
-      # Known vulnerabilities. What ships — every Rust crate, and the
-      # npm packages bundled into the app — fails the build. Development-only
+      # Known vulnerabilities, on a push or a pull request. What ships — every
+      # Rust crate, and the npm packages bundled into the app — fails the
+      # build. On a tag or a run by hand the same checks run in the `audit`
+      # job instead, which no installer waits for, so an advisory published
+      # that day is reported without holding back the installers. Development-only
       # npm packages (the test runner and dev server) are reported as a warning:
       # they never reach an installer, and their fixes are major upgrades that
       # get their own roadmap item. Ignored Rust advisories, each with its
       # reason, are in .cargo/audit.toml.
       - name: npm audit
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         shell: bash
         run: |
           npm audit --omit=dev
           npm audit || echo "::warning title=npm audit::development-only packages have advisories; see this step's log"
 
       - name: Install cargo-audit
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
 
       - name: cargo audit
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        run: cargo audit
+
+  # The vulnerability checks on a tag or a run by hand: the same two as the
+  # test job runs on a push, reported as this job's own result. Nothing
+  # needs this job, so its failure marks the run red without stopping the
+  # installers being built.
+  audit:
+    name: audit (reported, not blocking)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: npm audit
+        shell: bash
+        run: |
+          npm audit --omit=dev
+          npm audit || echo "::warning title=npm audit::development-only packages have advisories; see this step's log"
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
         run: cargo audit
 
   # Every installer: NSIS and MSI for Windows, .deb and AppImage for Linux, the
@@ -295,8 +330,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           $out = "target/release/bundle/nsis/sbom"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
+          # Reported, not failed: the audit job is where an advisory turns
+          # the run red, so a new one never holds back the installer.
           cargo audit bin target/release/corelens-desktop-ai.exe
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=SBOM::cargo audit found advisories in corelens-desktop-ai.exe"; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=SBOM::cargo audit found advisories in corelens-desktop-ai.exe; see the audit job" }
+          $global:LASTEXITCODE = 0
           Push-Location src-tauri
           cargo cyclonedx --format json --target x86_64-pc-windows-msvc --override-filename corelens-rust.cdx
           Pop-Location

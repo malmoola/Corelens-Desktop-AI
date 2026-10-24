@@ -175,7 +175,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | crc32fast | 1.5.1 | MIT OR Apache-2.0 |
 | crossbeam-channel | 0.5.16 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.22 | MIT OR Apache-2.0 |
-| crypto-bigint | 0.7.5 | Apache-2.0 OR MIT |
+| crypto-bigint | 0.7.6 | Apache-2.0 OR MIT |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 |
 | crypto-primes | 0.7.2 | Apache-2.0 OR MIT |
@@ -185,7 +185,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | ctor-proc-macro | 0.0.7 | Apache-2.0 OR MIT |
 | ctr | 0.10.1 | MIT OR Apache-2.0 |
 | ctr | 0.9.2 | MIT OR Apache-2.0 |
-| ctutils | 0.4.4 | Apache-2.0 OR MIT |
+| ctutils | 0.4.5 | Apache-2.0 OR MIT |
 | curve25519-dalek | 5.0.0 | BSD-3-Clause |
 | curve25519-dalek-derive | 0.1.1 | MIT/Apache-2.0 |
 | darling | 0.23.0 | MIT |
@@ -1439,13 +1439,13 @@ SOFTWARE.
 - cpufeatures 0.3.1
 - crossbeam-channel 0.5.16
 - crossbeam-utils 0.8.22
-- crypto-bigint 0.7.5
+- crypto-bigint 0.7.6
 - crypto-common 0.1.7
 - crypto-common 0.2.2
 - crypto-primes 0.7.2
 - ctr 0.10.1
 - ctr 0.9.2
-- ctutils 0.4.4
+- ctutils 0.4.5
 - curve25519-dalek-derive 0.1.1
 - data-url 0.3.2
 - dbus-secret-service 4.1.0
@@ -3084,7 +3084,7 @@ THE SOFTWARE.
 ### 9 components
 
 - argon2 0.6.0
-- crypto-bigint 0.7.5
+- crypto-bigint 0.7.6
 - phc 0.6.1
 - pkcs5 0.8.1
 - scrypt 0.12.0
@@ -12243,7 +12243,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### ctutils 0.4.4
+### ctutils 0.4.5
 
 ```
 Copyright (c) 2025-2026 The RustCrypto Project Developers
