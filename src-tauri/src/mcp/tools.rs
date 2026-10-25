@@ -175,6 +175,7 @@ fn status(ctx: &Ctx) -> Result<String, String> {
         Some(_) => "Backups: a backup folder is set; get_config reads it.\n",
         None => "Backups: no backup folder is set for this project, so get_config has nothing to read.\n",
     });
+    out.push_str(&format!("Corelens Desktop AI {}, tool list {}.\n", env!("CARGO_PKG_VERSION"), corelens_mcp::tools::fingerprint()));
     Ok(out)
 }
 
@@ -699,6 +700,7 @@ mod tests {
         assert!(out.contains("Vault: locked"));
         assert!(out.contains("No discovery runs yet"));
         assert!(out.contains("no backup folder is set"));
+        assert!(out.contains(&format!("tool list {}", corelens_mcp::tools::fingerprint())), "the build is named: {out}");
     }
 
     #[test]

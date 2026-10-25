@@ -328,6 +328,15 @@ pub fn list() -> Value {
     )
 }
 
+/// This build's tool list in sixteen hex digits. The proxy sends it with
+/// every call, so the window can tell a proxy of another build — whose
+/// list is not the window's — from its own.
+pub fn fingerprint() -> &'static str {
+    use sha2::{Digest, Sha256};
+    static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    F.get_or_init(|| hex::encode(&Sha256::digest(serde_json::to_string(&list()).unwrap_or_default().as_bytes())[..8]))
+}
+
 /// Cuts a result to [`MAX_RESULT_CHARS`] on a line boundary and says so.
 pub fn cap(text: String) -> String {
     if text.len() <= MAX_RESULT_CHARS {

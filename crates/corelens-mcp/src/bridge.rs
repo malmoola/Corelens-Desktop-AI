@@ -136,8 +136,21 @@ async fn write_line<W: AsyncWrite + Unpin>(writer: &mut W, value: &Value) -> std
     writer.flush().await
 }
 
+/// What `corelens_status` adds when the proxy that asked is not of this
+/// build: its tool list is not the window's.
+pub const STALE_PROXY: &str = "Warning: the Corelens MCP server this client started (corelens-desktop-ai --mcp) is not from the same build as the Corelens window, \
+so the tools this client was given are not the window's - it may have no propose_config_change, propose_save_config or get_change_status. \
+Tell the engineer: in Corelens, Settings → AI → Let Claude use Corelens, copy the setup command again and run it (it names this installation's \
+executable), then restart the client or reconnect it (/mcp in Claude Code).";
+
 /// The proxy's half of one call on an open stream.
 pub async fn call_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8], tool: &str, arguments: Value, client: Option<&str>) -> Outcome {
+    call_with(stream, key, tool, arguments, client, Some(crate::tools::fingerprint())).await
+}
+
+/// One call, sending `tools` as the proxy's tool-list fingerprint (none,
+/// as a proxy from before it was sent).
+async fn call_with<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8], tool: &str, arguments: Value, client: Option<&str>, tools: Option<&str>) -> Outcome {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read);
     let mine = nonce();
@@ -156,7 +169,7 @@ pub async fn call_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8],
         Ok(Some(true)) => {}
         Ok(Some(false)) | Ok(None) | Err(_) => return Outcome::error(NOT_PROVEN),
     }
-    if write_line(&mut write, &json!({ "tool": tool, "arguments": arguments, "client": client })).await.is_err() {
+    if write_line(&mut write, &json!({ "tool": tool, "arguments": arguments, "client": client, "tools": tools })).await.is_err() {
         return Outcome::error("The connection to Corelens Desktop AI closed before the request was sent. Try again.");
     }
     let limit = if crate::tools::find(tool).is_some_and(|t| t.long_running) { LONG_CALL_LIMIT } else { CALL_LIMIT };
@@ -193,7 +206,10 @@ pub async fn serve_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8]
     let tool = request.get("tool").and_then(Value::as_str).unwrap_or("").to_string();
     let arguments = request.get("arguments").cloned().unwrap_or_else(|| json!({}));
     let client = request.get("client").and_then(Value::as_str).map(|c| c.chars().take(100).collect::<String>());
-    let outcome = backend.call(&tool, arguments, client.as_deref()).await;
+    let mut outcome = backend.call(&tool, arguments, client.as_deref()).await;
+    if tool == "corelens_status" && request.get("tools").and_then(Value::as_str) != Some(crate::tools::fingerprint()) {
+        outcome.text = format!("{}\n\n{STALE_PROXY}", outcome.text);
+    }
     let _ = write_line(&mut write, &serde_json::to_value(&outcome).unwrap_or(Value::Null)).await;
 }
 
@@ -400,6 +416,27 @@ mod tests {
         let out = call_over(a, &key(7), "corelens_status", json!({}), Some("Claude Code 2.1")).await;
         server.await.unwrap();
         assert_eq!(out, Outcome::ok("client Claude Code 2.1"));
+    }
+
+    /// A client can start an `--mcp` from an older install or build while
+    /// this window answers: its tool list is its own, and may lack tools
+    /// this window has. The status the model is told to read first says
+    /// so; a proxy of this same build is not warned.
+    #[tokio::test]
+    async fn a_proxy_from_another_build_is_named_in_the_status() {
+        for (sent, warned) in [(None, true), (Some("0123456789abcdef"), true), (Some(crate::tools::fingerprint()), false)] {
+            let (a, b) = tokio::io::duplex(1 << 16);
+            let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
+            let out = call_with(a, &key(7), "corelens_status", json!({}), None, sent.as_deref()).await;
+            server.await.unwrap();
+            assert_eq!(out.text.contains(STALE_PROXY), warned, "{sent:?}: {}", out.text);
+            assert!(out.text.starts_with("ran corelens_status"), "{}", out.text);
+        }
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
+        let out = call_with(a, &key(7), "list_devices", json!({}), None, None).await;
+        server.await.unwrap();
+        assert!(!out.text.contains(STALE_PROXY), "only the status carries it");
     }
 
     #[tokio::test]

@@ -57,7 +57,7 @@ claude mcp list
 ```
 
 `claude mcp list` should show `corelens` as connected. In a Claude Code
-session, `/mcp` lists its nine tools. `--scope user` makes it available in
+session, `/mcp` lists its twelve tools. `--scope user` makes it available in
 every folder you start Claude Code in; leave it out to add it to the
 current project only.
 
@@ -202,4 +202,12 @@ and reports what happened.
 
 The tool list grew in this version: restart Claude Desktop (or `/mcp` →
 reconnect in Claude Code) so it reads the new list.
+
+**If the client offers no proposal tools at all,** it is starting a
+`corelens-desktop-ai.exe --mcp` from another install or build — the tool
+list comes from that executable, not from the window. `corelens_status`
+then ends with a warning saying so, and names the window's own build
+(`tool list …`). Copy the setup command from *Settings → AI* again (it
+names the executable of the Corelens you are running), run it, and restart
+the client: `claude mcp remove corelens` first if `add` says it exists.
 
