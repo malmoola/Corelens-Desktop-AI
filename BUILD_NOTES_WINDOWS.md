@@ -109,3 +109,32 @@ The key never goes in the repository.
 
 `VIRUSTOTAL_API_KEY`, when set, scans the installer as CI does; without it
 the scan is skipped.
+
+## What the AI features keep on the laptop
+
+Nothing new is needed to build them: the chat's HTTP client and the
+clipboard reader are Rust crates compiled into the executable.
+
+Once installed and used, Corelens keeps:
+
+- **The log**: `%LOCALAPPDATA%\Corelens Desktop AI\logs\corelens.log`, and
+  `corelens.log.1` … `.4` as it rotates (10 MB each, five files at most).
+  Information and warnings only; never a prompt, an answer, a
+  configuration or a secret. *Settings → AI → Retention and logging* shows
+  its size and folder.
+- **Provider keys**, when pasted: Windows Credential Manager → *Windows
+  Credentials* → `Corelens Desktop AI` (accounts `anthropic-api-key`,
+  `openai-api-key`). *Forget key* in Settings removes them.
+- **The AI record, the change record and the chat transcript**: in the
+  project database (`%LOCALAPPDATA%\Corelens Desktop AI\corelens.db`),
+  deleted with their project and kept 30, 90 or 365 days as Settings says.
+- **On a device that took a change** (IOS): `flash:corelens-<id>.cfg`, the
+  copy made before the push, which `configure replace` rolls back to. NX-OS
+  and AOS-CX keep a checkpoint named `corelens-<id>`, PAN-OS a saved
+  configuration `corelens-<id>.xml`. Corelens leaves them, so a change can
+  still be rolled back later; remove them on the device when no longer
+  wanted.
+
+To leave the laptop as it was: uninstall, delete
+`%LOCALAPPDATA%\Corelens Desktop AI\`, and remove the `Corelens Desktop AI`
+entries from Credential Manager.

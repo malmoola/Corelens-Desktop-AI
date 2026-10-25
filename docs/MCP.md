@@ -1,11 +1,13 @@
 # Using Corelens Desktop AI from Claude
 
 Claude Code or Claude Desktop, on the same computer as Corelens Desktop AI,
-can read the project open in Corelens and run read-only commands on its
-devices, through the Model Context Protocol (MCP). Corelens does the
-connecting, over this computer's own network (your VPN) with the logins in
-its vault; Claude gets the redacted result. What is and is not sent is in
-the README, under *AI is optional, off by default*.
+can read the project open in Corelens, run read-only commands on its
+devices, and propose configuration changes that wait for your approval in
+the Corelens window, through the Model Context Protocol (MCP). Corelens does
+the connecting, over this computer's own network (your VPN) with the logins
+in its vault; Claude gets the redacted result. What is and is not sent is in
+the README, under *AI is optional, off by default*. The same tools also
+serve the chat inside Corelens (`docs/AI-CHAT.md`).
 
 ## 1. Install Corelens Desktop AI on Windows
 
@@ -155,3 +157,49 @@ itself. So no tool takes an argument named `device`, `computer`, `host`,
 `path`, `file`, `url`, `session` or `id`, and a test fails if one ever
 does. A call without `target` is answered
 `run_show_command: missing 'target' (the device name or IP). Keys received: command.`
+
+## 7. Changes: proposals that wait for you
+
+`propose_config_change` takes a device (`target`) and the exact
+configuration-mode lines (`commands`), or several devices in `batch`, with
+a `reason` and, optionally, `verify_commands`. Corelens logs in, reads the
+running configuration and opens the approval dialog in its window: the
+commands, a diff against what is running, the risk, the rollback the
+platform offers, and for lines that can cut the device off, a field for the
+device's name. **The tool call waits for your decision.** Approve, and
+Corelens snapshots the configuration, pushes with the platform's own
+rollback ready, checks every line took effect, runs the verification
+commands and reports; deny, or let 10 minutes pass (*Settings → AI*), and
+nothing is sent. Saving is `propose_save_config`, a separate approval.
+`get_change_status` reports a change's state and outcome.
+
+Nothing Claude sends, and no Claude Code permission mode, approves a
+change: the only approval is the click in the Corelens dialog.
+
+**Waiting.** Claude Code waits for a tool for as long as it takes (its
+default limit is about 28 hours; the idle limit for a server on stdio is 30
+minutes, and Corelens sends a progress notification every 20 seconds while
+a proposal waits). Claude Desktop is reported to stop waiting for a tool
+after about a minute. If it does, the proposal stays open in Corelens —
+approve or deny it there as usual — and ask Claude to call
+`get_change_status` with the change id it was given (also shown in the
+dialog's change record): that call waits up to 50 seconds for the decision
+and reports what happened.
+
+**A test on the bench** (a lab switch, never a customer's):
+
+1. "Propose setting the description `LAB-PORT` on `Gi1/0/24` on SW1, and
+   verify it with `show interfaces status`." — the dialog shows the two
+   lines, the diff (`- description …`, `+ description LAB-PORT`), *Low
+   risk*. Approve. Claude reports *Verified* and *Not saved*.
+2. In the dialog (or *Settings → AI → Configuration changes*), **Roll
+   back** — the description is as it was; `show running-config interface
+   Gi1/0/24` agrees.
+3. "Propose `reload` on SW1." — the dialog marks it a hard block and asks
+   for the device's name. Deny.
+4. "Save SW1's configuration." — a separate dialog, showing what saving
+   writes over. Approve or deny.
+
+The tool list grew in this version: restart Claude Desktop (or `/mcp` →
+reconnect in Claude Code) so it reads the new list.
+
