@@ -538,7 +538,7 @@ fn findings(ctx: &Ctx) -> Result<String, String> {
 
 /// A device's captures, newest first, under any of the names a backup
 /// may have filed it under.
-fn captures(root: &std::path::Path, d: &Device) -> Vec<PathBuf> {
+pub(crate) fn captures(root: &std::path::Path, d: &Device) -> Vec<PathBuf> {
     let address = d.target().unwrap_or_default();
     for name in [d.label(), d.field("hostname"), address.as_str()] {
         if name.is_empty() {
@@ -552,7 +552,7 @@ fn captures(root: &std::path::Path, d: &Device) -> Vec<PathBuf> {
     Vec::new()
 }
 
-fn file_name(p: &std::path::Path) -> String {
+pub(crate) fn file_name(p: &std::path::Path) -> String {
     p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
 }
 

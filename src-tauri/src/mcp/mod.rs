@@ -108,6 +108,8 @@ pub enum Source {
     Mcp { client: Option<String> },
     Chat { provider: String, model: String },
     Operator,
+    /// A diagnosis's fix plan, proposing its steps.
+    Diagnose { run: String },
 }
 
 impl Source {
@@ -116,6 +118,7 @@ impl Source {
             Source::Mcp { .. } => "mcp",
             Source::Chat { .. } => "chat",
             Source::Operator => "operator",
+            Source::Diagnose { .. } => "diagnose",
         }
     }
 
@@ -126,6 +129,7 @@ impl Source {
             Source::Mcp { client: None } => "an MCP client".into(),
             Source::Chat { provider, model } => format!("Corelens chat ({provider}, {model})"),
             Source::Operator => "the engineer".into(),
+            Source::Diagnose { run } => format!("Corelens Diagnose (fix plan of run {run})"),
         }
     }
 }
@@ -234,6 +238,8 @@ pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
         Some(p) if tool == "propose_config_change" => changes::propose(host, p, &arguments).await,
         Some(p) if tool == "propose_save_config" => changes::propose_save(host, p, &arguments).await,
         Some(_) if tool == "get_change_status" => changes::status(host, &arguments).await,
+        Some(p) if tool == "run_diagnostic" => crate::diagnose::tool(host, p, &arguments).await,
+        Some(p) if tool == "get_diagnosis" => crate::diagnose::get_tool(host, p, &arguments),
         Some(p) => run_read(state, p, tool, &arguments),
     };
     let secrets = vault_secrets(state);

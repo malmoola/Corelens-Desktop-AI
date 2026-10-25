@@ -12,7 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 /// Bumped whenever the diagram document shape changes; the frontend migrates.
 pub const DOCUMENT_VERSION: i64 = 1;
 
@@ -530,6 +530,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::collection_db::topology_tables(conn)?;
     crate::mcp::audit::tables(conn)?;
     schema_10(conn)?;
+    schema_11(conn)?;
 
     apply_migrations(conn, MIGRATIONS)
 }
@@ -547,12 +548,17 @@ type Migration = (i64, fn(&Connection) -> rusqlite::Result<()>);
 /// Every migration ever written, oldest first. Adding a column is a new entry
 /// here and a bump of `SCHEMA_VERSION`, never an edit to an old one — a
 /// database in the field may be at any version in this list.
-const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables), (10, schema_10)];
+const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables), (10, schema_10), (11, schema_11)];
 
 /// Schema 10: the change record (tier 2) and the chat transcript.
 fn schema_10(conn: &Connection) -> rusqlite::Result<()> {
     crate::mcp::changes::store::tables(conn)?;
     crate::ai::transcript::tables(conn)
+}
+
+/// Schema 11: Diagnose network's runs.
+fn schema_11(conn: &Connection) -> rusqlite::Result<()> {
+    crate::diagnose::store::tables(conn)
 }
 
 /// The steps that take a database from its version to
@@ -775,6 +781,7 @@ pub fn delete_project(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     crate::mcp::audit::clear(conn, Some(id))?;
     conn.execute("DELETE FROM config_changes WHERE project_id = ?1", params![id])?;
     crate::ai::transcript::clear(conn, Some(id))?;
+    crate::diagnose::store::clear(conn, Some(id))?;
     Ok(())
 }
 
@@ -802,6 +809,7 @@ pub fn purge_orphans(conn: &Connection) -> rusqlite::Result<usize> {
     removed += crate::mcp::audit::purge_orphans(&tx)?;
     removed += crate::mcp::changes::store::purge_orphans(&tx)?;
     removed += crate::ai::transcript::purge_orphans(&tx)?;
+    removed += crate::diagnose::store::purge_orphans(&tx)?;
     tx.commit()?;
     Ok(removed)
 }

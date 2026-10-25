@@ -27,6 +27,7 @@ mod updater;
 mod shared;
 mod mcp;
 mod ai;
+mod diagnose;
 mod db;
 
 use std::sync::{Arc, Mutex};
@@ -162,6 +163,7 @@ fn main() {
         .manage(updater::Pending::default())
         .manage(mcp::McpState::default())
         .manage(mcp::changes::ChangeHub::default())
+        .manage(diagnose::DiagnoseHub::default())
         .manage(ai::AiState::default())
         .manage(AppState {
             engine,
@@ -255,6 +257,14 @@ fn main() {
             mcp::changes::change_decide,
             mcp::changes::change_rollback,
             mcp::changes::change_export,
+            diagnose::diagnose_start,
+            diagnose::diagnose_cancel,
+            diagnose::diagnose_list,
+            diagnose::diagnose_get,
+            diagnose::diagnose_export_md,
+            diagnose::diagnose_export_pdf,
+            diagnose::diagnose_propose,
+            diagnose::diagnose_clear,
             updater::install_update,
             commands::list_icon_library,
             commands::list_bundled_icons,

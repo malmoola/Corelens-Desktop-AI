@@ -427,7 +427,7 @@ mod tests {
         for (sent, warned) in [(None, true), (Some("0123456789abcdef"), true), (Some(crate::tools::fingerprint()), false)] {
             let (a, b) = tokio::io::duplex(1 << 16);
             let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
-            let out = call_with(a, &key(7), "corelens_status", json!({}), None, sent.as_deref()).await;
+            let out = call_with(a, &key(7), "corelens_status", json!({}), None, sent).await;
             server.await.unwrap();
             assert_eq!(out.text.contains(STALE_PROXY), warned, "{sent:?}: {}", out.text);
             assert!(out.text.starts_with("ran corelens_status"), "{}", out.text);

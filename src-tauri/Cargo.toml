@@ -22,6 +22,7 @@ corelens-collect = { path = "../crates/corelens-collect" }
 corelens-topology = { path = "../crates/corelens-topology" }
 corelens-path = { path = "../crates/corelens-path" }
 corelens-mcp = { path = "../crates/corelens-mcp" }
+corelens-diagnose = { path = "../crates/corelens-diagnose" }
 # Every message from the page passes a sandboxed frame first.
 tauri = { version = "2", features = ["isolation"] }
 tauri-plugin-dialog = "2"
