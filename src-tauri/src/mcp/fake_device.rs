@@ -100,7 +100,15 @@ struct Shared {
     /// A flash with no room: copies to it fail.
     flash_full: bool,
     asked: Vec<String>,
+    /// Answers set by a test, by command (lower case): a fixed text, or one
+    /// made from the running configuration as it is now.
+    shows: HashMap<String, Answer>,
+    /// Hang up after this many commands (the session drops partway).
+    drop_after: Option<usize>,
 }
+
+/// An answer a test gives a command.
+pub type Answer = Arc<dyn Fn(&[String]) -> String + Send + Sync>;
 
 #[derive(Clone)]
 enum Mode {
@@ -185,6 +193,11 @@ impl Handler {
         let c = command.trim();
         let lower = c.to_ascii_lowercase();
         match self.mode.clone() {
+            Mode::Exec if s.shows.contains_key(&lower) => {
+                let f = Arc::clone(&s.shows[&lower]);
+                let running = s.running.clone();
+                (f(&running).replace('\n', "\r\n"), true)
+            }
             Mode::Exec => {
                 let out = match lower.as_str() {
                     "" | "terminal length 0" | "terminal width 512" | "terminal width 511" | "enable" | "no page" => String::new(),
@@ -467,7 +480,14 @@ impl server::Handler for Handler {
                 continue;
             }
             if !command.is_empty() {
-                self.shared.lock().unwrap().asked.push(command.clone());
+                let mut sh = self.shared.lock().unwrap();
+                sh.asked.push(command.clone());
+                let counted = sh.asked.iter().filter(|c| !c.starts_with("terminal ") && !c.starts_with("set cli ")).count();
+                if sh.drop_after.is_some_and(|n| counted > n) {
+                    drop(sh);
+                    session.disconnect(russh::Disconnect::ByApplication, "gone", "")?;
+                    return Ok(());
+                }
             }
             let (out, prompt) = self.answer(&command);
             let kind = self.shared.lock().unwrap().kind;
@@ -490,9 +510,15 @@ impl FakeDevice {
     }
 
     pub async fn start_as(kind: FakeKind) -> FakeDevice {
+        FakeDevice::start_on(kind, "127.0.0.1", 0).await
+    }
+
+    /// One on its own loopback address and a given port, so several share
+    /// the port a test's sessions dial (`127.0.0.2:p`, `127.0.0.3:p`, …).
+    pub async fn start_on(kind: FakeKind, ip: &str, port: u16) -> FakeDevice {
         let key = russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).expect("host key");
         let config = Arc::new(server::Config { inactivity_timeout: Some(Duration::from_secs(30)), auth_rejection_time: Duration::from_millis(1), keys: vec![key], ..Default::default() });
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.expect("bind");
+        let listener = tokio::net::TcpListener::bind((ip, port)).await.expect("bind");
         let port = listener.local_addr().unwrap().port();
         let running = match kind {
             FakeKind::Junos => junos_running(),
@@ -511,6 +537,8 @@ impl FakeDevice {
             ignore: Vec::new(),
             flash_full: false,
             asked: Vec::new(),
+            shows: HashMap::new(),
+            drop_after: None,
         }));
         let for_server = Arc::clone(&shared);
         tokio::spawn(async move {
@@ -578,6 +606,22 @@ impl FakeDevice {
         if let Some(before) = s.unconfirmed.take() {
             s.running = before;
         }
+    }
+
+    /// `command` (as typed, any case) answers `text`.
+    pub fn answer(&self, command: &str, text: &str) {
+        let text = text.to_string();
+        self.answer_with(command, move |_| text.clone());
+    }
+
+    /// `command` answers what `f` makes of the running configuration.
+    pub fn answer_with(&self, command: &str, f: impl Fn(&[String]) -> String + Send + Sync + 'static) {
+        self.shared.lock().unwrap().shows.insert(command.trim().to_ascii_lowercase(), Arc::new(f));
+    }
+
+    /// Hangs up after `n` more commands than setup.
+    pub fn drop_after(&self, n: usize) {
+        self.shared.lock().unwrap().drop_after = Some(n);
     }
 
     /// Whether a commit or revert timer is waiting to be confirmed.

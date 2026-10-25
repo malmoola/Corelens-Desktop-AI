@@ -511,12 +511,23 @@ async fn await_decision(host: &Host<'_>, hub: &ChangeHub, change: &mut Change) -
 
 /// `propose_config_change`.
 pub async fn propose(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
+    propose_as(host, project_id, arguments, new_id()).await
+}
+
+/// A proposal whose id the caller chose — a diagnosis's fix plan names the
+/// change of each step before the step waits for its decision.
+pub async fn propose_as(host: &Host<'_>, project_id: &str, arguments: &Value, id: String) -> Raw {
     let mut raw = Raw { result: Err(String::new()), device: String::new(), address: String::new(), command: String::new() };
-    raw.result = propose_inner(host, project_id, arguments, &mut raw).await;
+    raw.result = propose_inner(host, project_id, arguments, &mut raw, id).await;
     raw
 }
 
-async fn propose_inner(host: &Host<'_>, project_id: &str, arguments: &Value, raw: &mut Raw) -> Result<String, String> {
+/// A fresh change id.
+pub fn fresh_id() -> String {
+    new_id()
+}
+
+async fn propose_inner(host: &Host<'_>, project_id: &str, arguments: &Value, raw: &mut Raw, id: String) -> Result<String, String> {
     let hub = host.changes.ok_or("Configuration changes are not available from here.")?;
     let args: ProposeArgs = tools::args("propose_config_change", arguments)?;
     let items: Vec<BatchItem> = match (args.batch, args.target, args.commands) {
@@ -540,7 +551,7 @@ async fn propose_inner(host: &Host<'_>, project_id: &str, arguments: &Value, raw
     raw.command = format!("{} line(s)", targets.iter().map(|t| t.commands.len()).sum::<usize>());
     let created = now_ms();
     let mut change = Change {
-        id: new_id(),
+        id,
         project_id: Some(project_id.to_string()),
         kind: Kind::Change,
         source: host.source.kind().into(),
@@ -799,14 +810,21 @@ fn describe_status(s: ChangeStatus) -> &'static str {
     }
 }
 
-/// `propose_save_config`.
-pub async fn propose_save(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
+/// `propose_save_config`, with the id the caller chose.
+pub async fn propose_save_as(host: &Host<'_>, project_id: &str, arguments: &Value, id: String) -> Raw {
     let mut raw = Raw { result: Err(String::new()), device: String::new(), address: String::new(), command: String::new() };
-    raw.result = propose_save_inner(host, project_id, arguments, &mut raw).await;
+    raw.result = propose_save_inner(host, project_id, arguments, &mut raw, Some(id)).await;
     raw
 }
 
-async fn propose_save_inner(host: &Host<'_>, project_id: &str, arguments: &Value, raw: &mut Raw) -> Result<String, String> {
+/// `propose_save_config`.
+pub async fn propose_save(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
+    let mut raw = Raw { result: Err(String::new()), device: String::new(), address: String::new(), command: String::new() };
+    raw.result = propose_save_inner(host, project_id, arguments, &mut raw, None).await;
+    raw
+}
+
+async fn propose_save_inner(host: &Host<'_>, project_id: &str, arguments: &Value, raw: &mut Raw, id: Option<String>) -> Result<String, String> {
     let hub = host.changes.ok_or("Saving configurations is not available from here.")?;
     let args: SaveArgs = tools::args("propose_save_config", arguments)?;
     if host.state.vault_key.lock().map(|k| k.is_none()).unwrap_or(true) {
@@ -830,7 +848,7 @@ async fn propose_save_inner(host: &Host<'_>, project_id: &str, arguments: &Value
     let created = now_ms();
     let platform = s.platform;
     let mut change = Change {
-        id: new_id(),
+        id: id.unwrap_or_else(new_id),
         project_id: Some(project_id.to_string()),
         kind: Kind::Save,
         source: host.source.kind().into(),
