@@ -1,6 +1,6 @@
 // The device inspector in tabs — Status first, read rather than
 // edited; Identity, the form as it was; Ports; Checks; Notes — and the action
-// row above them: SSH, Backup, Where is, Ask AI, Open as drawer. Stubbed backend; the
+// row above them: SSH, Backup, Where is, Ask AI, Diagnose, Open as drawer. Stubbed backend; the
 // tabs are window state, the actions hand over to the dock.
 import { chromium } from "playwright";
 
@@ -139,8 +139,8 @@ check("after which Status says it has not been checked yet", (await kv())["Last 
 // ------------------------------------------------------------- the action row
 
 const actions = insp.locator(".cv-inspector-actions button");
-check("the action row is SSH, Backup, Where is, Ask AI, Open as drawer",
-  JSON.stringify(await actions.allInnerTexts()) === JSON.stringify(["SSH", "Backup", "Where is", "Ask AI", "Open as drawer"]), (await actions.allInnerTexts()).join(" | "));
+check("the action row is SSH, Backup, Where is, Ask AI, Diagnose, Open as drawer",
+  JSON.stringify(await actions.allInnerTexts()) === JSON.stringify(["SSH", "Backup", "Where is", "Ask AI", "Diagnose", "Open as drawer"]), (await actions.allInnerTexts()).join(" | "));
 check("above the tabs", (await actions.first().boundingBox()).y < (await tabNamed("Status").boundingBox()).y);
 
 await actions.filter({ hasText: /^Backup$/ }).click();

@@ -1246,6 +1246,12 @@ function NodeInspector({ nodeId }: { nodeId: string }) {
             {tr('aiChat.button')}
           </button>
         )}
+        {isDesktop && (
+          <button type="button" className="cv-btn cv-btn-small" data-action="diagnose-device" title={tr('diagnose.open')}
+            onClick={() => useStore.getState().requestDiagnose({ scope: 'devices', targets: [deviceLabel] }, true)}>
+            {tr('diagnose.button')}
+          </button>
+        )}
         {/* The same sections, at a width this rail cannot give. */}
         <button type="button" className="cv-btn cv-btn-small cv-open-drawer"
           onClick={() => useStore.getState().openDrawer({ kind: 'device', nodeId })}>

@@ -812,6 +812,9 @@ export function TopBar({ onExit }: { onExit: () => void }) {
         <IconButton icon="search" className="cv-btn-search" label={t('topbar.search')} shortcut="Ctrl+K" region="search"
           onClick={() => useStore.getState().requestCommandPalette(true)} />
 
+        <button type="button" className="cv-btn" data-action="diagnose-open" title={t('diagnose.open')} onClick={() => useStore.getState().requestDiagnose({ scope: 'project' }, false)}>
+          <ChromeIcon name="pulse" /> {t('diagnose.button')}
+        </button>
         <button type="button" className="cv-btn" data-region="import" onClick={() => useStore.getState().setImportOpen('choose')}>
           {t('import.open')}
         </button>

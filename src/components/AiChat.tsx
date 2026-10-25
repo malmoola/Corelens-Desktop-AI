@@ -106,6 +106,14 @@ export function AiChat() {
     if (open) input.current?.focus();
   }, [open, context]);
 
+  // A question another panel wrote for the engineer to send (or edit).
+  const draft = useStore((s) => s.aiChatDraft);
+  useEffect(() => {
+    if (draft === null) return;
+    setText(draft);
+    useStore.setState({ aiChatDraft: null });
+  }, [draft]);
+
   const dock = (on: boolean) => {
     setDocked(on);
     try {

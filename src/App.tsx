@@ -27,6 +27,7 @@ import { NavRail } from './components/NavRail';
 import { CanvasToolbar } from './components/CanvasToolbar';
 import { AiChat } from './components/AiChat';
 import { ChangeApproval } from './components/ChangeApproval';
+import { DiagnosePanel } from './components/DiagnosePanel';
 
 import { DESKTOP_APP_URL } from './components/EmptyState';
 import { t } from './i18n';
@@ -251,6 +252,7 @@ export default function App() {
             the workspace: a proposal can arrive whichever screen is open. */}
         <ErrorBoundary what="The AI chat"><AiChat /></ErrorBoundary>
         <ErrorBoundary what="The change approval"><ChangeApproval /></ErrorBoundary>
+        <ErrorBoundary what="Diagnose network"><DiagnosePanel /></ErrorBoundary>
       </div>
     </ReactFlowProvider>
   );

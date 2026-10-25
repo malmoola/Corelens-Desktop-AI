@@ -1281,6 +1281,41 @@ button.cv-start-card:hover { border-color: var(--accent); }
 .cv-ai-tool.is-error { border-color: var(--danger-line); }
 .cv-ai-tool summary { cursor: pointer; }
 .cv-ai-tool .cv-btn { margin-top: var(--space-1); }
+/* Diagnose network: a panel over the workspace, left of the chat. */
+.cv-diagnose {
+  position: fixed; left: var(--space-4); top: 4rem; bottom: var(--space-4); z-index: 140;
+  width: 38rem; min-width: 24rem; max-width: calc(100vw - 2 * var(--space-4));
+  resize: horizontal; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 24px 60px var(--shadow-deep);
+}
+.cv-diagnose-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); }
+.cv-diagnose-tools { margin-left: auto; display: inline-flex; gap: var(--space-1); align-items: center; }
+.cv-diagnose-body { flex: 1; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-md); }
+.cv-diagnose-body h4 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-md); color: var(--text-dim); }
+.cv-diagnose-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.cv-diagnose-form fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
+.cv-diagnose-form .cv-btn-primary { align-self: flex-start; }
+.cv-diagnose-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.cv-diagnose-progress progress { width: 100%; }
+.cv-diagnose-progress ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+.cv-diagnose-progress li.is-done { color: var(--text-dim); }
+.cv-diagnose-progress li.is-unreachable, .cv-diagnose-progress li.is-stopped { color: var(--down); }
+.cv-diagnose-progress .cv-btn-stop { align-self: flex-start; }
+.cv-diagnose-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.cv-diagnose-summary { margin: 0; padding-left: 1.2em; }
+.cv-diagnose-causes, .cv-diagnose-plan, .cv-diagnose-path { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: var(--space-2); }
+.cv-diagnose-causes li.is-critical > strong { color: var(--down); }
+.cv-diagnose-causes li.is-warning > strong { color: var(--warning); }
+.cv-diagnose-causes p, .cv-diagnose-plan p { margin: var(--space-1) 0; }
+.cv-diagnose-body pre { margin: var(--space-1) 0; padding: var(--space-1) var(--space-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); }
+.cv-diagnose-plan li[data-state="done"] > strong { color: var(--healthy); }
+.cv-diagnose-plan li[data-state="pending"] > strong { color: var(--accent); }
+.cv-diagnose-path li.is-break > strong { color: var(--down); }
+.cv-diagnose-path li.is-bad { color: var(--down); }
+.cv-diagnose-findings { margin: var(--space-1) 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--space-1); }
+.cv-diagnose details summary { cursor: pointer; }
 .cv-ai-chat-table { overflow: auto; max-height: 16rem; margin: var(--space-1) 0; }
 .cv-ai-chat-table table { border-collapse: collapse; font-size: var(--text-xs); color: var(--text); }
 .cv-ai-chat-table th, .cv-ai-chat-table td { border: 1px solid var(--line); padding: 0.15384615rem 0.38461538rem; text-align: left; white-space: nowrap; }

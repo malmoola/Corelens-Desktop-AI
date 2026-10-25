@@ -30,11 +30,14 @@ export function decision(approve: number[], typed: Record<number, string>): { ap
   return { approve, typed: approve.map((seq) => (typed[seq] ?? '').trim()) };
 }
 
-/** The proposal waiting longest, which the dialog shows first. */
-export function nextPending(changes: Record<string, Change>): Change | null {
+/** The proposal waiting longest, which the dialog shows first. A
+ *  diagnosis's fix plan does not take the dialog by itself — the engineer
+ *  is reading its report and opens the plan with "Review fix plan" — so
+ *  its steps are left out unless `diagnose` is asked for. */
+export function nextPending(changes: Record<string, Change>, diagnose = false): Change | null {
   return (
     Object.values(changes)
-      .filter((c) => c.status === 'pending')
+      .filter((c) => c.status === 'pending' && (c.source === 'diagnose') === diagnose)
       .sort((a, b) => a.createdMs - b.createdMs)[0] ?? null
   );
 }

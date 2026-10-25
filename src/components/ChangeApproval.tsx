@@ -56,8 +56,10 @@ export function ChangeApproval() {
   const change = shown ? changes[shown] : undefined;
   if (!change) return null;
   const close = () => {
-    setShown(null);
-    openApproval(null);
+    // Reviewing a fix plan goes on to its next step still waiting.
+    const next = change.source === 'diagnose' && change.status !== 'pending' ? nextPending(changes, true) : null;
+    setShown(next?.id ?? null);
+    openApproval(next?.id ?? null);
   };
   return <Dialog key={change.id} change={change} now={now} onClose={close} />;
 }

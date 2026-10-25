@@ -60,6 +60,11 @@ describe('the approval dialog', () => {
     const done = change('d', 50, [target(0, 'SW1', false)], 'done');
     expect(nextPending({ n: newer, o: older, d: done })?.id).toBe('o');
     expect(nextPending({ d: done })).toBeNull();
+    // A diagnosis's plan waits for "Review fix plan" rather than taking the dialog.
+    const plan: Change = { ...change('p', 10, [target(0, 'SW1', false)]), source: 'diagnose' };
+    expect(nextPending({ p: plan, n: newer })?.id).toBe('n');
+    expect(nextPending({ p: plan })).toBeNull();
+    expect(nextPending({ p: plan, n: newer }, true)?.id).toBe('p');
     expect(secondsLeft(older, 100 + 590_000)).toBe(10);
     expect(secondsLeft(older, 10_000_000)).toBe(0);
   });

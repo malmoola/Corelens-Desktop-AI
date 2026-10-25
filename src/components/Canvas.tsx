@@ -52,6 +52,7 @@ import { activePage, withPage, pageNodeById } from '../lib/pages';
 import { openSsh, openSshElsewhere } from './sshActions';
 import { isDesktop } from '../lib/ipc';
 import { t } from '../i18n';
+import { diagnoseArgs } from '../lib/diagnose';
 import { arrangeByLayerMessage, layoutMessage } from './arrangeMessages';
 import { uid } from '../lib/id';
 import { DEVICE_LABEL } from './icons';
@@ -389,6 +390,15 @@ export function Canvas() {
     [rf, iconLibrary, bundledIcons, doc.customShapes],
   );
 
+  /** The two devices selected, the one right-clicked among them: the
+   *  ends of a path to diagnose. */
+  const pairForPath = (nodeId: string): [string, string] | null => {
+    const chosen = pg.nodes.filter((n) => n.selected && n.type === 'device');
+    if (chosen.length !== 2 || !chosen.some((n) => n.id === nodeId)) return null;
+    const [a, b] = chosen.map((n) => String((n.data as DeviceNodeData).label ?? ''));
+    return a && b ? [a, b] : null;
+  };
+
   const nodeMenu = (nodeId: string): MenuItem[] => {
     // A folded box stands for objects rather than being one. Offering to
     // duplicate or delete it would act on an id that is not in the document.
@@ -475,6 +485,12 @@ export function Canvas() {
         : []),
       ...(node?.type === 'device' && isDesktop
         ? [{ label: t('aiChat.askDevice'), onSelect: () => useStore.getState().askAi(deviceContext(node.data as DeviceNodeData)) }]
+        : []),
+      ...(node?.type === 'device' && isDesktop
+        ? [{ label: t('diagnose.device'), onSelect: () => useStore.getState().requestDiagnose(diagnoseArgs.devices([String((node.data as DeviceNodeData).label)]), true) }]
+        : []),
+      ...(node?.type === 'device' && isDesktop && pairForPath(node.id)
+        ? [{ label: t('diagnose.path'), onSelect: () => { const [a, b] = pairForPath(node.id) ?? []; if (a && b) useStore.getState().requestDiagnose(diagnoseArgs.path(a, b), false); } }]
         : []),
       {
         label: 'Duplicate',
@@ -590,6 +606,9 @@ export function Canvas() {
       { label: 'Edit link properties', onSelect: () => useStore.getState().select(null, edgeId) },
       ...(isDesktop && edge
         ? [{ label: t('aiChat.askLink'), onSelect: () => useStore.getState().askAi(linkContext(end(edge.source), data?.sourcePortLabel, end(edge.target), data?.targetPortLabel)) }]
+        : []),
+      ...(isDesktop && edge
+        ? [{ label: t('diagnose.link'), onSelect: () => useStore.getState().requestDiagnose(diagnoseArgs.link(end(edge.source), end(edge.target)), true) }]
         : []),
       {
         label: 'Reverse flow direction',

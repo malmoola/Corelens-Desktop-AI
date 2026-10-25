@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { Edge, Node } from '@xyflow/react';
 import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } from '@xyflow/react';
 
-import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, type Change as ConfigChange, setCurrentProject } from '../lib/ipc';
+import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, type Change as ConfigChange, type DiagnoseArgs, setCurrentProject } from '../lib/ipc';
 import { projectFolderFiles } from '../lib/projectFolder';
 import { copyToOpen, folderName, heldBy, overwroteNotice } from '../lib/sharedProjects';
 import { applyJob } from '../lib/jobs';
@@ -627,13 +627,20 @@ interface Store {
   setAiChatOpen: (on: boolean) => void;
   /** Opens the chat with `context` (a device, a link, a finding) ready to
    *  ask about. */
-  askAi: (context: string | null) => void;
+  /** Opens the chat, about `context` when given, with `draft` in its box. */
+  askAi: (context: string | null, draft?: string) => void;
+  aiChatDraft: string | null;
   /** Every configuration change this window has heard of, by id, as Rust
    *  last reported it; and the one the approval dialog should show. */
   aiChanges: Record<string, ConfigChange>;
   applyAiChange: (c: ConfigChange) => void;
   approvalOpen: string | null;
   openApproval: (id: string | null) => void;
+  /** Diagnose network: the panel, and what a button asked it to run. */
+  diagnoseOpen: boolean;
+  diagnoseRequest: { args: DiagnoseArgs; start: boolean; at: number } | null;
+  requestDiagnose: (args: DiagnoseArgs, start: boolean) => void;
+  setDiagnoseOpen: (on: boolean) => void;
   /** The interactive SSH sessions this window has open, one per tab
    *  in the panel's SSH section. Window state, never the document: a live
    *  connection cannot be saved, and a `.corelens` file must not carry a
@@ -1391,6 +1398,9 @@ export const useStore = create<Store>((set, get) => ({
   aiChatContext: null,
   aiChanges: {},
   approvalOpen: null,
+  diagnoseOpen: false,
+  diagnoseRequest: null,
+  aiChatDraft: null,
   toolsOpen: false,
   toolsView: 'settings',
   importOpen: null,
@@ -2129,8 +2139,8 @@ export const useStore = create<Store>((set, get) => ({
     set({ aiChatOpen: on });
   },
 
-  askAi(context) {
-    set({ aiChatOpen: true, aiChatContext: context });
+  askAi(context, draft) {
+    set({ aiChatOpen: true, aiChatContext: context, aiChatDraft: draft ?? null });
   },
 
   applyAiChange(c) {
@@ -2139,6 +2149,14 @@ export const useStore = create<Store>((set, get) => ({
 
   openApproval(id) {
     set({ approvalOpen: id });
+  },
+
+  requestDiagnose(args, start) {
+    set({ diagnoseOpen: true, diagnoseRequest: { args, start, at: Date.now() } });
+  },
+
+  setDiagnoseOpen(on) {
+    set({ diagnoseOpen: on });
   },
 
   setPresenting(on) {

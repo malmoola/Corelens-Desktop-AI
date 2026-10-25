@@ -294,11 +294,112 @@ export interface ChangeTarget {
   confirmByMs: number | null;
   updatedMs: number;
 }
+/** Diagnose network: what a run is asked for. */
+export type DiagnoseScopeKind = 'project' | 'site' | 'devices' | 'path';
+export interface DiagnoseArgs {
+  scope: DiagnoseScopeKind;
+  site?: string | null;
+  targets?: string[] | null;
+  src?: string | null;
+  dst?: string | null;
+  port?: number | null;
+  depth?: 'quick' | 'full';
+  symptom?: string | null;
+}
+export type DiagnoseSeverity = 'info' | 'warning' | 'critical';
+export type DiagnoseLayer = 'health' | 'l1' | 'l2' | 'l3' | 'services' | 'firewall' | 'drift' | 'path';
+export interface DiagnoseFinding {
+  id: string;
+  check: string;
+  title: string;
+  layer: DiagnoseLayer;
+  severity: DiagnoseSeverity;
+  device: string;
+  says: string;
+  fields: Record<string, string>;
+  evidence: string[];
+  fix?: string;
+}
+export interface DiagnoseCause {
+  id: string;
+  title: string;
+  severity: DiagnoseSeverity;
+  confidence: number;
+  why: string;
+  findings: string[];
+  supporting: string[];
+  rulingOut: string[];
+}
+export interface DiagnosePlanStep {
+  seq: number;
+  cause: string;
+  device: string;
+  kind: 'change' | 'save';
+  title: string;
+  commands: string[];
+  verify: string[];
+  impact: string;
+  rollback: string;
+  risk: string;
+  status: 'ready' | 'proposed' | 'manual';
+  note: string;
+  proposalId: string | null;
+}
+export interface DiagnoseHop {
+  device: string;
+  inPort: string;
+  outPort: string;
+  checks: { what: string; ok: boolean; detail: string }[];
+}
+export interface DiagnoseReport {
+  id: string;
+  scope: { kind: DiagnoseScopeKind; site?: string; devices?: string[]; src?: string; dst?: string };
+  depth: 'quick' | 'full';
+  symptom: string | null;
+  startedMs: number;
+  finishedMs: number;
+  cancelled: boolean;
+  summary: string[];
+  devices: { name: string; address: string; platform: string; reached: boolean; error: string | null; commandsRun: number; commandsFailed: number }[];
+  causes: DiagnoseCause[];
+  findings: DiagnoseFinding[];
+  passed: { check: string; title: string; layer: DiagnoseLayer; devices: string[]; says: string }[];
+  notChecked: { device: string; check: string; why: string }[];
+  plan: DiagnosePlanStep[];
+  diff: { previousId: string; previousMs: number; new: string[]; resolved: string[]; unchanged: number } | null;
+  path: { src: string; dst: string; hops: DiagnoseHop[]; firstBreak: number | null; probe: string[]; note: string } | null;
+  playbooks: string[];
+}
+export interface DiagnoseSummary {
+  id: string;
+  scope: string;
+  startedMs: number;
+  source: string;
+  critical: number;
+  warning: number;
+  topCause: string | null;
+  cancelled: boolean;
+}
+export interface DiagnoseProgress {
+  runId: string;
+  projectId: string;
+  kind: 'started' | 'device' | 'finished' | 'failed' | 'plan';
+  scope: string;
+  devices: string[];
+  device: string;
+  state: '' | 'waiting' | 'running' | 'done' | 'unreachable' | 'stopped';
+  done: number;
+  total: number;
+  command: string;
+  summary: string[];
+  error: string;
+}
+
 export interface Change {
   id: string;
   projectId: string | null;
   kind: 'change' | 'save';
-  source: 'mcp' | 'chat' | 'operator';
+  source: 'mcp' | 'chat' | 'operator' | 'diagnose';
   proposer: string;
   reason: string;
   createdMs: number;
@@ -1755,6 +1856,47 @@ export const ipc = {
     if (!isDesktop) return () => {};
     const { listen } = await import('@tauri-apps/api/event');
     return listen('corelens://change', (e) => handler(e.payload as Change));
+  },
+
+  // Diagnose network.
+  diagnoseStart(a: DiagnoseArgs) {
+    return invoke<string>('diagnose_start', {
+      scope: a.scope,
+      site: a.site ?? null,
+      targets: a.targets ?? null,
+      src: a.src ?? null,
+      dst: a.dst ?? null,
+      port: a.port ?? null,
+      depth: a.depth ?? 'quick',
+      symptom: a.symptom ?? null,
+    });
+  },
+  diagnoseCancel(runId: string) {
+    return invoke<boolean>('diagnose_cancel', { runId });
+  },
+  async diagnoseList(limit = 50): Promise<DiagnoseSummary[]> {
+    if (!isDesktop) return [];
+    return invoke<DiagnoseSummary[]>('diagnose_list', { limit });
+  },
+  diagnoseGet(runId: string) {
+    return invoke<DiagnoseReport>('diagnose_get', { runId });
+  },
+  diagnoseExportMd(runId: string) {
+    return invoke<string>('diagnose_export_md', { runId });
+  },
+  async diagnoseExportPdf(runId: string): Promise<Uint8Array> {
+    return new Uint8Array(await invoke<number[]>('diagnose_export_pdf', { runId }));
+  },
+  diagnosePropose(runId: string, seq: number) {
+    return invoke<void>('diagnose_propose', { runId, seq });
+  },
+  diagnoseClear() {
+    return invoke<number>('diagnose_clear');
+  },
+  async onDiagnose(handler: (p: DiagnoseProgress) => void): Promise<() => void> {
+    if (!isDesktop) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen('corelens://diagnose', (e) => handler(e.payload as DiagnoseProgress));
   },
 
   // The in-app chat and its providers.
