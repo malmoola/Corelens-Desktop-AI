@@ -346,6 +346,9 @@ pub struct Device {
     watch: Option<mpsc::UnboundedSender<String>>,
     /// What a command had printed when it timed out.
     partial: String,
+    /// Questions the current command is expected to ask, and the reply
+    /// to each (`run_answering`); empty otherwise.
+    answers: Vec<(String, Vec<u8>)>,
 }
 
 impl Device {
@@ -478,6 +481,7 @@ impl Device {
             },
             watch: None,
             partial: String::new(),
+            answers: Vec::new(),
         };
 
         crate::say!(
@@ -581,6 +585,19 @@ impl Device {
         Ok(output)
     }
 
+    /// Runs one command that asks something before it finishes — `copy`
+    /// asking for a file name — and answers each question named in
+    /// `answers` (a phrase on the line asking, matched case-insensitively,
+    /// and the reply sent). A question that is not named is never
+    /// answered: the command then times out rather than agree to
+    /// something nobody chose.
+    pub async fn run_answering(&mut self, command: &str, answers: &[(&str, &[u8])]) -> Result<String, SshError> {
+        self.answers = answers.iter().map(|(q, a)| (q.to_ascii_lowercase(), a.to_vec())).collect();
+        let out = self.run(command).await;
+        self.answers.clear();
+        out
+    }
+
     /// Reads until the device draws its prompt, returning the prompt itself.
     async fn read_until_prompt(&mut self, command: Option<&str>) -> Result<Prompt, SshError> {
         let (raw, prompt) = self.read_raw_until_prompt(command).await?;
@@ -622,6 +639,8 @@ impl Device {
         // somebody's production switch. A genuine second page starts a new
         // line and so is still answered.
         let mut answered_line: Option<usize> = None;
+        // The same, for a question `run_answering` was told to answer.
+        let mut answered_question: Option<usize> = None;
         // The login only. See `SshOptions::login_transcript`.
         let recording = command.is_none();
 
@@ -709,6 +728,23 @@ impl Device {
                     );
                     let _ = self.channel.data(reply).await;
                     answered_line = Some(line_start);
+                }
+            }
+
+            if !self.answers.is_empty() {
+                // The question's own line, found in the buffer without the
+                // newline the device echoes back once it is answered — so
+                // the echo is not taken for the question asked again.
+                let tail = buffer.trim_end();
+                let question_start = tail.rfind('\n').map_or(0, |i| i + 1);
+                if answered_question != Some(question_start) {
+                    let last = crate::cli::visible_text(&tail[question_start..]).to_ascii_lowercase();
+                    if let Some((_, reply)) = self.answers.iter().find(|(q, _)| last.contains(q.as_str())) {
+                        let reply = reply.clone();
+                        let _ = self.channel.data(reply.as_slice()).await;
+                        answered_question = Some(question_start);
+                        continue;
+                    }
                 }
             }
 
