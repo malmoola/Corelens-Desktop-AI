@@ -1,0 +1,29 @@
+
+Group 1:
+  Mode: Active-Passive
+  Local Information:
+    Version: 1
+    Mode: Active-Passive
+    State: suspended (last 40 days)
+    Device Information:
+      Management IP Address: 192.0.2.5
+    HA1 Control Links Joint Configuration:
+      Link Monitor Interval: 3000 ms
+    HA1 Control Link Information:
+      Link State: Up; Setting: 1Gb/s-full
+    HA2 Data Link Information:
+      Link State: Up; Setting: 1Gb/s-full
+    Priority: 100
+    Preemptive: no
+    Software Version: Match
+    Application Content Compatibility: Match
+    State Synchronization: Complete; type: ethernet
+  Peer Information:
+    Initial Monitor Hold Time Remaining: 0 s
+  Link Monitoring Information:
+    Enabled: yes
+  Path Monitoring Information:
+    Enabled: no
+  Configuration Synchronization:
+    Enabled: yes
+    Running Configuration: not synchronized

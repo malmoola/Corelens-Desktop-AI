@@ -1,0 +1,10 @@
+session table:          table_size=4194304 max_depth=2 used=1234
+misc info:              session_count=1234 setup_rate=12 exp_count=0 clash=0
+        memory_tension_drop=0 ephemeral=0/65536 removeable=0
+delete=0, flush=0, dev_down=0/0 ses_walkers=0
+TCP sessions:
+         1000 in ESTABLISHED state
+         200 in TIME_WAIT state
+firewall error stat:
+error1=00000000
+error2=00000000

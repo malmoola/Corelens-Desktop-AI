@@ -1,0 +1,4 @@
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  192.0.2.65              -   0000.0c07.ac0a  ARPA   Vlan10
+Internet  192.0.2.66              -   0000.0c00.0001  ARPA   Vlan10
+Internet  192.0.2.70              3   0000.1111.2222  ARPA   Vlan10

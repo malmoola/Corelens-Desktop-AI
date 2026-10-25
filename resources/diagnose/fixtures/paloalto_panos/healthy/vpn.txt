@@ -1,0 +1,9 @@
+total tunnels configured:                                     1
+filter - type IPSec, state any
+
+total IPSec tunnel configured:                                1
+total IPSec tunnel shown:                                     1
+
+id      name                     state   monitor local-ip         peer-ip          tunnel-i/f
+------------------------------------------------------------------------------------------
+5       TO-BRANCH:TO-BRANCH      active  off     198.51.100.6     203.0.113.30     tunnel.1

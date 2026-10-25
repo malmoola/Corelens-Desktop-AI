@@ -1,0 +1,14 @@
+Vlan10 - Group 10 (HSRP-V2) (IPv4)
+  Local state is Active, priority 110 (Cfged 110), may preempt
+    Forwarding threshold(for vPC), lower: 1 upper: 110 
+  Preemption Delay (Seconds) Reload:300 
+  Hellotime 3 sec, holdtime 10 sec
+  Next hello sent in 1.200000 sec(s)
+  Virtual IP address is 192.0.2.97 (Cfged)
+  Active router is local
+  Standby router is 192.0.2.99 , priority 100 expires in 8.730000 sec(s)
+  Authentication text "fixture"
+  Virtual mac address is 0000.0c9f.f00a (Default MAC)
+  2 state changes, last state change 2w0d
+  IP redundancy name is hsrp-Vlan10-10 (default)
+

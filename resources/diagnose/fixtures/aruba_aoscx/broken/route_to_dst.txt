@@ -1,0 +1,3 @@
+Displaying ipv4 routes selected for forwarding
+
+No ipv4 routes are configured

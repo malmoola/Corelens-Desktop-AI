@@ -1,0 +1,11 @@
+ VLAN0010 is executing the rstp compatible Spanning Tree protocol
+  Bridge Identifier has priority 32768, sysid 10, address 0000.0c00.0001
+  Configured hello time 2, max age 20, forward delay 15, transmit hold-count 6
+  Current root has priority 24586, address 0000.0c00.0002
+  Root port is 1 (GigabitEthernet0/1), cost of root path is 4
+  Topology change flag not set, detected flag not set
+  Number of topology changes 3 last change occurred 2w1d ago
+          from GigabitEthernet0/2
+  Times:  hold 1, topology change 35, notification 2
+          hello 2, max age 20, forward delay 15 
+  Timers: hello 0, topology change 0, notification 0, aging 300

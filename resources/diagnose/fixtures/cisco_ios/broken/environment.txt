@@ -1,0 +1,8 @@
+FAN is FAULTY
+SYSTEM TEMPERATURE is OK
+System Temperature Value: 37 Degree Celsius
+System Temperature State: GREEN
+Yellow Threshold : 64 Degree Celsius
+Red Threshold    : 72 Degree Celsius
+POWER is OK
+RPS is NOT PRESENT

@@ -1,0 +1,23 @@
+Building configuration...
+
+Current configuration : 1024 bytes
+!
+! Last configuration change at 09:01:12 UTC Sun Oct 25 2026 by reader
+!
+version 15.2
+hostname SW1
+!
+interface GigabitEthernet0/1
+ description uplink to SW2
+ switchport trunk allowed vlan 1,10,20
+ switchport mode trunk
+!
+interface GigabitEthernet0/2
+ description printer
+ switchport access vlan 10
+!
+interface Vlan10
+ ip address 192.0.2.66 255.255.255.192
+ ip helper-address 192.0.2.200
+!
+end

@@ -24,6 +24,7 @@ members = [
     "crates/corelens-topology",
     "crates/corelens-path",
     "crates/corelens-mcp",
+    "crates/corelens-diagnose",
     "src-tauri",
 ]
 

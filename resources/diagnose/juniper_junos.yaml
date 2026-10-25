@@ -1,0 +1,192 @@
+# Diagnose playbook: Juniper Junos (EX, QFX, MX, SRX). Commands and output
+# shapes from Juniper's Junos OS CLI reference; ntc-templates where one
+# reads the output. A committed change is saved, and Junos lists trunk
+# VLANs per member rather than as one list, so neither the unsaved check
+# nor the trunk comparison runs here. Not yet met on a device.
+format: 1
+version: 1
+platform: juniper_junos
+name: Juniper Junos
+verified: docs
+source: Junos OS 21.x to 23.x CLI explorer; ntc-templates for the parsed commands.
+commands:
+  - id: uptime
+    command: show system uptime
+    depth: quick
+    parser:
+      lines:
+        pattern: '^System booted: .*\((?P<uptime>[^)]+?) ago\)'
+  - id: engine
+    command: show chassis routing-engine
+    depth: quick
+    parser:
+      blocks:
+        start: '^\s*(?:Slot (?P<slot>\d+):|Routing Engine status:)'
+        fields:
+          idle: 'Idle\s+(\d+) percent'
+          memory: 'Memory utilization\s+(\d+) percent'
+  - id: alarms
+    command: show chassis alarms
+    depth: quick
+    parser:
+      lines:
+        pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \S+\s+(?P<state>Major|Minor)\s+(?P<what>.+?)\s*$'
+  - id: terse
+    command: show interfaces terse
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?P<interface>(?:ge|xe|et|mge|ae)-?\d+(?:/\d+/\d+)?)\s+(?P<admin>up|down)\s+(?P<link>up|down)\s*$'
+    tables:
+      - name: interfaces
+        fields: { port: interface, status: admin link }
+        values:
+          status: { "up up": up, "up down": down, "down down": admin-down, "down up": admin-down }
+  - id: errors
+    command: show interfaces extensive
+    depth: full
+    parser:
+      blocks:
+        start: '^Physical interface: (?P<interface>[^,]+),'
+        fields:
+          input_errors: 'Errors: (\d+), Drops'
+          crc: 'CRC/Align errors\s+(\d+)'
+    tables:
+      - name: counters
+        fields: { port: interface, crc: crc, input_errors: input_errors }
+  - id: lldp
+    command: show lldp neighbors
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: neighbors
+        fields: { local_port: local_interface, remote: neighbor_name, remote_port: neighbor_interface }
+  - id: vlans
+    command: show vlans
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: vlans
+        fields: { vlan: tag, name: vlan_name, ports: interfaces }
+  - id: ospf
+    command: show ospf neighbor
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: ospf
+        fields: { neighbor: neighbor_id, state: state, interface: interface, address: ip_address }
+  - { id: bgp, command: show bgp summary, parser: ntc, depth: quick, optional: true }
+  - id: default_route
+    command: show route 0.0.0.0/0 exact
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?P<net>0\.0\.0\.0/0)\s+\*\['
+  - id: arp
+    command: show arp no-resolve
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: interface }
+  - id: route_to_dst
+    command: show route {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^(?P<network>\d+\.\d+\.\d+\.\d+/\d+)\s+\*\['
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: uptime
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} booted {uptime} ago."
+    evidence: [uptime]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: Routing engine CPU busy
+    layer: health
+    command: engine
+    rule: { kind: each, when: [{ field: idle, op: lt, value: 20 }] }
+    severity: warning
+    says: "{device}'s routing engine is only {idle}% idle."
+    evidence: [idle]
+    passed: Routing engine at least 20% idle.
+  - id: health.memory_high
+    title: Routing engine memory nearly used up
+    layer: health
+    command: engine
+    rule: { kind: each, when: [{ field: memory, op: gt, value: 90 }] }
+    severity: warning
+    says: "{device}'s routing engine memory is {memory}% used."
+    evidence: [memory]
+    passed: Routing engine memory under 90% used.
+  - id: health.env_fault
+    title: Chassis alarm
+    layer: health
+    command: alarms
+    rule: { kind: each, when: [{ field: state, op: eq, value: Major }] }
+    severity: critical
+    says: "{device} has a major chassis alarm: {what}."
+    key: [what]
+    evidence: [state, what]
+    passed: No major chassis alarm.
+  - id: l1.crc_errors
+    title: CRC errors
+    layer: l1
+    command: errors
+    rule: { kind: each, when: [{ field: crc, op: gt, value: 0 }] }
+    severity: warning
+    says: "{interface} on {device} has {crc} CRC/align errors and {input_errors} input errors since the counters were last cleared."
+    key: [interface]
+    evidence: [crc, input_errors]
+    passed: No CRC errors on any interface.
+  - id: l3.ospf_not_full
+    title: OSPF neighbour not Full
+    layer: l3
+    command: ospf
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(full|2way)' }] }
+    severity: critical
+    says: "OSPF neighbour {neighbor_id} on {interface} of {device} is {state}."
+    key: [neighbor_id]
+    evidence: [state, interface, ip_address]
+    passed: Every OSPF neighbour is Full.
+  - id: l3.bgp_down
+    title: BGP session not established
+    layer: l3
+    command: bgp
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(establ|\d)' }] }
+    severity: critical
+    says: "BGP neighbour {peer_ip} (AS {peer_as}) on {device} is {state}."
+    key: [peer_ip]
+    evidence: [up_down, state, flaps]
+    passed: Every BGP session is established.
+  - id: l3.no_default_route
+    title: No default route
+    layer: l3
+    command: default_route
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no default route."
+    passed: A default route is set.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination."
+    passed: A route to the destination.
+fixes:
+  - id: no_shutdown
+    title: "Enable {port} on {device} again"
+    commands: ["delete interfaces {port} disable"]
+    verify: ["show interfaces {port} terse"]
+    impact: "{port} comes up; whatever is connected to it rejoins the network. If it was disabled on purpose, deny this."
+    params: { port: interface }

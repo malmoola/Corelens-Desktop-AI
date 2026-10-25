@@ -1,0 +1,296 @@
+# Diagnose playbook: Cisco NX-OS. Commands and output shapes from Cisco's
+# Nexus 9000 NX-OS 9.3/10.x command references; parsed with ntc-templates.
+# Not yet met on a device.
+format: 1
+version: 1
+platform: cisco_nxos
+name: Cisco NX-OS
+verified: docs
+source: Cisco Nexus 9000 NX-OS 9.3 and 10.x command references; ntc-templates for the parsed commands.
+commands:
+  - { id: version, command: show version, parser: ntc, depth: quick }
+  - { id: clock, command: show clock, parser: ntc, depth: quick }
+  - { id: cpu, command: show processes cpu, parser: ntc, depth: quick }
+  - { id: environment, command: show environment, parser: ntc, depth: quick, optional: true }
+  - id: status
+    command: show interface status
+    parser: ntc
+    depth: quick
+    tables:
+      - name: interfaces
+        fields: { port: port, status: status, vlan: vlan_id, duplex: duplex, speed: speed, description: name }
+        values:
+          status: { connected: up, notconnec: down, disabled: admin-down, err-disabled: err-disabled, xcvrAbsen: down, sfpAbsent: down, noOperMem: down, linkFlapE: err-disabled }
+  - id: interfaces
+    command: show interface
+    parser: ntc
+    depth: quick
+    tables:
+      - name: counters
+        fields: { port: interface, link: link_status, crc: crc, input_errors: input_errors, output_errors: output_errors, drops: output_discards }
+  - { id: errdisabled, command: show interface status err-disabled, parser: ntc, depth: quick }
+  - id: switchport
+    command: show interface switchport
+    parser: ntc
+    depth: quick
+    tables:
+      - name: switchport
+        fields: { port: interface, mode: mode, access_vlan: access_vlan, native: native_vlan, allowed: trunking_vlans }
+  - id: cdp
+    command: show cdp neighbors detail
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: neighbors
+        fields: { local_port: local_interface, remote: neighbor_name, remote_port: neighbor_interface, address: mgmt_address }
+  - id: vlans
+    command: show vlan brief
+    parser: ntc
+    depth: quick
+    tables:
+      - name: vlans
+        fields: { vlan: vlan_id, name: vlan_name, status: status, ports: interfaces }
+  - id: stp_root
+    command: show spanning-tree root
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: stp_root
+        fields: { vlan: vlan_id, root_id: root_id, priority: priority, root_port: root_port, cost: root_cost }
+  - id: hsrp
+    command: show hsrp all
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: fhrp
+        fields: { interface: interface, group: group_number, state: hsrp_router_state, vip: primary_ipv4_address, active: active_ip_address, standby: standby_ip_address }
+  - id: ospf
+    command: show ip ospf neighbor
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: ospf
+        fields: { neighbor: neighbor_id, state: state, interface: interface, address: ip_address }
+  - { id: bgp, command: show ip bgp summary, parser: ntc, depth: quick, optional: true }
+  - id: helpers
+    command: show ip dhcp relay address
+    parser: ntc
+    depth: full
+    optional: true
+    tables:
+      - name: helpers
+        fields: { interface: interface, helper: relay_address }
+  - id: default_route
+    command: show ip route 0.0.0.0/0
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?P<net>0\.0\.0\.0/0), ubest'
+  - id: arp
+    command: show ip arp
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: interface }
+  - { id: logging, command: show logging logfile, parser: text, depth: quick }
+  - { id: running, command: show running-config, parser: text, depth: full }
+  - { id: startup, command: show startup-config, parser: text, depth: full }
+  - id: route_to_dst
+    command: show ip route {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^(?P<network>\d+\.\d+\.\d+\.\d+/\d+), ubest'
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: version
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} restarted {uptime} ago; the last reset reason is {last_reboot_reason}."
+    evidence: [uptime, last_reboot_reason]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: CPU busy
+    layer: health
+    command: cpu
+    rule: { kind: each, when: [{ field: cpu_5_min, op: gt, value: 80 }] }
+    severity: warning
+    says: "{device}'s CPU is at {cpu_5_min}% over five minutes."
+    evidence: [cpu_5_sec, cpu_1_min, cpu_5_min]
+    passed: CPU under 80% over five minutes.
+  - id: health.env_fault
+    title: Fan, power or temperature fault
+    layer: health
+    command: environment
+    rule:
+      kind: each
+      when:
+        - { field: power_supply, op: not_empty }
+        - { field: power_supply_status, op: not_matches, value: '(?i)^(ok|absent)$' }
+    severity: critical
+    says: "{device}: power supply {power_supply} is {power_supply_status}."
+    key: [power_supply]
+    evidence: [power_supply, power_supply_model, power_supply_status]
+    passed: Every power supply reports OK.
+  - id: health.fan_fault
+    title: Fan fault
+    layer: health
+    command: environment
+    rule:
+      kind: each
+      when:
+        - { field: fan, op: not_empty }
+        - { field: fan_status, op: not_matches, value: '(?i)^(ok|absent)$' }
+    severity: critical
+    says: "{device}: fan {fan} is {fan_status}."
+    key: [fan]
+    evidence: [fan, fan_status]
+    passed: Every fan reports OK.
+  - id: health.severe_logs
+    title: Errors in the log (last 24 hours)
+    layer: health
+    command: logging
+    rule:
+      kind: text
+      pattern: '^(?:\d{4}\s+)?(?P<month>[A-Z][a-z]{2})\s+(?P<day>\d{1,2})\s+(?P<time>\d{2}:\d{2}:\d{2})\S*\s+\S+\s+%(?P<facility>[A-Z0-9_-]+)-(?P<severity>[0-3])-(?P<mnemonic>[A-Z0-9_]+):\s*(?P<message>.*)$'
+      within_hours: 24
+    severity: info
+    says: "{device} logged %{facility}-{severity}-{mnemonic}: {message}"
+    key: [facility, mnemonic]
+    passed: Nothing at severity 3 or worse in the last 24 hours.
+  - id: l1.crc_errors
+    title: CRC errors
+    layer: l1
+    command: interfaces
+    rule: { kind: each, when: [{ field: crc, op: gt, value: 0 }] }
+    severity: warning
+    says: "{interface} on {device} has {crc} CRC errors and {input_errors} input errors since the counters were last cleared."
+    key: [interface]
+    evidence: [crc, input_errors]
+    passed: No CRC errors on any interface.
+  - id: l1.half_duplex
+    title: Half duplex
+    layer: l1
+    command: status
+    rule:
+      kind: each
+      when:
+        - { field: status, op: eq, value: connected }
+        - { field: duplex, op: eq, value: half }
+    severity: warning
+    says: "{port} on {device} is up at half duplex ({speed})."
+    key: [port]
+    evidence: [duplex, speed, name]
+    fix: duplex_auto
+    passed: Every connected port runs full duplex.
+  - id: l2.err_disabled
+    title: Port err-disabled
+    layer: l2
+    command: errdisabled
+    rule: { kind: each, when: [{ field: interface, op: not_empty }] }
+    severity: critical
+    says: "{interface} on {device} is err-disabled ({port_error})."
+    key: [interface]
+    evidence: [port_error, name]
+    fix: err_disabled_recover
+    passed: No port is err-disabled.
+  - id: l3.ospf_not_full
+    title: OSPF neighbour not FULL
+    layer: l3
+    command: ospf
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(full|2way)' }] }
+    severity: critical
+    says: "OSPF neighbour {neighbor_id} on {interface} of {device} is {state}."
+    key: [neighbor_id]
+    evidence: [state, interface, ip_address]
+    passed: Every OSPF neighbour is FULL.
+  - id: l3.bgp_down
+    title: BGP session not established
+    layer: l3
+    command: bgp
+    rule: { kind: each, when: [{ field: state_pfxrcd, op: not_matches, value: '^\d+$' }] }
+    severity: critical
+    says: "BGP neighbour {bgp_neigh} (AS {neigh_as}) on {device} is {state_pfxrcd}."
+    key: [bgp_neigh]
+    evidence: [up_down, state_pfxrcd]
+    passed: Every BGP session is established.
+  - id: l3.no_default_route
+    title: No default route
+    layer: l3
+    command: default_route
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no default route."
+    passed: A default route is set.
+  - id: l3.fhrp_not_ready
+    title: Gateway redundancy not converged
+    layer: l3
+    command: hsrp
+    rule: { kind: each, when: [{ field: hsrp_router_state, op: in, value: [initial, init, speak, learn] }] }
+    severity: warning
+    says: "HSRP group {group_number} on {interface} of {device} is {hsrp_router_state}."
+    key: [interface, group_number]
+    evidence: [hsrp_router_state, primary_ipv4_address]
+    passed: Every HSRP group is active, standby or listening.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination."
+    passed: A route to the destination.
+fixes:
+  - id: no_shutdown
+    title: "Bring {port} on {device} back up"
+    commands: ["interface {port}", " no shutdown"]
+    verify: ["show interface {port} status"]
+    impact: "{port} comes up; whatever is connected to it rejoins the network. If it was shut on purpose, deny this."
+    params: { port: interface }
+  - id: err_disabled_recover
+    title: "Recover {interface} on {device} from err-disabled"
+    commands: ["interface {interface}", " shutdown", " no shutdown"]
+    verify: ["show interface {interface} status"]
+    impact: "{interface} is bounced and comes back up. If the reason ({port_error}) is still there it trips again: remove the cause first."
+    params: { interface: interface }
+  - id: trunk_allow_vlan
+    title: "Allow VLAN {vlan} on {port} of {device}"
+    commands: ["interface {port}", " switchport trunk allowed vlan add {vlan}"]
+    verify: ["show interface {port} switchport"]
+    impact: "VLAN {vlan} is carried on {port} again. Other VLANs on the trunk are untouched (add, not replace)."
+    params: { port: interface, vlan: vlan }
+  - id: duplex_auto
+    title: "Set {port} on {device} back to auto speed and duplex"
+    commands: ["interface {port}", " speed auto", " duplex auto"]
+    verify: ["show interface {port} status"]
+    impact: "{port} renegotiates: the link drops for a few seconds."
+    params: { port: interface }
+  - id: stp_root_priority
+    title: "Make {device} the root of VLAN {vlan} again"
+    commands: ["spanning-tree vlan {vlan} priority {priority}"]
+    verify: ["show spanning-tree vlan {vlan}"]
+    impact: "{device} becomes the root of VLAN {vlan} again; the VLAN re-converges once."
+    params: { vlan: vlan, priority: priority }
+  - id: dhcp_helper
+    title: "Relay DHCP on {interface} of {device} to {helper}"
+    commands: ["interface {interface}", " ip dhcp relay address {helper}"]
+    verify: ["show ip dhcp relay address"]
+    impact: "Hosts in VLAN {vlan} get addresses from {helper} like the other VLANs."
+    params: { interface: interface, helper: ipv4 }
+  - id: save_config
+    title: "Save {device}'s running configuration"
+    kind: save
+    impact: "The startup configuration becomes what runs now, so a reload keeps it."
+drift:
+  running: running
+  startup: startup
+  ignore: ['^!Time:', '^!Running configuration last done at', '^!Startup config saved at']
+  save_fix: save_config

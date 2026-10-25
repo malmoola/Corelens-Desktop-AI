@@ -1,0 +1,17 @@
+hostname: PA1
+ip-address: 192.0.2.5
+netmask: 255.255.255.0
+default-gateway: 192.0.2.1
+ipv6-address: unknown
+mac-address: 00:00:0c:00:00:50
+time: Sun Oct 25 10:15:30 2026
+uptime: 0 days, 3:12:00
+family: 400
+model: PA-440
+serial: FAKE00000050
+sw-version: 11.1.4
+app-version: 8800-8000
+threat-version: 8800-8000
+url-db: paloaltonetworks
+operational-mode: normal
+multi-vsys: off

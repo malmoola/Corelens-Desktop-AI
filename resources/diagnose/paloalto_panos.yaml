@@ -1,0 +1,175 @@
+# Diagnose playbook: Palo Alto Networks PAN-OS (10.x, 11.x). Commands and
+# output shapes from the PAN-OS CLI reference; ntc-templates where one
+# reads the output. A committed change is saved, so there is no unsaved
+# check. Not yet met on a device.
+format: 1
+version: 1
+platform: paloalto_panos
+name: Palo Alto (PAN-OS)
+verified: docs
+source: PAN-OS 10.2 and 11.x CLI quick start and operational command reference; ntc-templates for the parsed commands.
+commands:
+  - { id: system, command: show system info, parser: ntc, depth: quick }
+  - id: resources
+    command: show system resources
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?:%Cpu\(s\):\s*[\d.]+ us,\s*[\d.]+ sy,\s*[\d.]+ ni,\s*(?P<idle>[\d.]+) id|(?:KiB|MiB) Mem\s*:\s*(?P<mem_total>[\d.]+) total,\s*(?P<mem_free>[\d.]+) free,\s*(?P<mem_used>[\d.]+) used)'
+  - { id: ha, command: show high-availability all, parser: ntc, depth: quick, optional: true }
+  - id: sessions
+    command: show session info
+    depth: quick
+    parser:
+      blocks:
+        start: '^Number of sessions supported:\s+(?P<max>\d+)'
+        fields:
+          active: 'Number of active sessions:\s+(\d+)'
+          utilization: 'Session table utilization:\s+(\d+)%'
+  - id: interfaces
+    command: show interface all
+    parser: ntc
+    depth: quick
+    tables:
+      - name: interfaces
+        fields: { port: interface, status: state, duplex: duplex, speed: speed }
+  - id: vpn
+    command: show vpn flow
+    depth: quick
+    optional: true
+    parser:
+      lines:
+        pattern: '^\s*(?P<id>\d+)\s+(?P<tunnel>\S+)\s+(?P<state>active|inactive|init)\s+(?P<monitor>\S+)\s+(?P<local>\S+)\s+(?P<peer>\S+)\s+(?P<interface>\S+)\s*$'
+  - { id: routes, command: show routing route, parser: ntc, depth: quick }
+  - id: arp
+    command: show arp all
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: interface }
+  - id: policy
+    command: test security-policy-match source {src} destination {dst} protocol {proto} destination-port {port}
+    parser: ntc
+    depth: quick
+    path: true
+  - id: route_to_dst
+    command: test routing fib-lookup virtual-router default ip {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^\s*via (?P<next_hop>\S+) interface (?P<interface>\S+)'
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: system
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} has been up only {uptime}."
+    evidence: [uptime]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: Management CPU busy
+    layer: health
+    command: resources
+    rule: { kind: each, when: [{ field: idle, op: lt, value: 20 }] }
+    severity: warning
+    says: "{device}'s management plane CPU is only {idle}% idle."
+    evidence: [idle]
+    passed: Management CPU at least 20% idle.
+  - id: health.memory_high
+    title: Management memory nearly used up
+    layer: health
+    command: resources
+    rule: { kind: each, when: [{ field: mem_used, op: pct_gt, of: mem_total, value: 90 }] }
+    severity: warning
+    says: "{device} uses {mem_used} of {mem_total} of management memory."
+    evidence: [mem_used, mem_total]
+    passed: Management memory under 90% used.
+  - id: fw.ha_unhealthy
+    title: HA not healthy
+    layer: firewall
+    command: ha
+    rule:
+      kind: each
+      when:
+        - { field: state, op: not_empty }
+        - { field: state, op: not_matches, value: '(?i)^(active|passive|active-primary|active-secondary)' }
+    severity: critical
+    says: "HA on {device} ({mode}) is {state}."
+    evidence: [mode, state, ha1_link_state, ha2_link_state]
+    passed: HA is active or passive as it should be.
+  - id: fw.ha_config_unsynced
+    title: HA configuration not synchronised
+    layer: firewall
+    command: ha
+    rule:
+      kind: each
+      when:
+        - { field: running_configuration, op: not_empty }
+        - { field: running_configuration, op: ne, value: synchronized }
+    severity: critical
+    says: "The HA peers of {device} are {running_configuration}."
+    evidence: [running_configuration, config_sync]
+    passed: The HA peers' configurations are synchronised.
+  - id: fw.sessions_high
+    title: Session table nearly full
+    layer: firewall
+    command: sessions
+    rule: { kind: each, when: [{ field: utilization, op: gt, value: 80 }] }
+    severity: warning
+    says: "{device}'s session table is {utilization}% full ({active} of {max})."
+    evidence: [active, max, utilization]
+    passed: Session table under 80% full.
+  - id: l1.half_duplex
+    title: Half duplex
+    layer: l1
+    command: interfaces
+    rule:
+      kind: each
+      when:
+        - { field: state, op: eq, value: up }
+        - { field: duplex, op: eq, value: half }
+    severity: warning
+    says: "{interface} on {device} is up at half duplex ({speed})."
+    key: [interface]
+    evidence: [speed, duplex]
+    passed: Every interface that is up runs full duplex.
+  - id: fw.vpn_down
+    title: VPN tunnel down
+    layer: firewall
+    command: vpn
+    rule: { kind: each, when: [{ field: state, op: ne, value: active }] }
+    severity: critical
+    says: "IPsec tunnel {tunnel} to {peer} on {device} is {state}."
+    key: [tunnel]
+    evidence: [peer, state, monitor]
+    passed: Every IPsec tunnel is active.
+  - id: l3.no_default_route
+    title: No default route
+    layer: l3
+    command: routes
+    rule: { kind: none, when: [{ field: network, op: matches, value: '^0\.0\.0\.0(/0)?$' }] }
+    severity: critical
+    says: "{device} has no default route."
+    passed: A default route is set.
+  - id: path.policy_deny
+    title: Policy denies the flow
+    layer: path
+    command: policy
+    rule: { kind: each, when: [{ field: action, op: matches, value: '(?i)^(deny|drop|reset)' }] }
+    severity: critical
+    says: "{device}'s policy {name} ({from} → {to}) would {action} this flow."
+    key: [name]
+    evidence: [name, from, to, action]
+    passed: The flow matches a rule that allows it.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination."
+    passed: A route to the destination.

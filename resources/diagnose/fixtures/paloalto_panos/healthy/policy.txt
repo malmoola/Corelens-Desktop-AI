@@ -1,0 +1,17 @@
+"trust-to-untrust-web; index: 3" {
+        from trust;
+        source any;
+        source-region none;
+        to untrust;
+        destination any;
+        destination-region none;
+        user any;
+        source-device any;
+        destinataion-device any;
+        category any;
+        application/service 0:any/tcp/any/443;
+        action allow;
+        icmp-unreachable: no
+        terminal yes;
+}
+

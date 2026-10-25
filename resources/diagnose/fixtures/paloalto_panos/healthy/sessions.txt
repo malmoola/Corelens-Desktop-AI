@@ -1,0 +1,13 @@
+
+target-dp:                                       *.dp0
+--------------------------------------------------------------------------------
+Number of sessions supported:                    64000
+Number of allocated sessions:                    1234
+Number of active TCP sessions:                   1134
+Number of active UDP sessions:                   100
+Number of active sessions:                       1234
+Session table utilization:                       2%
+Number of sessions created since bootup:         12345678
+Packet rate:                                     1234/s
+Throughput:                                      45678 kbps
+--------------------------------------------------------------------------------

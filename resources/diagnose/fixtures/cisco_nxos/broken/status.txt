@@ -1,0 +1,8 @@
+
+--------------------------------------------------------------------------------
+Port          Name               Status    Vlan      Duplex  Speed   Type
+--------------------------------------------------------------------------------
+mgmt0         --                 connected routed    full    1000    --
+Eth1/1        uplink to NX2      connected trunk     full    10G     10Gbase-SR
+Eth1/2        --                 disabled  1         auto    auto    --
+Eth1/3        server-a           connected 10        half    1000    1000base-T

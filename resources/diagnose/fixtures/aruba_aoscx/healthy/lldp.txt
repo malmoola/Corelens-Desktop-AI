@@ -1,0 +1,22 @@
+LLDP Neighbor Information 
+=========================
+Total Neighbor Entries          : 1
+Total Neighbor Entries Deleted  : 0
+Total Neighbor Entries Dropped  : 0
+Total Neighbor Entries Aged-Out : 0
+--------------------------------------------------------------------------------
+Port                           : 1/1/1
+Neighbor Entries               : 1
+Neighbor Entries Deleted       : 0
+Neighbor Entries Dropped       : 0
+Neighbor Entries Aged-Out      : 0
+Neighbor Chassis-Name          : CX2
+Neighbor Chassis-Description   : Aruba JL658A 6300M FL.10.13.1000
+Neighbor Chassis-ID            : 00:00:0c:00:00:72
+Neighbor Management-Address    : 192.0.2.72
+Chassis Capabilities Available : Bridge, Router
+Chassis Capabilities Enabled   : Bridge, Router
+Neighbor Port-ID               : 1/1/1
+Neighbor Port-Desc             : uplink to CX1
+Neighbor Port VLAN ID          : 1
+TTL                            : 120

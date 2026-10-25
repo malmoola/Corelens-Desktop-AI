@@ -1,0 +1,10 @@
+Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+
+    Console logging: level debugging, 45 messages logged, xml disabled,
+                     filtering disabled
+    Buffer logging:  level debugging, 45 messages logged, xml disabled,
+                    filtering disabled
+
+Log Buffer (4096 bytes):
+Oct 25 09:01:12.123 UTC: %SYS-5-CONFIG_I: Configured from console by reader on vty0 (192.0.2.250)
+Oct 22 04:11:02.001 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/3, changed state to down

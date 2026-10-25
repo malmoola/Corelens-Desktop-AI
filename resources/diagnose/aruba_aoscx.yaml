@@ -1,0 +1,201 @@
+# Diagnose playbook: Aruba AOS-CX (10.10 to 10.13). Commands and output
+# shapes from HPE Aruba's AOS-CX command-line interface guide;
+# ntc-templates where one reads the output. Not yet met on a device.
+format: 1
+version: 1
+platform: aruba_aoscx
+name: Aruba AOS-CX
+verified: docs
+source: AOS-CX 10.10 to 10.13 command-line interface guides; ntc-templates for the parsed commands.
+commands:
+  - id: system
+    command: show system
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?:Up Time\s+:\s+(?P<uptime>.+?)\s*$|CPU Util \(%\)\s+:\s+(?P<cpu>\d+)|Memory Usage \(%\)\s+:\s+(?P<memory>\d+))'
+  - id: fans
+    command: show environment fan
+    depth: quick
+    optional: true
+    parser:
+      lines:
+        pattern: '^\s*(?P<what>\d+/\d+(?:/\d+)?)\s+.*?\s(?P<state>(?i:ok|fault|failed|error|empty))(?:\s+\d+)?\s*$'
+  - id: interfaces
+    command: show interface
+    parser: ntc
+    depth: quick
+    tables:
+      - name: interfaces
+        fields: { port: interface, status: link_admin link_status, duplex: duplex, speed: speed, description: interface_desc, vlan: vlan_access }
+        values:
+          status: { "up up": up, "up down": down, "down down": admin-down, "down up": admin-down }
+      - name: counters
+        fields: { port: interface, crc: rx_crc_fcs, input_errors: rx_errors, output_errors: tx_errors, drops: tx_dropped }
+      - name: switchport
+        fields: { port: interface, mode: vlan_mode, access_vlan: vlan_access, native: vlan_native, allowed: vlan_trunk }
+        values:
+          mode: { native-untagged: trunk, native-tagged: trunk, access: access }
+  - id: lldp
+    command: show lldp neighbor-info detail
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: neighbors
+        fields: { local_port: local_interface, remote: neighbor_name, remote_port: neighbor_interface, address: mgmt_address }
+  - id: vlans
+    command: show vlan
+    parser: ntc
+    depth: quick
+    tables:
+      - name: vlans
+        fields: { vlan: vlan_id, name: vlan_name, status: status, ports: interfaces }
+  - id: ospf
+    command: show ip ospf neighbors
+    depth: quick
+    optional: true
+    parser:
+      lines:
+        pattern: '^(?P<neighbor_id>\d+\.\d+\.\d+\.\d+)\s+(?P<priority>\d+)\s+(?P<state>\S+)\s+(?P<ip_address>\d+\.\d+\.\d+\.\d+)\s+(?P<interface>\S+)'
+    tables:
+      - name: ospf
+        fields: { neighbor: neighbor_id, state: state, interface: interface, address: ip_address }
+  - { id: routes, command: show ip route all-vrfs, parser: ntc, depth: quick }
+  - id: arp
+    command: show arp all-vrfs
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: port_id }
+  - { id: running, command: show running-config, parser: text, depth: full }
+  - { id: startup, command: show startup-config, parser: text, depth: full }
+  - id: route_to_dst
+    command: show ip route {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^(?P<network>\d+\.\d+\.\d+\.\d+/\d+), vrf'
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: system
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} has been up only {uptime}."
+    evidence: [uptime]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: CPU busy
+    layer: health
+    command: system
+    rule: { kind: each, when: [{ field: cpu, op: gt, value: 80 }] }
+    severity: warning
+    says: "{device}'s CPU is at {cpu}%."
+    evidence: [cpu]
+    passed: CPU under 80%.
+  - id: health.memory_high
+    title: Memory nearly used up
+    layer: health
+    command: system
+    rule: { kind: each, when: [{ field: memory, op: gt, value: 90 }] }
+    severity: warning
+    says: "{device} uses {memory}% of its memory."
+    evidence: [memory]
+    passed: Memory under 90% used.
+  - id: health.env_fault
+    title: Fan fault
+    layer: health
+    command: fans
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(ok|empty)$' }] }
+    severity: critical
+    says: "{device}: fan {what} is {state}."
+    key: [what]
+    evidence: [what, state]
+    passed: Every fan reports OK.
+  - id: l1.crc_errors
+    title: CRC errors
+    layer: l1
+    command: interfaces
+    rule: { kind: each, when: [{ field: rx_crc_fcs, op: gt, value: 0 }] }
+    severity: warning
+    says: "{interface} on {device} has {rx_crc_fcs} CRC/FCS errors and {rx_errors} receive errors since the counters were last cleared."
+    key: [interface]
+    evidence: [rx_crc_fcs, rx_errors]
+    passed: No CRC errors on any interface.
+  - id: l1.half_duplex
+    title: Half duplex
+    layer: l1
+    command: interfaces
+    rule:
+      kind: each
+      when:
+        - { field: link_status, op: eq, value: up }
+        - { field: duplex, op: eq, value: Half }
+    severity: warning
+    says: "{interface} on {device} is up at half duplex ({speed})."
+    key: [interface]
+    evidence: [duplex, speed]
+    fix: duplex_auto
+    passed: Every port that is up runs full duplex.
+  - id: l3.ospf_not_full
+    title: OSPF neighbour not FULL
+    layer: l3
+    command: ospf
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(full|2way)' }] }
+    severity: critical
+    says: "OSPF neighbour {neighbor_id} on {interface} of {device} is {state}."
+    key: [neighbor_id]
+    evidence: [state, interface, ip_address]
+    passed: Every OSPF neighbour is FULL.
+  - id: l3.no_default_route
+    title: No default route
+    layer: l3
+    command: routes
+    rule:
+      kind: none
+      when:
+        - { field: ip_address, op: eq, value: 0.0.0.0 }
+        - { field: prefix_length, op: eq, value: "0" }
+    severity: critical
+    says: "{device} has no default route."
+    passed: A default route is set.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination."
+    passed: A route to the destination.
+fixes:
+  - id: no_shutdown
+    title: "Bring {port} on {device} back up"
+    commands: ["interface {port}", " no shutdown"]
+    verify: ["show interface {port}"]
+    impact: "{port} comes up; whatever is connected to it rejoins the network. If it was shut on purpose, deny this."
+    params: { port: interface }
+  - id: trunk_allow_vlan
+    title: "Allow VLAN {vlan} on {port} of {device}"
+    commands: ["interface {port}", " vlan trunk allowed {vlan}"]
+    verify: ["show interface {port}"]
+    impact: "VLAN {vlan} is carried on {port} again. Other VLANs on the trunk are untouched."
+    params: { port: interface, vlan: vlan }
+  - id: duplex_auto
+    title: "Set {port} on {device} back to auto-negotiation"
+    commands: ["interface {port}", " speed auto"]
+    verify: ["show interface {port}"]
+    impact: "{port} renegotiates speed and duplex: the link drops for a few seconds."
+    params: { port: interface }
+  - id: save_config
+    title: "Save {device}'s running configuration"
+    kind: save
+    impact: "The startup configuration becomes what runs now, so a reload keeps it."
+drift:
+  running: running
+  startup: startup
+  ignore: ['^!Version ArubaOS-CX', '^!export-password']
+  save_fix: save_config

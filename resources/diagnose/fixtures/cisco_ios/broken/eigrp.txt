@@ -1,0 +1,4 @@
+EIGRP-IPv4 Neighbors for AS(100)
+H   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq
+                                                   (sec)         (ms)       Cnt Num
+0   192.0.2.2               Gi0/1                    13 00:02:11    1   100  0  45

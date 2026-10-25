@@ -1,0 +1,16 @@
+Power Supply:
+Voltage: 12 Volts
+Power                              Actual             Total
+Supply    Model                    Output          Capacity    Status
+                                 (Watts )           (Watts )
+-------  -------------------  -----------  ----------------  ---------
+1        NXA-PAC-650W-PE              120 W            650 W     Ok
+2        NXA-PAC-650W-PE              120 W            650 W     Ok
+
+Fan:
+---------------------------------------------------------------------------
+Fan             Model                Hw     Direction       Status
+---------------------------------------------------------------------------
+Fan1(sys_fan1)  NXA-FAN-30CFM-B      --     front-to-back   Ok
+Fan2(sys_fan2)  NXA-FAN-30CFM-B      --     front-to-back   Ok
+

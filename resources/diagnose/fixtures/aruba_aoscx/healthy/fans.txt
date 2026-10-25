@@ -1,0 +1,7 @@
+Fan information
+---------------------------------------------------------------------------
+Mbr/Fan       Product  Serial Number  Speed   Direction      Status  RPM
+              Name
+---------------------------------------------------------------------------
+1/1           N/A      N/A            normal  front-to-back  ok      7200
+1/2           N/A      N/A            normal  front-to-back  ok      0

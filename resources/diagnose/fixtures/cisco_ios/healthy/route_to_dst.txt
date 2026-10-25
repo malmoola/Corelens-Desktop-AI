@@ -1,0 +1,5 @@
+Routing entry for 198.51.100.0/24
+  Known via "static", distance 1, metric 0
+  Routing Descriptor Blocks:
+  * 192.0.2.65
+      Route metric is 0, traffic share count is 1

@@ -1,0 +1,14 @@
+Current configuration:
+!
+!Version ArubaOS-CX FL.10.13.1000
+!export-password: default
+hostname CX1
+interface 1/1/1
+    description uplink to CX2
+    no shutdown
+    vlan trunk native 1
+    vlan trunk allowed 1,10,20
+interface 1/1/2
+    description printer (desk 4)
+    no shutdown
+    vlan access 10

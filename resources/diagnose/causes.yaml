@@ -1,0 +1,283 @@
+# Root causes: which finding anchors each, which other findings it
+# explains (joined on a shared device, port or VLAN: `field in the other
+# finding: field in the anchor`), what lowers it, what a passed check rules
+# out, and the fix. Confidence starts at `confidence`, rises 0.05 for each
+# finding explained and for a symptom about its layer, and falls by
+# `lowers` for each finding against it. Causes are tried in this order; a
+# finding explained by a stronger cause is not also a cause of its own.
+format: 1
+version: 1
+causes:
+  - id: trunk_vlan_pruned
+    anchor: x.trunk_vlan_mismatch
+    title: "VLAN {vlan} is not allowed on {device} {port} (the trunk to {peer})"
+    confidence: 0.85
+    why: "The VLAN exists on both switches but only one end of the trunk between them carries it, so the VLAN is cut in two at {device} {port}: hosts on the far side lose their gateway, and redundant gateways split."
+    explains:
+      - { check: x.fhrp_split, join: { vlan: vlan } }
+      - { check: x.fhrp_no_active, join: { vlan: vlan } }
+      - { check: x.stp_root_disagree, join: { vlan: vlan } }
+      - { check: x.dhcp_helper_missing, join: { vlan: vlan } }
+    contradicted_by:
+      - { check: x.port_shut, join: { device: peer }, lowers: 0.2, says: "the far end's port is shut, which cuts every VLAN, not one" }
+    rules_out:
+      - { passed: l1.crc_errors, says: "No interface errors on {device}, so it is not a bad cable." }
+      - { passed: x.duplex_mismatch, says: "Both ends of each link agree on speed and duplex." }
+  - id: port_shut
+    anchor: x.port_shut
+    title: "{device} {port} is shut down"
+    confidence: 0.9
+    why: "The port is administratively down ({why}). Everything behind it — the link, its neighbours, any routing over it — is down with it."
+    explains:
+      - { check: x.ospf_neighbor_lost, join: { device: device } }
+      - { check: l3.ospf_not_full, join: { device: device } }
+      - { check: x.link_not_seen, join: { device: device, port: port } }
+      - { check: x.link_not_seen, join: { peer: device, peer_port: port } }
+      - { check: x.expected_up_down, join: { peer: device } }
+  - id: err_disabled
+    anchor: l2.err_disabled
+    title: "{device} {port} is err-disabled ({reason})"
+    confidence: 0.9
+    why: "The switch shut the port itself because of {reason}. Bringing it back without removing the reason (a loop, a BPDU from an edge port, a security violation) makes it trip again."
+    explains:
+      - { check: x.link_not_seen, join: { device: device, port: port } }
+      - { check: x.ospf_neighbor_lost, join: { device: device } }
+  - id: port_down
+    anchor: x.expected_up_down
+    title: "{device} {port} is down"
+    confidence: 0.7
+    why: "The port is not shut but has no link ({why}): the cable, the optic, or the device at the far end (its power, its port)."
+    explains:
+      - { check: x.ospf_neighbor_lost, join: { device: device } }
+      - { check: x.link_not_seen, join: { device: device, port: port } }
+    fix: none
+  - id: duplex_mismatch
+    anchor: x.duplex_mismatch
+    title: "Duplex/speed mismatch on {device} {port} ↔ {peer} {peer_port}"
+    confidence: 0.85
+    why: "One end was set by hand and the other negotiated, so they disagree: the half-duplex end sees late collisions, the full-duplex end CRC errors, and throughput collapses under load."
+    explains:
+      - { check: l1.crc_errors, join: { device: device, port: port } }
+      - { check: l1.crc_errors, join: { device: peer, port: peer_port } }
+      - { check: l1.half_duplex, join: { device: device, port: port } }
+      - { check: l1.half_duplex, join: { device: peer, port: peer_port } }
+  - id: half_duplex
+    anchor: l1.half_duplex
+    title: "{device} {port} is running half duplex"
+    confidence: 0.6
+    why: "Modern links run full duplex; half duplex means one end is set by hand or negotiation failed. The far end is not in this run, so whether it disagrees is not known."
+    explains:
+      - { check: l1.crc_errors, join: { device: device, port: port } }
+  - id: physical_errors
+    anchor: l1.crc_errors
+    title: "Errors on {device} {port}"
+    confidence: 0.6
+    why: "Frames arrive damaged: a bad cable or patch, a dirty or failing optic, a faulty port, or interference. Counters count since they were last cleared, so old errors look the same as new ones; clear and watch to tell."
+    explains:
+      - { check: l1.optic_rx_low, join: { device: device, port: port } }
+    rules_out:
+      - { passed: x.duplex_mismatch, says: "Both ends agree on duplex, so it is not a duplex mismatch." }
+    fix: none
+  - id: optic_low
+    anchor: l1.optic_rx_low
+    title: "Weak light on {device} {port}"
+    confidence: 0.7
+    why: "The optic receives too little light: a dirty connector, a bend, a long run, or a failing optic at either end."
+    fix: none
+  - id: poe_fault
+    anchor: l1.poe_fault
+    title: "PoE fault on {device} {port}"
+    confidence: 0.7
+    why: "The switch stopped powering the port: the device draws more than the port allows, the cable is faulty, or the budget is spent."
+    fix: none
+  - id: stp_root_moved
+    anchor: x.stp_root_moved
+    title: "The spanning-tree root of VLAN {vlan} moved off {device}"
+    confidence: 0.75
+    why: "A bridge with a better priority (or a lower MAC at the same priority) joined or was reconfigured, so the tree re-converged around it and traffic takes different paths. Restoring the priority on {device} puts the root back."
+    explains:
+      - { check: x.stp_root_on_access, join: { vlan: vlan } }
+      - { check: l2.stp_recent_change, join: { vlan: vlan } }
+  - id: stp_split
+    anchor: x.stp_root_disagree
+    title: "VLAN {vlan} has more than one spanning-tree root"
+    confidence: 0.6
+    why: "Switches that are connected disagree on the root: the VLAN is not carried between them, or BPDUs are filtered (bpdufilter, a third-party device). Look at the trunks between the switches that disagree."
+    fix: none
+  - id: recent_tcn
+    anchor: l2.stp_recent_change
+    title: "Spanning tree re-converged recently in VLAN {vlan}"
+    confidence: 0.5
+    why: "A topology change floods MAC tables and briefly disrupts traffic. Frequent ones mean a flapping link or an edge port without portfast; the port named is where the last one came from."
+    fix: none
+  - id: fhrp_split
+    anchor: x.fhrp_split
+    title: "Both routers are active for gateway {vip}"
+    confidence: 0.55
+    why: "The routers do not hear each other's hellos: the VLAN between them is cut, an ACL drops the hellos, or the group number or authentication differs."
+    fix: none
+  - id: fhrp_no_active
+    anchor: x.fhrp_no_active
+    title: "No active router for gateway {vip}"
+    confidence: 0.6
+    why: "Every router in the group is standby, listening or initialising: its interface may be down or the group misconfigured."
+    fix: none
+  - id: ospf_not_full
+    anchor: l3.ospf_not_full
+    title: "OSPF neighbour {neighbor_id} on {device} is stuck in {state}"
+    confidence: 0.6
+    why: "An adjacency stuck short of FULL is usually an MTU mismatch (EXSTART/EXCHANGE), mismatched hello/dead timers, area or authentication (INIT), or a one-way link."
+    rules_out:
+      - { passed: l1.crc_errors, says: "No interface errors on {device}, so the link itself is clean." }
+    fix: none
+  - id: ospf_lost
+    anchor: x.ospf_neighbor_lost
+    title: "OSPF neighbour {neighbor} of {device} is gone"
+    confidence: 0.6
+    why: "The neighbour was FULL in the previous run and is not there now: the link, the neighbour itself, or a change to OSPF on either side."
+    fix: none
+  - id: bgp_down
+    anchor: l3.bgp_down
+    title: "BGP session to {bgp_neighbor} on {device} is not established ({state_or_prefixes_received})"
+    confidence: 0.6
+    why: "Idle or Active means the TCP session does not come up: reachability to the peer, its address or AS, an ACL on port 179, or the peer shut it."
+    fix: none
+  - id: no_default
+    anchor: l3.no_default_route
+    title: "{device} has no default route or gateway"
+    confidence: 0.7
+    why: "Without one, {device} cannot reach anything outside its own subnets — including Corelens on the VPN, NTP, syslog and RADIUS servers elsewhere."
+    fix: none
+  - id: svi_down
+    anchor: l3.svi_down
+    title: "{interface} on {device} is down"
+    confidence: 0.6
+    why: "An SVI is up only while its VLAN exists and has at least one port up and forwarding in it."
+    fix: none
+  - id: dhcp_helper
+    anchor: x.dhcp_helper_missing
+    title: "{interface} on {device} does not relay DHCP"
+    confidence: 0.7
+    why: "Hosts in VLAN {vlan} broadcast for an address and nothing forwards the request to the DHCP server ({helper} on the other SVIs), so they end up with a 169.254 address."
+  - id: duplicate_ip
+    anchor: x.duplicate_ip
+    title: "{ip} is used by more than one device"
+    confidence: 0.7
+    why: "Two hosts answering for one address take turns receiving its traffic. The MACs say which; the MAC table says where each is plugged in."
+    fix: none
+  - id: ip_twice
+    anchor: x.ip_on_two_devices
+    title: "{ip} is configured twice"
+    confidence: 0.85
+    why: "Two interfaces own the same address: whichever answers ARP last gets the traffic."
+    fix: none
+  - id: unsaved
+    anchor: drift.unsaved
+    title: "{device} has unsaved changes"
+    confidence: 0.9
+    why: "What runs now is not what the device would start with: a power cut or reload would undo {lines} line(s). Saving is its own approval."
+  - id: aaa_down
+    anchor: services.aaa_down
+    title: "AAA server {host} is {state} on {device}"
+    confidence: 0.7
+    why: "Logins fall back to the next server or to the local account; if every server is down, only local accounts work."
+    fix: none
+  - id: ntp_unsynced
+    anchor: services.ntp_unsynced
+    title: "{device}'s clock is not synchronised"
+    confidence: 0.6
+    why: "Log timestamps cannot be correlated across devices and certificates may be judged invalid. Check the NTP servers are reachable from {device}."
+    fix: none
+  - id: env_fault
+    anchor: health.env_fault
+    title: "{what} on {device} reports {state}"
+    confidence: 0.8
+    why: "A failed fan, power supply or an over-temperature sensor is hardware: check the unit, its airflow and its power feed."
+    fix: none
+  - id: recent_reload
+    anchor: health.recent_reload
+    title: "{device} restarted {uptime} ago"
+    confidence: 0.5
+    why: "The reload reason is {reload_reason}. Power-on means it lost power (check the UPS or circuit); a crash leaves a crashinfo file."
+    fix: none
+  - id: cpu_high
+    anchor: health.cpu_high
+    title: "{device}'s CPU is busy"
+    confidence: 0.6
+    why: "Sustained high CPU slows the control plane: routing and spanning tree react late, and management sessions lag. The busiest processes are in show processes cpu sorted."
+    fix: none
+  - id: memory_high
+    anchor: health.memory_high
+    title: "{device} is low on memory"
+    confidence: 0.6
+    why: "A process may be leaking memory; when it runs out, features fail to allocate and the device may reload."
+    fix: none
+  - id: flash_full
+    anchor: health.flash_full
+    title: "{device}'s flash is nearly full"
+    confidence: 0.6
+    why: "Without free space no backup, snapshot or image can be copied to it — including the snapshot Corelens takes before a change."
+    fix: none
+  - id: fw_ha
+    anchor: fw.ha_unhealthy
+    title: "HA on {device} is not healthy"
+    confidence: 0.75
+    why: "A firewall pair out of sync or with a member missing will not fail over cleanly; sessions may drop on failover."
+    fix: none
+  - id: fw_ha_unsynced
+    anchor: fw.ha_config_unsynced
+    title: "The HA peers of {device} are out of sync"
+    confidence: 0.75
+    why: "A configuration change reached one member and not the other; on failover the other runs its older configuration."
+    fix: none
+  - id: fan_fault
+    anchor: health.fan_fault
+    title: "Fan {fan} on {device} reports {fan_status}"
+    confidence: 0.8
+    why: "A failed fan is hardware; the device overheats if a second one fails."
+    fix: none
+  - id: fw_sessions
+    anchor: fw.sessions_high
+    title: "{device}'s session table is under pressure"
+    confidence: 0.6
+    why: "Near the session limit new connections are refused or old ones aged out early: look for a scan, a flood, or long-lived sessions."
+    fix: none
+  - id: fw_vpn
+    anchor: fw.vpn_down
+    title: "VPN tunnel {tunnel} on {device} is down"
+    confidence: 0.7
+    why: "Phase 1 or phase 2 is not up: the peer's reachability, a key or proposal mismatch, or the peer itself."
+    fix: none
+  - id: path_no_route
+    anchor: path.no_route
+    title: "{device} has no route to the destination"
+    confidence: 0.8
+    why: "The packet reaches {device} and stops: there is no route to the destination there, and no default route to fall back on."
+    fix: none
+  - id: path_denied
+    anchor: path.policy_deny
+    title: "{device}'s policy denies the flow"
+    confidence: 0.85
+    why: "The firewall's own policy lookup says this flow matches a rule that does not allow it."
+    fix: none
+  - id: severe_logs
+    anchor: health.severe_logs
+    title: "{device} logged errors in the last 24 hours"
+    confidence: 0.4
+    why: "Messages at severity 3 (errors) and worse; the lines themselves say what."
+    fix: none
+  - id: flapping
+    anchor: l1.flapping
+    title: "{port} on {device} is flapping"
+    confidence: 0.65
+    why: "The link went down {count} times in the last day: a loose cable, a failing optic, a device rebooting at the far end, or a negotiation problem."
+    fix: none
+symptoms:
+  - { words: [slow, latency, lag, "packet loss", drops, dropping, errors, choppy], layers: [l1, l2] }
+  - { words: [dhcp, "no ip", "ip address", apipa, "169.254", "self-assigned"], layers: [services, l2] }
+  - { words: ["can't reach", "cannot reach", unreachable, "no internet", outage, "can't ping", "cannot ping", timeout, "not working"], layers: [l3, l2, path, firewall] }
+  - { words: [vpn, tunnel, ipsec], layers: [firewall] }
+  - { words: [loop, storm, flapping, flap, "mac flap"], layers: [l2, l1] }
+  - { words: [login, radius, tacacs, authentication, "can't log in"], layers: [services] }
+  - { words: [clock, time, ntp, certificate], layers: [services] }
+  - { words: [reboot, reload, restart, crash, power], layers: [health] }

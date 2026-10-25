@@ -1,0 +1,11 @@
+CPU states: 93% user 2% system 0% nice 5% idle 0% iowait 0% irq 0% softirq
+CPU0 states: 93% user 2% system 0% nice 5% idle 0% iowait 0% irq 0% softirq
+Memory: 3999684k total, 3700000k used (92.5%), 2000000k free, 0k freeable
+Average network usage: 12345 / 23456 kbps in 1 minute, 12345 / 23456 kbps in 10 minutes, 12345 / 23456 kbps in 30 minutes
+Maximal network usage: 34567 / 45678 kbps in 1 minute, 34567 / 45678 kbps in 10 minutes, 34567 / 45678 kbps in 30 minutes
+Average sessions: 1234 sessions in 1 minute, 1200 sessions in 10 minutes, 1180 sessions in 30 minutes
+Average session setup rate: 12 sessions per second in last 1 minute, 11 sessions per second in last 10 minutes, 10 sessions per second in last 30 minutes
+Average NPU sessions: 0 sessions in last 1 minute, 0 sessions in last 10 minutes, 0 sessions in last 30 minutes
+Virus caught: 0 total in 1 minute
+IPS attacks blocked: 0 total in 1 minute
+Uptime: 0 days,  3 hours,  12 minutes

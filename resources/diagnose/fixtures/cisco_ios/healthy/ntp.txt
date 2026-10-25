@@ -1,0 +1,2 @@
+Clock is synchronized, stratum 3, reference is 192.0.2.200
+nominal freq is 286.1023 Hz, actual freq is 286.1025 Hz, precision is 2**21

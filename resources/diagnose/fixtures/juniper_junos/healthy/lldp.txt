@@ -1,0 +1,2 @@
+Local Interface    Parent Interface    Chassis Id          Port info          System Name
+ge-0/0/0           -                   00:00:0c:00:00:61   ge-0/0/0           EX2

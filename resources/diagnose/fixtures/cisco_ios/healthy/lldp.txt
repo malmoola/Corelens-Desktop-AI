@@ -1,0 +1,22 @@
+------------------------------------------------
+Local Intf: Gi0/1
+Chassis id: 0000.0c00.0002
+Port id: Gi1/0/1
+Port Description: uplink to SW1
+System Name: SW2
+
+System Description: 
+Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E, RELEASE SOFTWARE (fc2)
+
+Time remaining: 100 seconds
+System Capabilities: B
+Enabled Capabilities: B
+Management Addresses:
+    IP: 192.0.2.12
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+Media Attachment Unit type: 30
+Vlan ID: - not advertised
+
+Total entries displayed: 1

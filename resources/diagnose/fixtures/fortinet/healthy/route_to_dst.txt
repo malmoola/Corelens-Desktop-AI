@@ -1,0 +1,4 @@
+Routing table for VRF=0
+Routing entry for 0.0.0.0/0
+  Known via "static", distance 10, metric 0, best
+  * vrf 0 198.51.100.1, via wan1

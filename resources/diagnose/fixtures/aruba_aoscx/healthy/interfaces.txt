@@ -1,0 +1,61 @@
+Interface 1/1/1 is up 
+ Admin state is up
+ Link transitions: 1
+ Description: uplink to CX2
+ Hardware: Ethernet, MAC Address: 00:00:0c:00:00:71 
+ MTU 1500 
+ Type 1GbT
+ Full-duplex 
+ qos trust none
+ Speed 1000 Mb/s 
+ Auto-negotiation is on
+ Flow-control: off 
+ Error-control: off 
+ VLAN Mode: native-untagged
+ Native VLAN: 1
+ Allowed VLAN List: 1,10,20
+ Rx
+      2417650 total packets            457274611 total bytes
+            0   unicast packets
+      1831055   multicast packets
+       586595   broadcast packets
+            0 errors                           0 dropped
+            0 CRC/FCS
+ Tx
+    116722501 total packets           8432615310 total bytes
+            0   unicast packets
+    116722496   multicast packets
+            5   broadcast packets
+            0 errors                           0 dropped
+            0 collision
+
+Interface 1/1/2 is up 
+ Admin state is up
+ Link transitions: 1
+ Description: printer
+ Hardware: Ethernet, MAC Address: 00:00:0c:00:00:71 
+ MTU 1500 
+ Type 1GbT
+ Full-duplex 
+ qos trust none
+ Speed 1000 Mb/s 
+ Auto-negotiation is on
+ Flow-control: off 
+ Error-control: off 
+ VLAN Mode: access
+ Access VLAN: 10
+ Rx
+      2417650 total packets            457274611 total bytes
+            0   unicast packets
+      1831055   multicast packets
+       586595   broadcast packets
+            0 errors                           0 dropped
+            0 CRC/FCS
+ Tx
+    116722501 total packets           8432615310 total bytes
+            0   unicast packets
+    116722496   multicast packets
+            5   broadcast packets
+            0 errors                           0 dropped
+            0 collision
+

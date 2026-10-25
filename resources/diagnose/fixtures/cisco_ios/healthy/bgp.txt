@@ -1,0 +1,6 @@
+BGP router identifier 192.0.2.1, local AS number 65001
+BGP table version is 12, main routing table version 12
+5 network entries using 1240 bytes of memory
+
+Neighbor        V           AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+198.51.100.2    4        65002    1234    1240       12    0    0 3d04h    5

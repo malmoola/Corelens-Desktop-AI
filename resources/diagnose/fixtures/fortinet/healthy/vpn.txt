@@ -1,0 +1,2 @@
+'TO-BRANCH1' 203.0.113.10:0  selectors(total,up): 1/1  rx(pkt,err): 1234/0  tx(pkt,err): 2345/0
+'TO-BRANCH2' 203.0.113.20:0  selectors(total,up): 2/2  rx(pkt,err): 0/0  tx(pkt,err): 12/0

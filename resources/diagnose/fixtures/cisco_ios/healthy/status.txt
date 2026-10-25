@@ -1,0 +1,6 @@
+
+Port      Name               Status       Vlan       Duplex  Speed Type 
+Gi0/1     uplink to SW2      connected    trunk      a-full a-1000 10/100/1000BaseTX
+Gi0/2     printer            connected    10         a-full  a-100 10/100/1000BaseTX
+Gi0/3                        notconnect   10           auto   auto 10/100/1000BaseTX
+Gi0/4     spare              disabled     1            auto   auto 10/100/1000BaseTX

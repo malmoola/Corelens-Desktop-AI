@@ -1,0 +1,30 @@
+HA Health Status: Not Synchronized
+Model: FortiGate-100F
+Mode: HA A-P
+Group: 0
+Debug: 0
+Cluster Uptime: 40 days 2:01:09
+Cluster state change time: 2026-09-15 08:00:01
+Primary selected using:
+    <2026/09/15 08:00:01> FGT100FTKFAKE001 is selected as the primary because it has the largest value of uptime.
+ses_pickup: enable, ses_pickup_delay=disable
+override: disable
+Configuration Status:
+    FGT100FTKFAKE001(updated 3 seconds ago): in-sync
+    FGT100FTKFAKE002(updated 2 seconds ago): out-of-sync
+System Usage stats:
+    FGT100FTKFAKE001(updated 3 seconds ago):
+        sessions=783, average-cpu-user/nice/system/idle=0%/0%/0%/100%, memory=36%
+    FGT100FTKFAKE002(updated 2 seconds ago):
+        sessions=12, average-cpu-user/nice/system/idle=0%/0%/0%/100%, memory=30%
+HBDEV stats:
+    FGT100FTKFAKE001(updated 3 seconds ago):
+        ha: physical/1000auto, up, rx-bytes/packets/dropped/errors=1596115/1611935/0/0, tx=330811/728201/0/0
+    FGT100FTKFAKE002(updated 2 seconds ago):
+        ha: physical/1000auto, up, rx-bytes/packets/dropped/errors=331020/728416/0/0, tx=1596225/1612225/0/0
+Primary: FW1             , FGT100FTKFAKE001, HA cluster index = 0
+Secondary: FW1-B         , FGT100FTKFAKE002, HA cluster index = 1
+number of vcluster: 1
+vcluster 1: work 169.254.0.1
+Primary: FGT100FTKFAKE001, HA operating index = 0
+Secondary: FGT100FTKFAKE002, HA operating index = 1

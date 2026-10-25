@@ -1,0 +1,2 @@
+Routing table for VRF=0
+% Network not in table

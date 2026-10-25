@@ -1,0 +1,7 @@
+Processor Pool Total:  152457096 Used:  145000000 Free:    7457096
+      I/O Pool Total:   16777216 Used:   11453520 Free:    5323696
+Driver te Pool Total:    4194304 Used:         40 Free:    4194264
+
+ PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process
+   0   0   63124672   12345678   45612345          0          0 *Init*          
+  84   0    1234567     234567    1000000          0          0 Spanning Tree   

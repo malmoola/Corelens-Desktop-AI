@@ -1,0 +1,17 @@
+-------------------------
+Device ID: SW2
+Entry address(es): 
+  IP address: 192.0.2.12
+Platform: cisco WS-C2960X-24TS-L,  Capabilities: Switch IGMP 
+Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet1/0/1
+Holdtime : 150 sec
+
+Version :
+Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E, RELEASE SOFTWARE (fc2)
+
+advertisement version: 2
+Native VLAN: 1
+Duplex: full
+Management address(es): 
+  IP address: 192.0.2.12
+

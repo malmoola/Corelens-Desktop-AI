@@ -1,0 +1,7 @@
+File Systems:
+
+     Size(b)     Free(b)      Type  Flags  Prefixes
+*  122185728     4096000     flash     rw   flash:
+           -           -    opaque     rw   bs:
+           -           -   unknown     rw   vb:
+      524288      516000     nvram     rw   nvram:

@@ -1,0 +1,8 @@
+OSPF Process ID 1 VRF default
+==============================
+
+Total Number of Neighbors : 1
+
+Neighbor ID      Priority  State             Nbr Address       Interface
+-------------------------------------------------------------------------
+192.0.2.250      1         FULL/DR           192.0.2.193       vlan20

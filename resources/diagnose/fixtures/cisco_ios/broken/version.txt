@@ -1,0 +1,33 @@
+Cisco IOS Software, C2960CX Software (C2960CX-UNIVERSALK9-M), Version 15.2(7)E, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2019 by Cisco Systems, Inc.
+Compiled Wed 13-Mar-19 01:19 by prod_rel_team
+
+ROM: Bootstrap program is C2960CX boot loader
+BOOTLDR: C2960CX Boot Loader (C2960CX-HBOOT-M) Version 15.2(3r)E, RELEASE SOFTWARE (fc1)
+
+SW1 uptime is 2 hours, 5 minutes
+System returned to ROM by power-on
+System restarted at 08:10:00 UTC Sun Oct 25 2026
+System image file is "flash:/c2960cx-universalk9-mz.152-7.E.bin"
+Last reload reason: power-on
+
+cisco WS-C2960CX-8PC-L (APM86XXX) processor (revision C0) with 524288K bytes of memory.
+Processor board ID FAKE0000001
+Last reset from power-on
+1 Virtual Ethernet interface
+12 Gigabit Ethernet interfaces
+The password-recovery mechanism is enabled.
+
+512K bytes of flash-simulated non-volatile configuration memory.
+Base ethernet MAC Address       : 00:00:0C:00:00:01
+Motherboard assembly number     : 73-00000-00
+Model number                    : WS-C2960CX-8PC-L
+System serial number            : FAKE0000001
+
+Switch Ports Model                     SW Version            SW Image
+------ ----- -----                     ----------            ----------
+*    1 12    WS-C2960CX-8PC-L          15.2(7)E              C2960CX-UNIVERSALK9-M
+
+
+Configuration register is 0xF

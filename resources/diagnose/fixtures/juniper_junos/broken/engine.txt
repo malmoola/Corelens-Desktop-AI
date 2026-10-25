@@ -1,0 +1,18 @@
+Routing Engine status:
+    Temperature                 41 degrees C / 105 degrees F
+    CPU temperature             51 degrees C / 123 degrees F
+    Total memory              2048 MB Max  1966 MB used ( 96 percent)
+      Control plane memory    1024 MB Max   600 MB used ( 59 percent)
+    5 sec CPU utilization:
+      User                       2 percent
+      Background                 0 percent
+      Kernel                     3 percent
+      Interrupt                  0 percent
+      Idle                      8 percent
+    Model                          RE-EX2300-24T
+    Start time                     2026-09-15 08:00:01 UTC
+    Uptime                         40 days, 2 hours, 15 minutes, 29 seconds
+    Last reboot reason             0x200:normal shutdown
+    Load averages:                 1 minute   5 minute  15 minute
+                                       0.10       0.12       0.09
+Memory utilization          96 percent

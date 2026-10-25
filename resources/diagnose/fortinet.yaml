@@ -1,0 +1,175 @@
+# Diagnose playbook: FortiGate (FortiOS 6.4 to 7.4). Commands and output
+# shapes from Fortinet's FortiOS CLI reference; ntc-templates where one
+# reads the output. FortiOS saves a change as it is made, so there is no
+# unsaved-configuration check. Not yet met on a device.
+format: 1
+version: 1
+platform: fortinet
+name: FortiGate (FortiOS)
+verified: docs
+source: FortiOS 7.x CLI reference (get, show, read-only diagnose); ntc-templates for the parsed commands.
+commands:
+  - { id: status, command: get system status, parser: ntc, depth: quick }
+  - id: performance
+    command: get system performance status
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?:CPU states:\s+\d+% user\s+\d+% system\s+\d+% nice\s+(?P<idle>\d+)% idle|Memory:\s+(?P<mem_total>\d+)k total,\s+(?P<mem_used>\d+)k used|Uptime:\s+(?P<uptime>.+?)\s*$)'
+  - id: ha
+    command: get system ha status
+    parser: ntc
+    depth: quick
+  - { id: ha_sync, command: get system ha status, parser: text, depth: quick }
+  - id: sessions
+    command: diagnose sys session stat
+    depth: quick
+    parser:
+      lines:
+        pattern: 'memory_tension_drop=(?P<memory_tension_drop>\d+)'
+  - id: interfaces
+    command: get system interface physical
+    parser: ntc
+    depth: quick
+    tables:
+      - name: interfaces
+        fields: { port: name, status: status, duplex: duplex, speed: speed }
+  - id: vpn
+    command: get vpn ipsec tunnel summary
+    depth: quick
+    optional: true
+    parser:
+      lines:
+        pattern: "^'(?P<tunnel>[^']+)'\\s+(?P<peer>\\S+)\\s+selectors\\(total,up\\):\\s*(?P<total>\\d+)/(?P<up>\\d+)"
+  - id: routes
+    command: get router info routing-table all
+    parser: ntc
+    depth: quick
+  - { id: bgp, command: get router info bgp summary, parser: ntc, depth: full, optional: true }
+  - id: arp
+    command: get system arp
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: interface }
+  - id: route_to_dst
+    command: get router info routing-table details {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^Routing entry for (?P<network>\S+)'
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: performance
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} has been up only {uptime}."
+    evidence: [uptime]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: CPU busy
+    layer: health
+    command: performance
+    rule: { kind: each, when: [{ field: idle, op: lt, value: 20 }] }
+    severity: warning
+    says: "{device}'s CPU is only {idle}% idle."
+    evidence: [idle]
+    passed: CPU at least 20% idle.
+  - id: health.memory_high
+    title: Memory nearly used up
+    layer: health
+    command: performance
+    rule: { kind: each, when: [{ field: mem_used, op: pct_gt, of: mem_total, value: 85 }] }
+    severity: warning
+    says: "{device} uses {mem_used}k of {mem_total}k of memory; FortiOS enters conserve mode near 88%."
+    evidence: [mem_used, mem_total]
+    passed: Memory under 85% used.
+  - id: fw.ha_unhealthy
+    title: HA not healthy
+    layer: firewall
+    command: ha
+    rule:
+      kind: each
+      when:
+        - { field: ha_mode, op: not_matches, value: '(?i)standalone' }
+        - { field: ha_health, op: ne, value: OK }
+    severity: critical
+    says: "HA on {device} ({ha_mode}) reports {ha_health}."
+    evidence: [ha_mode, ha_health, ha_master_unit_name]
+    passed: HA is healthy or not used.
+  - id: fw.ha_config_unsynced
+    title: HA members out of sync
+    layer: firewall
+    command: ha_sync
+    rule: { kind: text, pattern: '^\s+(?P<member>\S+)\(updated [^)]*\):\s*(?P<sync>out-of-sync)' }
+    severity: critical
+    says: "HA member {member} of {device} is {sync}."
+    key: [member]
+    passed: HA members' configurations are in sync.
+  - id: fw.sessions_high
+    title: Sessions dropped for memory
+    layer: firewall
+    command: sessions
+    rule: { kind: each, when: [{ field: memory_tension_drop, op: gt, value: 0 }] }
+    severity: warning
+    says: "{device} dropped {memory_tension_drop} sessions under memory pressure."
+    evidence: [memory_tension_drop]
+    passed: No sessions dropped for memory.
+  - id: l1.half_duplex
+    title: Half duplex
+    layer: l1
+    command: interfaces
+    rule:
+      kind: each
+      when:
+        - { field: status, op: eq, value: up }
+        - { field: duplex, op: eq, value: half }
+    severity: warning
+    says: "{name} on {device} is up at half duplex ({speed})."
+    key: [name]
+    evidence: [speed, duplex]
+    passed: Every interface that is up runs full duplex.
+  - id: fw.vpn_down
+    title: VPN tunnel down
+    layer: firewall
+    command: vpn
+    rule:
+      kind: each
+      when:
+        - { field: total, op: gt, value: 0 }
+        - { field: up, op: eq, value: "0" }
+    severity: critical
+    says: "IPsec tunnel {tunnel} to {peer} on {device} has none of its {total} selector(s) up."
+    key: [tunnel]
+    evidence: [peer, total, up]
+    passed: Every IPsec tunnel has its selectors up.
+  - id: l3.no_default_route
+    title: No default route
+    layer: l3
+    command: routes
+    rule: { kind: none, when: [{ field: destination, op: eq, value: 0.0.0.0/0 }] }
+    severity: critical
+    says: "{device} has no default route."
+    passed: A default route is set.
+  - id: l3.bgp_down
+    title: BGP session not established
+    layer: l3
+    command: bgp
+    rule: { kind: each, when: [{ field: state_pfxrcd, op: not_matches, value: '^\d+$' }] }
+    severity: critical
+    says: "BGP neighbour {bgp_neigh} (AS {neigh_as}) on {device} is {state_pfxrcd}."
+    key: [bgp_neigh]
+    evidence: [up_down, state_pfxrcd]
+    passed: Every BGP session is established.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination."
+    passed: A route to the destination.

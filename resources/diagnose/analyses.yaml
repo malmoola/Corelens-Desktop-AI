@@ -1,0 +1,140 @@
+# What the diagnose analyses across devices are called, how bad each
+# finding is, and which fix its root cause takes. The comparisons
+# themselves are code (crates/corelens-diagnose/src/analyses.rs); they read
+# the tables the platform playbooks fill, so they do not depend on the
+# vendor. `{field}` in `says` is a field the analysis sets.
+format: 1
+version: 1
+analyses:
+  - id: x.trunk_vlan_mismatch
+    title: VLAN missing on one end of a trunk
+    layer: l2
+    severity: critical
+    says: "{device} {port} does not carry VLAN {vlan}, which {peer} {peer_port} sends on the same trunk; both switches have the VLAN."
+    key: [port, vlan]
+    evidence: [allowed]
+    fix: trunk_allow_vlan
+    passed: Both ends of every trunk carry the same VLANs.
+  - id: x.native_vlan_mismatch
+    title: Native VLAN differs across a trunk
+    layer: l2
+    severity: warning
+    says: "The native VLAN is {native} on {device} {port} but {peer_native} on {peer} {peer_port}: untagged traffic crosses between two VLANs."
+    key: [port]
+    passed: Every trunk has the same native VLAN at both ends.
+  - id: x.duplex_mismatch
+    title: Duplex or speed mismatch on a link
+    layer: l1
+    severity: critical
+    says: "{device} {port} runs {duplex}/{speed} while {peer} {peer_port} runs {peer_duplex}/{peer_speed}: expect late collisions, CRC errors and slow transfers."
+    key: [port]
+    fix: duplex_auto
+    passed: Both ends of every link agree on speed and duplex.
+  - id: x.port_shut
+    title: A port that should be up is shut down
+    layer: l1
+    severity: critical
+    says: "{device} {port} is administratively down, but {why}."
+    key: [port]
+    evidence: [status, description]
+    fix: no_shutdown
+    passed: No port that carries a link or was up before is shut down.
+  - id: x.expected_up_down
+    title: A port that should be up is down
+    layer: l1
+    severity: critical
+    says: "{device} {port} is down (not shut), but {why}: the cable, the optic or the far end."
+    key: [port]
+    evidence: [status, description]
+    passed: Every port that carries a link or was up before is up.
+  - id: x.stp_root_disagree
+    title: Switches disagree on the spanning-tree root
+    layer: l2
+    severity: critical
+    says: "Connected switches see different roots for VLAN {vlan} ({roots}): the VLAN is split, or BPDUs are filtered between them."
+    key: [vlan]
+    passed: Connected switches agree on each VLAN's root.
+  - id: x.stp_root_on_access
+    title: Spanning-tree root on an access switch
+    layer: l2
+    severity: warning
+    says: "{device}, an {role} switch, is the root of VLAN {vlan}: traffic between distribution switches may take a path through it."
+    key: [vlan]
+    passed: No access switch is a spanning-tree root.
+  - id: x.stp_root_moved
+    title: Spanning-tree root moved since the last run
+    layer: l2
+    severity: warning
+    says: "The root of VLAN {vlan} moved: it was {device} ({was}) in the previous run and is now {now} ({new_root})."
+    key: [vlan]
+    fix: stp_root_priority
+    passed: Every VLAN's root is where it was in the previous run.
+  - id: x.fhrp_split
+    title: Gateway redundancy split (two active)
+    layer: l3
+    severity: critical
+    says: "{devices} are all active for gateway {vip} ({interface}, group {group}): they cannot hear each other's hellos, so hosts flip between them."
+    key: [vip]
+    passed: Each gateway group has exactly one active router.
+  - id: x.fhrp_no_active
+    title: Gateway group with no active router
+    layer: l3
+    severity: critical
+    says: "No router is active for gateway {vip} ({interface}, group {group}) on {devices}: hosts using it have no gateway."
+    key: [vip]
+    passed: Every gateway group has an active router.
+  - id: x.duplicate_ip
+    title: An address answering from two MACs
+    layer: l3
+    severity: critical
+    says: "{ip} is in ARP with more than one MAC ({macs}): a duplicate address, or a device that moved."
+    key: [ip]
+    passed: No address answers from two MACs.
+  - id: x.ip_on_two_devices
+    title: The same address configured on two devices
+    layer: l3
+    severity: critical
+    says: "{ip} is configured on {where}."
+    key: [ip]
+    passed: No address is configured on two devices.
+  - id: x.link_not_seen
+    title: A drawn link neither end sees
+    layer: l2
+    severity: warning
+    says: "The diagram links {device} {port} to {peer} {peer_port}, but neither device sees the other over CDP or LLDP."
+    key: [port, peer]
+    passed: Every drawn link is seen by CDP or LLDP.
+  - id: x.neighbor_not_drawn
+    title: A neighbour the diagram does not show
+    layer: l2
+    severity: info
+    says: "{device} {port} sees {peer} {peer_port} over CDP/LLDP, but the diagram has no link between them."
+    key: [port, peer]
+    passed: Every neighbour the devices see is drawn.
+  - id: x.ospf_neighbor_lost
+    title: OSPF neighbour gone since the last run
+    layer: l3
+    severity: critical
+    says: "OSPF neighbour {neighbor} on {interface} was FULL in the previous run and is gone."
+    key: [neighbor]
+    passed: Every OSPF neighbour of the previous run is still there.
+  - id: x.dhcp_helper_missing
+    title: SVI with clients but no DHCP relay
+    layer: services
+    severity: warning
+    says: "{interface} has {clients} access port(s) up in VLAN {vlan} but no DHCP relay, while the other SVIs on {device} relay to {helper}."
+    key: [interface]
+    fix: dhcp_helper
+    passed: Every SVI with clients relays DHCP like the others.
+  - id: drift.unsaved
+    title: Unsaved configuration changes
+    layer: drift
+    severity: warning
+    says: "{device}'s running configuration differs from its startup configuration in {lines} line(s): a reload would lose them."
+    passed: The running configuration is saved.
+  - id: drift.since_backup
+    title: Changed since the last backup
+    layer: drift
+    severity: info
+    says: "{device}'s running configuration differs from the backup {backup} in {lines} line(s)."
+    passed: The running configuration matches the last backup.

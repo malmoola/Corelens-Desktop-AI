@@ -1,0 +1,4 @@
+ OSPF Process ID 1 VRF default
+ Total number of neighbors: 1
+ Neighbor ID     Pri State            Up Time  Address         Interface
+ 192.0.2.250       1 INIT/DROTHER     3w0d     192.0.2.6       Eth1/1 

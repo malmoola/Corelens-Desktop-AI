@@ -1,0 +1,6 @@
+
+PID    Runtime(ms)  Invoked   uSecs  1Sec    Process
+-----  -----------  --------  -----  ------  -----------
+    1         2260     69541     32   0.00%  init
+
+CPU utilization for five seconds: 4%/0%; one minute: 3%; five minutes: 3%

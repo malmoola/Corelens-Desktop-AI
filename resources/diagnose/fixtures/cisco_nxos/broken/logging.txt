@@ -1,0 +1,2 @@
+2026 Oct 25 09:01:12 NX1 %VSHD-5-VSHD_SYSLOG_CONFIG_I: Configured from vty by reader on 192.0.2.250@pts/0
+2026 Oct 25 09:20:12 NX1 %ETHPORT-3-IF_ERROR_VLANS_SUSPENDED: VLANs 20 on Interface Ethernet1/1 are being suspended.

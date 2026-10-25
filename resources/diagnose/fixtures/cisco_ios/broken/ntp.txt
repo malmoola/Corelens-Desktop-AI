@@ -1,0 +1,2 @@
+Clock is unsynchronized, stratum 16, no reference clock
+nominal freq is 286.1023 Hz, actual freq is 286.1023 Hz, precision is 2**21

@@ -1,0 +1,10 @@
+
+maximum of entries supported :      2500
+default timeout:                    1800 seconds
+total ARP entries in table :        1
+total ARP entries shown :           1
+status: s - static, c - complete, e - expiring, i - incomplete
+
+interface         ip address      hw address        port              status   ttl  
+--------------------------------------------------------------------------------
+ethernet1/2       192.0.2.10      00:00:0c:00:00:10 ethernet1/2         c      1700   

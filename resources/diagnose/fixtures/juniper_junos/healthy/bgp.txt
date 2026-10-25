@@ -1,0 +1,4 @@
+Threading mode: BGP I/O
+Groups: 1 Peers: 1 Down peers: 0
+Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State|#Active/Received/Accepted/Damped...
+198.51.100.9          65020     116567     123883       0       1 9w2d 5:23:37 Establ

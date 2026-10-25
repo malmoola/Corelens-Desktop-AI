@@ -1,0 +1,23 @@
+Version: FortiGate-100F v7.2.8,build1639,240313 (GA.M)
+Firmware Signature: certified
+Virus-DB: 92.00000(2026-10-24 21:28)
+IPS-DB: 28.00000(2026-10-24 01:53)
+Serial-Number: FGT100FTKFAKE001
+BIOS version: 05000016
+System Part-Number: P24168-04
+Log hard disk: Not available
+Hostname: FW1
+Private Encryption: Disable
+Operation Mode: NAT
+Current virtual domain: root
+Max number of virtual domains: 10
+Virtual domains status: 1 in NAT mode, 0 in TP mode
+Virtual domain configuration: disable
+FIPS-CC mode: disable
+Current HA mode: a-p, primary
+Cluster uptime: 40 days, 2 hours, 1 minutes, 9 seconds
+Cluster state change time: 2026-09-15 08:00:01
+Branch point: 1639
+Release Version Information: GA
+System time: Sun Oct 25 10:15:30 2026
+Last reboot reason: warm reboot

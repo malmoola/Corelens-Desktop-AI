@@ -1,0 +1,15 @@
+Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+
+    Console logging: level debugging, 45 messages logged, xml disabled,
+                     filtering disabled
+    Buffer logging:  level debugging, 45 messages logged, xml disabled,
+                    filtering disabled
+
+Log Buffer (4096 bytes):
+Oct 25 08:12:01.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+Oct 25 08:12:04.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+Oct 25 08:40:01.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+Oct 25 08:40:03.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+Oct 25 09:02:11.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+Oct 25 09:02:13.123 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+Oct 25 09:30:00.000 UTC: %PLATFORM_ENV-1-FAN: Faulty fan detected

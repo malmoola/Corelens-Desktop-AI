@@ -1087,6 +1087,7 @@ dependencies = [
  "base64 0.22.1",
  "corelens-catalog",
  "corelens-collect",
+ "corelens-diagnose",
  "corelens-discover",
  "corelens-formats",
  "corelens-mcp",
@@ -1119,6 +1120,17 @@ dependencies = [
  "uuid",
  "zeroize",
  "zip 9.0.5",
+]
+
+[[package]]
+name = "corelens-diagnose"
+version = "2.13.0"
+dependencies = [
+ "corelens-catalog",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
 ]
 
 [[package]]

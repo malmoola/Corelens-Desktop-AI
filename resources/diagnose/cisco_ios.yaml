@@ -1,0 +1,502 @@
+# Diagnose playbook: Cisco IOS and IOS-XE.
+#
+# Every command is a read the collector's allowlist passes. `parser: ntc`
+# reads with the vendored ntc-templates; `lines` and `blocks` are patterns
+# for output no template reads. `tables` feed the analyses across devices
+# (analyses.yaml). Each check is proved on a healthy and a broken output in
+# fixtures/cisco_ios/. The command set and the output shapes follow
+# Cisco's command references for IOS 15.2 and IOS-XE 17; the fixtures are
+# written in those shapes and have not all met a device yet.
+format: 1
+version: 1
+platform: cisco_ios
+name: Cisco IOS / IOS-XE
+verified: docs
+source: Cisco IOS 15.2(7)E and IOS-XE 17.x command references; ntc-templates for the parsed commands.
+commands:
+  - { id: version, command: show version, parser: ntc, depth: quick }
+  - { id: clock, command: show clock, parser: ntc, depth: quick }
+  - { id: cpu, command: show processes cpu sorted, parser: ntc, depth: quick }
+  - id: memory
+    command: show processes memory sorted
+    depth: full
+    optional: true
+    parser:
+      lines:
+        pattern: '^\s*Processor Pool Total:\s+(?P<memory_total>\d+)\s+Used:\s+(?P<memory_used>\d+)\s+Free:\s+(?P<memory_free>\d+)'
+  - id: status
+    command: show interfaces status
+    parser: ntc
+    depth: quick
+    tables:
+      - name: interfaces
+        fields: { port: port, status: status, vlan: vlan_id, duplex: duplex, speed: speed, description: name }
+        values:
+          status: { connected: up, notconnect: down, disabled: admin-down, err-disabled: err-disabled, monitoring: up, sfpAbsent: down, inactive: down }
+  - id: interfaces
+    command: show interfaces
+    parser: ntc
+    depth: quick
+    tables:
+      - name: counters
+        fields: { port: interface, link: link_status, crc: crc, input_errors: input_errors, output_errors: output_errors, drops: queue_output_drops }
+  - { id: errdisabled, command: show interfaces status err-disabled, parser: ntc, depth: quick }
+  - id: switchport
+    command: show interfaces switchport
+    parser: ntc
+    depth: quick
+    tables:
+      - name: switchport
+        fields: { port: interface, mode: mode, access_vlan: access_vlan, native: native_vlan, allowed: trunking_vlans }
+  - id: cdp
+    command: show cdp neighbors detail
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: neighbors
+        fields: { local_port: local_interface, remote: neighbor_name, remote_port: neighbor_interface, address: mgmt_address }
+  - id: lldp
+    command: show lldp neighbors detail
+    parser: ntc
+    depth: full
+    optional: true
+    tables:
+      - name: neighbors
+        fields: { local_port: local_interface, remote: neighbor_name, remote_port: neighbor_interface, address: mgmt_address }
+  - id: vlans
+    command: show vlan brief
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: vlans
+        fields: { vlan: vlan_id, name: vlan_name, status: status, ports: interfaces }
+  - id: stp_root
+    command: show spanning-tree root
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: stp_root
+        fields: { vlan: vlan_id, root_id: root_id, priority: priority, root_port: root_port, cost: root_cost }
+  - id: stp_detail
+    command: show spanning-tree detail
+    depth: full
+    optional: true
+    parser:
+      blocks:
+        start: '^\s*VLAN0*(?P<vlan>\d+) is executing'
+        fields:
+          count: 'Number of topology changes (\d+)'
+          ago: 'last change occurred (\S+) ago'
+          from: 'from (\S+)'
+  - id: standby
+    command: show standby brief
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: fhrp
+        fields: { interface: interface, group: group, state: state, vip: virtual_ip_address, active: active, standby: standby }
+  - id: vrrp
+    command: show vrrp brief
+    parser: ntc
+    depth: full
+    optional: true
+    tables:
+      - name: fhrp
+        fields: { interface: interface, group: group, state: state, vip: virtual_ip_address, active: master_ip_address }
+  - id: ospf
+    command: show ip ospf neighbor
+    parser: ntc
+    depth: quick
+    optional: true
+    tables:
+      - name: ospf
+        fields: { neighbor: neighbor_id, state: state, interface: interface, address: ip_address }
+  - { id: bgp, command: show ip bgp summary, parser: ntc, depth: quick, optional: true }
+  - { id: eigrp, command: show ip eigrp neighbors, parser: ntc, depth: full, optional: true }
+  - id: ip_interface
+    command: show ip interface
+    parser: ntc
+    depth: quick
+    tables:
+      - name: ip_interfaces
+        fields: { interface: interface, ip: ip_address, prefix_length: prefix_length, status: link_status, proto: protocol_status, acl_in: inbound_acl, acl_out: outgoing_acl }
+        values:
+          status: { "administratively down": admin-down }
+      - name: helpers
+        fields: { interface: interface, helper: ip_helper }
+  - id: default_route
+    command: show ip route 0.0.0.0
+    depth: quick
+    parser:
+      lines:
+        pattern: '^(?:Routing entry for (?P<net>0\.0\.0\.0/0)|Default gateway is (?P<gateway>\d+\.\d+\.\d+\.\d+)|Gateway of last resort is (?P<last_resort>\d+\.\d+\.\d+\.\d+))'
+  - id: arp
+    command: show ip arp
+    parser: ntc
+    depth: full
+    tables:
+      - name: arp
+        fields: { ip: ip_address, mac: mac_address, interface: interface }
+  - id: environment
+    command: show environment all
+    depth: quick
+    optional: true
+    parser:
+      lines:
+        pattern: '^\s*(?P<what>[A-Za-z][A-Za-z0-9 /#-]*?)\s+is\s+(?P<state>[A-Za-z][A-Za-z -]*?)\s*$'
+  - { id: poe, command: show power inline, parser: ntc, depth: full, optional: true }
+  - { id: poe_budget, command: show power inline, parser: text, depth: full, optional: true }
+  - { id: transceiver, command: show interface transceiver, parser: ntc, depth: full, optional: true }
+  - id: flash
+    command: show file systems
+    depth: full
+    parser:
+      lines:
+        pattern: '^\*?\s*(?P<size>\d+)\s+(?P<free>\d+)\s+(?P<type>\S+)\s+(?P<flags>\S+)\s+(?P<prefixes>\S+)\s*$'
+  - { id: logging, command: show logging, parser: text, depth: quick }
+  - id: ntp
+    command: show ntp status
+    depth: full
+    optional: true
+    parser:
+      lines:
+        pattern: '^Clock is (?P<state>synchronized|unsynchronized)'
+  - id: aaa
+    command: show aaa servers
+    depth: full
+    optional: true
+    parser:
+      blocks:
+        start: '^(?P<protocol>RADIUS|TACACS\+?): id (?P<id>\d+), priority \d+, host (?P<host>\S+)'
+        fields:
+          state: 'State: current (\w+)'
+  - { id: running, command: show running-config, parser: text, depth: full }
+  - { id: startup, command: show startup-config, parser: text, depth: full }
+  - id: route_to_dst
+    command: show ip route {dst}
+    depth: quick
+    path: true
+    parser:
+      lines:
+        pattern: '^(?:Routing entry for (?P<network>\S+)|\s*\*\s*(?P<next_hop>\d+\.\d+\.\d+\.\d+)(?:, from|\s*$)|\s*\*\s*directly connected, via (?P<interface>\S+)|Default gateway is (?P<gateway>\d+\.\d+\.\d+\.\d+))'
+checks:
+  - id: health.recent_reload
+    title: Restarted in the last day
+    layer: health
+    command: version
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 1440 }] }
+    severity: warning
+    says: "{device} restarted {uptime} ago; the reload reason is {reload_reason}."
+    evidence: [uptime, reload_reason]
+    passed: Up for more than a day.
+  - id: health.cpu_high
+    title: CPU busy
+    layer: health
+    command: cpu
+    rule: { kind: each, when: [{ field: cpu_usage_5_min, op: gt, value: 80 }] }
+    severity: warning
+    says: "{device}'s CPU is at {cpu_usage_5_min}% over five minutes ({cpu_usage_5_sec}% now)."
+    key: []
+    evidence: [cpu_usage_5_sec, cpu_usage_1_min, cpu_usage_5_min]
+    passed: CPU under 80% over five minutes.
+  - id: health.memory_high
+    title: Memory nearly used up
+    layer: health
+    command: memory
+    rule: { kind: each, when: [{ field: memory_used, op: pct_gt, of: memory_total, value: 90 }] }
+    severity: warning
+    says: "{device} uses {memory_used} of {memory_total} bytes of processor memory."
+    evidence: [memory_used, memory_total, memory_free]
+    passed: Memory under 90% used.
+  - id: health.env_fault
+    title: Fan, power or temperature fault
+    layer: health
+    command: environment
+    rule:
+      kind: each
+      when:
+        - { field: what, op: matches, value: '(?i)fan|temp|power|supply|\bps\b|rps' }
+        - { field: state, op: not_matches, value: '(?i)^(ok|not present|green|present|normal|good)$' }
+    severity: critical
+    says: "{device}: {what} is {state}."
+    key: [what]
+    evidence: [what, state]
+    passed: Fans, power supplies and temperature report OK.
+  - id: health.flash_full
+    title: Flash nearly full
+    layer: health
+    command: flash
+    rule:
+      kind: each
+      when:
+        - { field: prefixes, op: matches, value: '(?i)flash|bootflash' }
+        - { field: free, op: pct_lt, of: size, value: 10 }
+    severity: warning
+    says: "{prefixes} on {device} has {free} of {size} bytes free."
+    key: [prefixes]
+    evidence: [prefixes, size, free]
+    passed: Flash has at least 10% free.
+  - id: health.severe_logs
+    title: Errors in the log (last 24 hours)
+    layer: health
+    command: logging
+    rule:
+      kind: text
+      pattern: '^\*?(?P<month>[A-Z][a-z]{2})\s+(?P<day>\d{1,2})\s+(?:\d{4}\s+)?(?P<time>\d{1,2}:\d{2}:\d{2})(?:\.\d+)?(?:\s+[A-Z]{2,5})?:\s+%(?P<facility>[A-Z0-9_-]+)-(?P<severity>[0-3])-(?P<mnemonic>[A-Z0-9_]+):\s*(?P<message>.*)$'
+      within_hours: 24
+    severity: info
+    says: "{device} logged %{facility}-{severity}-{mnemonic}: {message}"
+    key: [facility, mnemonic]
+    passed: Nothing at severity 3 or worse in the last 24 hours.
+  - id: l1.flapping
+    title: Link flapping
+    layer: l1
+    command: logging
+    rule:
+      kind: text
+      pattern: '^\*?(?P<month>[A-Z][a-z]{2})\s+(?P<day>\d{1,2})\s+(?:\d{4}\s+)?(?P<time>\d{1,2}:\d{2}:\d{2})(?:\.\d+)?(?:\s+[A-Z]{2,5})?:\s+%LINK-3-UPDOWN: Interface (?P<port>[^,]+), changed state to down'
+      within_hours: 24
+      min_count: 3
+    severity: warning
+    says: "{port} on {device} went down {count} times in the last 24 hours."
+    key: [port]
+    passed: No link went down three times or more in the last day.
+  - id: l1.crc_errors
+    title: CRC errors
+    layer: l1
+    command: interfaces
+    rule: { kind: each, when: [{ field: crc, op: gt, value: 0 }] }
+    severity: warning
+    says: "{interface} on {device} has {crc} CRC errors and {input_errors} input errors since the counters were last cleared."
+    key: [interface]
+    evidence: [crc, input_errors, runts, giants]
+    passed: No CRC errors on any interface.
+  - id: l1.output_errors
+    title: Output errors
+    layer: l1
+    command: interfaces
+    rule: { kind: each, when: [{ field: output_errors, op: gt, value: 0 }] }
+    severity: warning
+    says: "{interface} on {device} has {output_errors} output errors since the counters were last cleared."
+    key: [interface]
+    evidence: [output_errors]
+    passed: No output errors.
+  - id: l1.output_drops
+    title: Output drops
+    layer: l1
+    command: interfaces
+    rule: { kind: each, when: [{ field: queue_output_drops, op: gt, value: 1000 }] }
+    severity: info
+    says: "{interface} on {device} dropped {queue_output_drops} packets on output (congestion or microbursts)."
+    key: [interface]
+    evidence: [queue_output_drops]
+    passed: Fewer than 1000 output drops on every interface.
+  - id: l1.half_duplex
+    title: Half duplex
+    layer: l1
+    command: status
+    rule:
+      kind: each
+      when:
+        - { field: status, op: eq, value: connected }
+        - { field: duplex, op: in, value: [half, a-half] }
+    severity: warning
+    says: "{port} on {device} is up at half duplex ({speed})."
+    key: [port]
+    evidence: [duplex, speed, name]
+    fix: duplex_auto
+    passed: Every connected port runs full duplex.
+  - id: l2.err_disabled
+    title: Port err-disabled
+    layer: l2
+    command: errdisabled
+    rule: { kind: each, when: [{ field: interface, op: not_empty }] }
+    severity: critical
+    says: "{interface} on {device} is err-disabled ({port_error})."
+    key: [interface]
+    evidence: [port_error, name]
+    fix: err_disabled_recover
+    passed: No port is err-disabled.
+  - id: l2.stp_recent_change
+    title: Recent spanning-tree change
+    layer: l2
+    command: stp_detail
+    rule: { kind: each, when: [{ field: ago, op: minutes_lt, value: 60 }] }
+    severity: warning
+    says: "VLAN {vlan} on {device} re-converged {ago} ago (from {from}); {count} changes since the switch started."
+    key: [vlan]
+    evidence: [count, ago, from]
+    passed: No spanning-tree change in the last hour.
+  - id: l1.poe_fault
+    title: PoE fault
+    layer: l1
+    command: poe
+    rule: { kind: each, when: [{ field: operational_status, op: matches, value: '(?i)fault|err|deny|power-deny' }] }
+    severity: critical
+    says: "PoE on {interface} of {device} is {operational_status}."
+    key: [interface]
+    evidence: [admin_status, operational_status, device, max]
+    passed: No PoE port in fault.
+  - id: l1.poe_budget
+    title: PoE budget nearly spent
+    layer: l1
+    command: poe_budget
+    rule:
+      kind: text
+      pattern: 'Available:\s*(?P<available>[\d.]+)\(w\)\s+Used:\s*(?P<used>[\d.]+)\(w\)\s+Remaining:\s*(?P<remaining>[\d.]+)\(w\)'
+      when: [{ field: remaining, op: pct_lt, of: available, value: 10 }]
+    severity: warning
+    says: "{device} has {remaining} W of {available} W of PoE left."
+    passed: At least 10% of the PoE budget is free.
+  - id: l1.optic_rx_low
+    title: Weak optical receive power
+    layer: l1
+    command: transceiver
+    rule: { kind: each, when: [{ field: rx_pwr, op: lt, value: -14 }] }
+    severity: warning
+    says: "{interface} on {device} receives {rx_pwr} dBm, near most short-reach optics' sensitivity."
+    key: [interface]
+    evidence: [rx_pwr, tx_pwr, temperature]
+    passed: Every optic receives more than -14 dBm.
+  - id: l3.ospf_not_full
+    title: OSPF neighbour not FULL
+    layer: l3
+    command: ospf
+    rule: { kind: each, when: [{ field: state, op: not_matches, value: '(?i)^(full|2way)' }] }
+    severity: critical
+    says: "OSPF neighbour {neighbor_id} on {interface} of {device} is {state}."
+    key: [neighbor_id]
+    evidence: [state, interface, ip_address]
+    passed: Every OSPF neighbour is FULL (or 2WAY between DROTHERs).
+  - id: l3.bgp_down
+    title: BGP session not established
+    layer: l3
+    command: bgp
+    rule: { kind: each, when: [{ field: state_or_prefixes_received, op: not_matches, value: '^\d+$' }] }
+    severity: critical
+    says: "BGP neighbour {bgp_neighbor} (AS {neighbor_as}) on {device} is {state_or_prefixes_received}."
+    key: [bgp_neighbor]
+    evidence: [up_down, state_or_prefixes_received]
+    passed: Every BGP session is established.
+  - id: l3.eigrp_recent
+    title: EIGRP neighbour came up recently
+    layer: l3
+    command: eigrp
+    rule: { kind: each, when: [{ field: uptime, op: minutes_lt, value: 60 }] }
+    severity: warning
+    says: "EIGRP neighbour {ip_address} on {interface} of {device} has been up only {uptime}."
+    key: [ip_address]
+    evidence: [uptime, hold]
+    passed: Every EIGRP neighbour has been up for more than an hour.
+  - id: l3.svi_down
+    title: SVI down
+    layer: l3
+    command: ip_interface
+    rule:
+      kind: each
+      when:
+        - { field: interface, op: matches, value: '(?i)^vlan\d+$' }
+        - { field: ip_address, op: not_empty }
+        - { field: link_status, op: ne, value: administratively down }
+        - { field: protocol_status, op: ne, value: up }
+    severity: warning
+    says: "{interface} on {device} is {link_status}, line protocol {protocol_status}."
+    key: [interface]
+    evidence: [ip_address, link_status, protocol_status]
+    passed: Every SVI with an address is up.
+  - id: l3.no_default_route
+    title: No default route or gateway
+    layer: l3
+    command: default_route
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no default route and no default gateway."
+    passed: A default route or gateway is set.
+  - id: l3.fhrp_not_ready
+    title: Gateway redundancy not converged
+    layer: l3
+    command: standby
+    rule: { kind: each, when: [{ field: state, op: in, value: [init, speak] }] }
+    severity: warning
+    says: "HSRP group {group} on {interface} of {device} is in {state}."
+    key: [interface, group]
+    evidence: [state, active, standby, virtual_ip_address]
+    passed: Every HSRP group is active, standby or listening.
+  - id: services.ntp_unsynced
+    title: Clock not synchronised
+    layer: services
+    command: ntp
+    rule: { kind: none, when: [{ field: state, op: eq, value: synchronized }] }
+    severity: warning
+    says: "{device}'s clock is not synchronised to NTP (or NTP is not running)."
+    passed: The clock is synchronised to NTP.
+  - id: services.aaa_down
+    title: AAA server not answering
+    layer: services
+    command: aaa
+    rule: { kind: each, when: [{ field: state, op: ne, value: up }] }
+    severity: critical
+    says: "{protocol} server {host} on {device} is {state}."
+    key: [host]
+    evidence: [protocol, host, state]
+    passed: Every RADIUS and TACACS+ server is up.
+  - id: path.no_route
+    title: No route onward
+    layer: path
+    command: route_to_dst
+    rule: { kind: none, when: [] }
+    severity: critical
+    says: "{device} has no route to the destination and no default."
+    passed: A route to the destination.
+fixes:
+  - id: no_shutdown
+    title: "Bring {port} on {device} back up"
+    commands: ["interface {port}", " no shutdown"]
+    verify: ["show interfaces {port} status"]
+    impact: "{port} comes up; whatever is connected to it rejoins the network. If it was shut on purpose, deny this."
+    params: { port: interface }
+  - id: err_disabled_recover
+    title: "Recover {interface} on {device} from err-disabled"
+    commands: ["interface {interface}", " shutdown", " no shutdown"]
+    verify: ["show interfaces {interface} status"]
+    impact: "{interface} is bounced and comes back up. If the reason ({port_error}) is still there it trips again: remove the cause first."
+    params: { interface: interface }
+  - id: trunk_allow_vlan
+    title: "Allow VLAN {vlan} on {port} of {device}"
+    commands: ["interface {port}", " switchport trunk allowed vlan add {vlan}"]
+    verify: ["show interfaces {port} switchport"]
+    impact: "VLAN {vlan} is carried on {port} again; its hosts and gateway on both switches can reach each other. Other VLANs on the trunk are untouched (add, not replace)."
+    params: { port: interface, vlan: vlan }
+  - id: duplex_auto
+    title: "Set {port} on {device} back to auto speed and duplex"
+    commands: ["interface {port}", " speed auto", " duplex auto"]
+    verify: ["show interfaces {port} status"]
+    impact: "{port} renegotiates: the link drops for a few seconds and comes back matching the far end."
+    params: { port: interface }
+  - id: stp_root_priority
+    title: "Make {device} the root of VLAN {vlan} again"
+    commands: ["spanning-tree vlan {vlan} priority {priority}"]
+    verify: ["show spanning-tree vlan {vlan} root"]
+    impact: "{device} becomes the root of VLAN {vlan} again; the VLAN re-converges once (a few seconds of disruption on rapid-PVST, longer on PVST)."
+    params: { vlan: vlan, priority: priority }
+  - id: dhcp_helper
+    title: "Relay DHCP on {interface} of {device} to {helper}"
+    commands: ["interface {interface}", " ip helper-address {helper}"]
+    verify: ["show ip interface {interface}"]
+    impact: "Hosts in VLAN {vlan} get addresses from {helper} like the other VLANs. Nothing else on the interface changes."
+    params: { interface: interface, helper: ipv4 }
+  - id: save_config
+    title: "Save {device}'s running configuration"
+    kind: save
+    impact: "The startup configuration becomes what runs now, so a reload keeps it."
+drift:
+  running: running
+  startup: startup
+  ignore:
+    - '^! (Last configuration change|NVRAM config last updated|No configuration change since last restart)'
+    - '^ntp clock-period'
+  save_fix: save_config

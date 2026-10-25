@@ -1,0 +1,17 @@
+[package]
+name = "corelens-diagnose"
+version = "2.13.0"
+authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
+edition = "2021"
+rust-version = "1.77"
+description = "Diagnose network: the per-vendor check playbooks (data under resources/diagnose), the rules that read a device's captured output, the analyses across devices and links, root causes ranked with their evidence, the fix plan, and the report. Pure: no SQLite, no Tauri, no network."
+license = "LicenseRef-Almoola-Free-Proprietary"
+# Proprietary: never published to crates.io.
+publish = false
+
+[dependencies]
+corelens-catalog = { path = "../corelens-catalog" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+regex = "1"

@@ -1,0 +1,8 @@
+Interface               Admin Link Proto    Local                 Remote
+ge-0/0/0                up    up
+ge-0/0/0.0              up    up   eth-switch
+ge-0/0/1                up    up
+ge-0/0/1.0              up    down eth-switch
+ge-0/0/2                up    down
+irb                     up    up
+irb.10                  up    up   inet     192.0.2.130/26

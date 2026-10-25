@@ -1,0 +1,3 @@
+
+Port      Name               Status       Reason               Err-disabled Vlans
+Gi0/3                        err-disabled bpduguard

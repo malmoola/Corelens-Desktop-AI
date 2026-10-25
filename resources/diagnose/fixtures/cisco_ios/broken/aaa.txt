@@ -1,0 +1,4 @@
+RADIUS: id 1, priority 1, host 192.0.2.201, auth-port 1812, acct-port 1813
+     State: current DEAD, duration 9126s, previous duration 0s
+     Dead: total time 0s, count 0
+     Quarantined: No

@@ -1,0 +1,8 @@
+Displaying ipv4 routes selected for forwarding
+
+'[x/y]' denotes [distance/metric]
+
+0.0.0.0/0, vrf default
+	via  192.0.2.193,  [1/0],  static
+192.0.2.192/26, vrf default
+	via  vlan20,  [0/0],  connected

@@ -1,0 +1,10 @@
+!Command: show running-config
+!Running configuration last done at: Sun Oct 25 09:01:12 2026
+!Time: Sun Oct 25 10:15:30 2026
+
+version 10.2(5) Bios:version 05.47
+hostname NX1
+interface Ethernet1/1
+  description uplink to NX2
+  switchport mode trunk
+  switchport trunk allowed vlan 1,10,20

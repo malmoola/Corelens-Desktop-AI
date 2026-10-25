@@ -1,0 +1,4 @@
+
+Interface        Relay Address     VRF Name
+-------------    -------------     --------
+Vlan10           192.0.2.200
