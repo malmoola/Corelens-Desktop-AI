@@ -233,6 +233,155 @@ export interface McpCall {
   outcome: string;
 }
 
+/** A configuration change a model proposed, as Rust keeps it
+ *  (`src-tauri/src/mcp/changes`). Every text in it is already redacted. */
+export interface ChangeDiffLine {
+  mark: ' ' | '+' | '-';
+  text: string;
+}
+export interface ChangeHardBlock {
+  command: string;
+  risk: string;
+}
+export interface ChangeAssessment {
+  class: 'low' | 'medium' | 'high';
+  hardBlocks: ChangeHardBlock[];
+  summary: string;
+}
+export interface ChangeExchange {
+  command: string;
+  output: string;
+}
+export interface ChangeCheck {
+  command: string;
+  ok: boolean;
+  output: string;
+}
+export type ChangeTargetStatus =
+  | 'pending'
+  | 'denied'
+  | 'notRun'
+  | 'running'
+  | 'pushFailed'
+  | 'verified'
+  | 'verifyFailed'
+  | 'deviceRollingBack'
+  | 'rolledBack'
+  | 'rollbackFailed'
+  | 'saved'
+  | 'saveFailed'
+  | 'interrupted';
+export type ChangeStatus = 'pending' | 'denied' | 'timedOut' | 'withdrawn' | 'running' | 'done' | 'failed' | 'interrupted';
+export interface ChangeTarget {
+  seq: number;
+  device: string;
+  address: string;
+  platform: string;
+  platformName: string;
+  commands: string[];
+  verifyCommands: string[];
+  assessment: ChangeAssessment;
+  predicted: ChangeDiffLine[];
+  predictedIsModel: boolean;
+  rollbackPlan: string;
+  status: ChangeTargetStatus;
+  message: string;
+  snapshot: string;
+  actual: ChangeDiffLine[];
+  push: ChangeExchange[];
+  verification: ChangeCheck[];
+  rollback: ChangeExchange[];
+  confirmByMs: number | null;
+  updatedMs: number;
+}
+export interface Change {
+  id: string;
+  projectId: string | null;
+  kind: 'change' | 'save';
+  source: 'mcp' | 'chat' | 'operator';
+  proposer: string;
+  reason: string;
+  createdMs: number;
+  deadlineMs: number;
+  status: ChangeStatus;
+  decidedMs: number | null;
+  decidedBy: string;
+  note: string;
+  targets: ChangeTarget[];
+}
+
+/** The in-app chat (`src-tauri/src/ai`). The page never sees a key or a
+ *  request; only text, settings and whether a key is kept. */
+export type AiProviderId = 'anthropic' | 'openai' | 'ollama';
+export interface AiSettingsDto {
+  chatEnabled: boolean;
+  provider: AiProviderId;
+  models: Record<AiProviderId, string>;
+  openaiBaseUrl: string;
+  openaiStyle: 'responses' | 'chat';
+  ollamaBaseUrl: string;
+  maxToolCalls: number;
+  toolOutputChars: number;
+  chatRetentionDays: number;
+  auditRetentionDays: number;
+  proposalTimeoutMinutes: number;
+  keys: Partial<Record<AiProviderId, boolean>>;
+}
+export interface AiModel {
+  id: string;
+  label: string;
+  tools: boolean | null;
+}
+export interface AiUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+export interface AiToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+export interface AiToolResult {
+  id: string;
+  name: string;
+  content: string;
+  isError: boolean;
+}
+export type AiMessage =
+  | { role: 'user'; text: string }
+  | { role: 'assistant'; text: string; calls: AiToolCall[]; provider: string }
+  | { role: 'tools'; results: AiToolResult[] };
+export interface AiChatRow {
+  id: number;
+  atMs: number;
+  provider: string;
+  model: string;
+  usage: AiUsage;
+  message: AiMessage;
+}
+export interface AiChatHistory {
+  rows: AiChatRow[];
+  session: AiUsage;
+  running: boolean;
+}
+export type AiChatEvent = { projectId: string } & (
+  | { kind: 'started' }
+  | { kind: 'text'; text: string }
+  | { kind: 'toolCall'; id: string; name: string; target: string; command: string }
+  | { kind: 'toolResult'; id: string; name: string; isError: boolean; text: string }
+  | { kind: 'done'; usage: AiUsage; session: AiUsage }
+  | { kind: 'error'; message: string }
+  | { kind: 'notice'; message: string }
+  | { kind: 'stopped' }
+);
+export interface AppLogInfo {
+  folder: string;
+  files: [string, number][];
+  totalBytes: number;
+  limitBytes: number;
+  verboseUntilMs: number;
+}
+
 export type VisioImport = { pages: ImportedPage[]; warnings: string[] };
 
 /** What happened when a stencil pack was removed. */
@@ -1587,6 +1736,78 @@ export const ipc = {
   mcpChangeRecord() {
     return invoke<string>('mcp_change_record');
   },
+  // Configuration changes (tier 2). Approving is a command only the page
+  // sends; no tool can reach it.
+  async changeList(limit = 200): Promise<Change[]> {
+    if (!isDesktop) return [];
+    return invoke<Change[]>('change_list', { limit });
+  },
+  changeDecide(id: string, approve: number[], typed: string[], note: string | null = null) {
+    return invoke<void>('change_decide', { id, approve, typed, note });
+  },
+  changeRollback(id: string, seq: number) {
+    return invoke<Change>('change_rollback', { id, seq });
+  },
+  changeExport(format: 'md' | 'csv', id: string | null = null) {
+    return invoke<string>('change_export', { format, id });
+  },
+  async onChange(handler: (c: Change) => void): Promise<() => void> {
+    if (!isDesktop) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen('corelens://change', (e) => handler(e.payload as Change));
+  },
+
+  // The in-app chat and its providers.
+  async aiSettings(): Promise<AiSettingsDto | null> {
+    if (!isDesktop) return null;
+    return invoke<AiSettingsDto>('ai_settings');
+  },
+  aiSettingSet(key: string, value: string | null) {
+    return invoke<AiSettingsDto>('ai_setting_set', { key, value });
+  },
+  /** Rust reads the key from the clipboard, keeps it in the keychain and
+   *  empties the clipboard; the key never passes through here. */
+  aiKeyImport(provider: AiProviderId) {
+    return invoke<AiSettingsDto>('ai_key_import', { provider });
+  },
+  aiKeyForget(provider: AiProviderId) {
+    return invoke<AiSettingsDto>('ai_key_forget', { provider });
+  },
+  aiModels(provider: AiProviderId) {
+    return invoke<AiModel[]>('ai_models', { provider });
+  },
+  aiTestConnection(provider: AiProviderId) {
+    return invoke<string>('ai_test_connection', { provider });
+  },
+  async aiChatHistory(limit = 500): Promise<AiChatHistory> {
+    if (!isDesktop) return { rows: [], session: { inputTokens: 0, outputTokens: 0 }, running: false };
+    return invoke<AiChatHistory>('ai_chat_history', { limit });
+  },
+  aiChatClear(allProjects: boolean) {
+    return invoke<number>('ai_chat_clear', { allProjects });
+  },
+  aiChatSend(text: string, context: string | null) {
+    return invoke<void>('ai_chat_send', { text, context });
+  },
+  aiChatStop() {
+    return invoke<boolean>('ai_chat_stop');
+  },
+  aiLastRequest(provider: AiProviderId) {
+    return invoke<string>('ai_last_request', { provider });
+  },
+  async onAiChat(handler: (e: AiChatEvent) => void): Promise<() => void> {
+    if (!isDesktop) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen('corelens://ai-chat', (e) => handler(e.payload as AiChatEvent));
+  },
+  async appLogInfo(): Promise<AppLogInfo | null> {
+    if (!isDesktop) return null;
+    return invoke<AppLogInfo>('app_log_info');
+  },
+  appLogVerbose(on: boolean) {
+    return invoke<AppLogInfo>('app_log_verbose', { on });
+  },
+
   async onMcpActivity(handler: (e: McpCall) => void): Promise<() => void> {
     if (!isDesktop) return () => {};
     const { listen } = await import('@tauri-apps/api/event');

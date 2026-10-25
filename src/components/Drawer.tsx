@@ -14,6 +14,7 @@ import { FINDING_LABEL, type Finding } from '../lib/crawlFindings';
 import { whySays } from '../lib/evidence';
 import { allNodes, nodeById } from '../lib/pages';
 import { formatTime } from '../lib/timeFormat';
+import { isDesktop } from '../lib/ipc';
 import { useStore } from '../state/store';
 import type { DeviceNodeData } from '../types/domain';
 import { DEVICE_LABEL } from './icons';
@@ -135,6 +136,12 @@ function FindingDrawer({ finding }: { finding: Finding }) {
     <div className="cv-drawer-finding">
       <h2 className="cv-inspector-title">{FINDING_LABEL[finding.kind]}</h2>
       <p className={`cv-drawer-message is-${finding.severity}`}>{finding.message}</p>
+      {isDesktop && (
+        <button type="button" className="cv-btn cv-btn-small" data-action="ask-ai-finding"
+          onClick={() => useStore.getState().askAi(`finding: ${FINDING_LABEL[finding.kind]} — ${finding.message}${finding.devices.length ? ` (${finding.devices.join(', ')})` : ''}`)}>
+          {t('aiChat.askFinding')}
+        </button>
+      )}
       <section className="cv-section">
         <h3>{t('drawer.devices')}</h3>
         <ul className="cv-drawer-devices">

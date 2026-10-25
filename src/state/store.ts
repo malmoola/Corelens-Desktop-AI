@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { Edge, Node } from '@xyflow/react';
 import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } from '@xyflow/react';
 
-import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, setCurrentProject } from '../lib/ipc';
+import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, type Change as ConfigChange, setCurrentProject } from '../lib/ipc';
 import { projectFolderFiles } from '../lib/projectFolder';
 import { copyToOpen, folderName, heldBy, overwroteNotice } from '../lib/sharedProjects';
 import { applyJob } from '../lib/jobs';
@@ -620,6 +620,20 @@ interface Store {
   /** The user guide, on a screen of its own. */
   helpOpen: boolean;
   setHelpOpen: (on: boolean) => void;
+  /** The AI chat panel, and what a question from the canvas, the
+   *  inspector or a finding is about. Window state, never the document. */
+  aiChatOpen: boolean;
+  aiChatContext: string | null;
+  setAiChatOpen: (on: boolean) => void;
+  /** Opens the chat with `context` (a device, a link, a finding) ready to
+   *  ask about. */
+  askAi: (context: string | null) => void;
+  /** Every configuration change this window has heard of, by id, as Rust
+   *  last reported it; and the one the approval dialog should show. */
+  aiChanges: Record<string, ConfigChange>;
+  applyAiChange: (c: ConfigChange) => void;
+  approvalOpen: string | null;
+  openApproval: (id: string | null) => void;
   /** The interactive SSH sessions this window has open, one per tab
    *  in the panel's SSH section. Window state, never the document: a live
    *  connection cannot be saved, and a `.corelens` file must not carry a
@@ -1373,6 +1387,10 @@ export const useStore = create<Store>((set, get) => ({
   vaultRevision: 0,
   registerOpen: false,
   helpOpen: false,
+  aiChatOpen: false,
+  aiChatContext: null,
+  aiChanges: {},
+  approvalOpen: null,
   toolsOpen: false,
   toolsView: 'settings',
   importOpen: null,
@@ -2105,6 +2123,22 @@ export const useStore = create<Store>((set, get) => ({
 
   setHelpOpen(on) {
     set({ helpOpen: on, ...(on ? { registerOpen: false, toolsOpen: false } : {}) });
+  },
+
+  setAiChatOpen(on) {
+    set({ aiChatOpen: on });
+  },
+
+  askAi(context) {
+    set({ aiChatOpen: true, aiChatContext: context });
+  },
+
+  applyAiChange(c) {
+    set((st) => ({ aiChanges: { ...st.aiChanges, [c.id]: c } }));
+  },
+
+  openApproval(id) {
+    set({ approvalOpen: id });
   },
 
   setPresenting(on) {

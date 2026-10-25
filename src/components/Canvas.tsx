@@ -33,6 +33,7 @@ import { hidingUnmatched, litNodes } from '../lib/canvasFilter';
 import { branchFolder, collapseLabel, hiddenByAll, worthCollapsing } from '../lib/collapseBranch';
 import { AUTO_FOLD_ZOOM, holdersBelow, lowestHolders } from '../lib/clusters';
 import { CLOSE_ZOOM } from '../lib/linkCounts';
+import { deviceContext, linkContext } from '../lib/aiChat';
 import { CanvasCrumbs, ClusterChips, type ChipSpec, type Crumb } from './ClusterChips';
 import { nearestInDirection, nearestTo, type Direction } from '../lib/spatialNav';
 import { edgeAriaLabel, nodeAriaLabel } from '../lib/ariaLabels';
@@ -472,6 +473,9 @@ export function Canvas() {
                 { label: t('ssh.external'), onSelect: () => void openSshElsewhere(node.data as DeviceNodeData) },
               ])
         : []),
+      ...(node?.type === 'device' && isDesktop
+        ? [{ label: t('aiChat.askDevice'), onSelect: () => useStore.getState().askAi(deviceContext(node.data as DeviceNodeData)) }]
+        : []),
       {
         label: 'Duplicate',
         onSelect: () => {
@@ -578,8 +582,15 @@ export function Canvas() {
   const edgeMenu = (edgeId: string): MenuItem[] => {
     const edge = pg.edges.find((e) => e.id === edgeId);
     const data = edge?.data;
+    const end = (id: string | undefined) => {
+      const n = pg.nodes.find((x) => x.id === id);
+      return String((n?.data as DeviceNodeData | undefined)?.label ?? 'a device');
+    };
     return [
       { label: 'Edit link properties', onSelect: () => useStore.getState().select(null, edgeId) },
+      ...(isDesktop && edge
+        ? [{ label: t('aiChat.askLink'), onSelect: () => useStore.getState().askAi(linkContext(end(edge.source), data?.sourcePortLabel, end(edge.target), data?.targetPortLabel)) }]
+        : []),
       {
         label: 'Reverse flow direction',
         onSelect: () =>

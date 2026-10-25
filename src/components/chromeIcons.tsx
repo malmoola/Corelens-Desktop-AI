@@ -16,7 +16,7 @@ export type ChromeIconName =
   | 'note' | 'sticky' | 'pop-out' | 'maximise' | 'hide' | 'play' | 'stop'
   | 'plus' | 'minus' | 'lock' | 'pin' | 'terminal' | 'backup' | 'find'
   | 'import' | 'export' | 'eye' | 'eye-off' | 'menu' | 'settings' | 'copy' | 'unlock' | 'link' | 'comment' | 'print'
-  | 'layers';
+  | 'layers' | 'chat';
 
 /** Each glyph as the children of a 16×16 SVG. A filled part says so. */
 const GLYPHS: Record<ChromeIconName, JSX.Element> = {
@@ -70,6 +70,7 @@ const GLYPHS: Record<ChromeIconName, JSX.Element> = {
   comment: <path d="M2.5 3.5h11v7h-6l-3 3v-3h-2z" />,
   print: <><path d="M4.5 6V2.5h7V6M4.5 11H3V7h10v4h-1.5" /><rect x="4.5" y="9.5" width="7" height="4" rx="0.5" /></>,
   layers: <><rect x="6" y="2" width="4" height="3.5" rx="0.8" /><rect x="1.5" y="10.5" width="4" height="3.5" rx="0.8" /><rect x="10.5" y="10.5" width="4" height="3.5" rx="0.8" /><path d="M8 5.5V8M3.5 10.5V8h9v2.5" /></>,
+  chat: <><path d="M2.5 3.5h11v7.5h-5.5l-3 2.5V11h-2.5z" /><path d="M5.5 7.25h.01M8 7.25h.01M10.5 7.25h.01" /></>,
   copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1" /><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" /></>,
 };
 

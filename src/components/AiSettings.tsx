@@ -1,20 +1,337 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { t } from '../i18n';
-import { ipc, isDesktop, type McpActivity, type McpStatus } from '../lib/ipc';
+import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type McpActivity, type McpStatus } from '../lib/ipc';
 import { saveExport, slug } from '../lib/exports';
+import { canRollBack } from '../lib/changes';
 import { useStore } from '../state/store';
 
 /**
- * Settings → AI: whether Claude (Claude Code or Claude Desktop, through
- * MCP) may use Corelens, how to connect it, and what it has been given.
+ * Settings → AI, in four parts: the chat inside Corelens, the providers it
+ * can run on, Claude Code and Claude Desktop through MCP, and how long
+ * what was asked and changed is kept. Then the change record.
+ */
+export function AiSettings() {
+  return (
+    <section id="settings-ai" data-settings-section="ai" className="cv-settings-block" data-region="ai">
+      <h2>{t('settings.ai')}</h2>
+      <ChatSection />
+      <ProvidersSection />
+      <McpSection />
+      <RetentionSection />
+      <ChangeHistory />
+    </section>
+  );
+}
+
+const PROVIDER_NAMES: Record<AiProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', ollama: 'Ollama' };
+
+function useAiSettings() {
+  const [settings, setSettings] = useState<AiSettingsDto | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    void ipc.aiSettings().then(setSettings).catch((e: unknown) => setProblem(String(e)));
+  }, []);
+  const set = async (key: string, value: string | null) => {
+    setProblem(null);
+    try {
+      setSettings(await ipc.aiSettingSet(key, value));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return { settings, setSettings, set, problem, setProblem };
+}
+
+/** 1. The chat inside Corelens: on or off, which provider, which model. */
+function ChatSection() {
+  const { settings, set, problem, setProblem } = useAiSettings();
+  const [result, setResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  if (!settings) return <div data-region="ai-chat-settings">{!isDesktop && <p className="cv-help">{t('ai.desktopOnly')}</p>}</div>;
+  const p = settings.provider;
+  const test = async () => {
+    setTesting(true);
+    setResult(null);
+    setProblem(null);
+    try {
+      setResult(await ipc.aiTestConnection(p));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTesting(false);
+    }
+  };
+  return (
+    <div className="cv-ai-part" data-region="ai-chat-settings">
+      <h3>{t('aiSettings.chatTitle')}</h3>
+      <p className="cv-help">{t('aiSettings.chatIntro')}</p>
+      <label className="cv-check">
+        <input type="checkbox" data-field="ai-chat-enabled" checked={settings.chatEnabled} onChange={(e) => void set('aiChatEnabled', e.target.checked ? '1' : null)} />
+        {t('aiSettings.chatEnable')}
+      </label>
+      <div className="cv-row">
+        <label className="cv-field">
+          <span>{t('aiSettings.provider')}</span>
+          <select className="cv-input" data-field="ai-provider" value={p} onChange={(e) => void set('aiProvider', e.target.value)}>
+            {(Object.keys(PROVIDER_NAMES) as AiProviderId[]).map((id) => (
+              <option key={id} value={id}>{PROVIDER_NAMES[id]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="cv-field">
+          <span>{t('aiSettings.model')}</span>
+          <input className="cv-input" data-field="ai-chat-model" value={settings.models[p]} readOnly />
+        </label>
+        <button type="button" className="cv-btn" data-action="ai-test-connection" disabled={!settings.chatEnabled || testing} onClick={() => void test()}>
+          {testing ? t('aiSettings.testing') : t('aiSettings.test')}
+        </button>
+      </div>
+      {!settings.chatEnabled && <p className="cv-help" data-hint="ai-chat-off-note">{t('aiSettings.offNote')}</p>}
+      {result && <p className="cv-help" role="status" data-hint="ai-test-result">{result}</p>}
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+      <p className="cv-help">{t('aiSettings.data')}</p>
+    </div>
+  );
+}
+
+/** 2. Each provider: its key (kept in the system keychain), its address,
+ *  its models. */
+function ProvidersSection() {
+  const { settings, setSettings, set, problem, setProblem } = useAiSettings();
+  const [models, setModels] = useState<Partial<Record<AiProviderId, AiModel[]>>>({});
+  const [lastRequest, setLastRequest] = useState<{ provider: AiProviderId; body: string } | null>(null);
+  if (!settings) return null;
+  const run = async (f: () => Promise<void>) => {
+    setProblem(null);
+    try {
+      await f();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const refresh = (p: AiProviderId) => run(async () => setModels({ ...models, [p]: await ipc.aiModels(p) }));
+  const card = (p: AiProviderId) => {
+    const list = models[p] ?? [];
+    const chosen = settings.models[p];
+    const known = list.find((m) => m.id === chosen);
+    return (
+      <div className="cv-ai-provider" key={p} data-provider={p}>
+        <h4>{PROVIDER_NAMES[p]}</h4>
+        {p !== 'ollama' && (
+          <div className="cv-row">
+            <span className="cv-help" data-hint={`ai-key-${p}`}>{settings.keys[p] ? t('aiSettings.keyKept') : t('aiSettings.keyNone')}</span>
+            <button type="button" className="cv-btn cv-btn-small" data-action={`ai-key-import-${p}`} onClick={() => void run(async () => setSettings(await ipc.aiKeyImport(p)))}>
+              {t('aiSettings.pasteKey')}
+            </button>
+            {settings.keys[p] && (
+              <button type="button" className="cv-btn cv-btn-small is-danger" data-action={`ai-key-forget-${p}`} onClick={() => void run(async () => setSettings(await ipc.aiKeyForget(p)))}>
+                {t('aiSettings.forgetKey')}
+              </button>
+            )}
+          </div>
+        )}
+        {p !== 'ollama' && <p className="cv-help">{t('aiSettings.keyHint')}</p>}
+        {p === 'openai' && (
+          <div className="cv-row">
+            <label className="cv-field">
+              <span>{t('aiSettings.baseUrl')}</span>
+              <input className="cv-input" data-field="ai-openai-base" defaultValue={settings.openaiBaseUrl} onBlur={(e) => void set('aiOpenAiBaseUrl', e.target.value)} />
+            </label>
+            <label className="cv-field">
+              <span>{t('aiSettings.apiStyle')}</span>
+              <select className="cv-input" data-field="ai-openai-style" value={settings.openaiStyle} onChange={(e) => void set('aiOpenAiStyle', e.target.value === 'chat' ? 'chat' : null)}>
+                <option value="responses">{t('aiSettings.styleResponses')}</option>
+                <option value="chat">{t('aiSettings.styleChat')}</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {p === 'ollama' && (
+          <label className="cv-field">
+            <span>{t('aiSettings.baseUrl')}</span>
+            <input className="cv-input" data-field="ai-ollama-base" defaultValue={settings.ollamaBaseUrl} onBlur={(e) => void set('aiOllamaBaseUrl', e.target.value)} />
+          </label>
+        )}
+        <div className="cv-row">
+          <label className="cv-field">
+            <span>{t('aiSettings.model')}</span>
+            <input className="cv-input" data-field={`ai-model-${p}`} list={`ai-models-${p}`} defaultValue={chosen} key={chosen} onBlur={(e) => void set(`aiModel.${p}`, e.target.value)} />
+            <datalist id={`ai-models-${p}`}>
+              {list.map((m) => (
+                <option key={m.id} value={m.id}>{m.label}{m.tools === false ? ` — ${t('aiSettings.noTools')}` : ''}</option>
+              ))}
+            </datalist>
+          </label>
+          <button type="button" className="cv-btn cv-btn-small" data-action={`ai-models-${p}`} disabled={!settings.chatEnabled} onClick={() => void refresh(p)}>
+            {t('aiSettings.refreshModels')}
+          </button>
+          <button type="button" className="cv-btn cv-btn-small" data-action={`ai-last-request-${p}`} onClick={() => void run(async () => setLastRequest({ provider: p, body: await ipc.aiLastRequest(p) }))}>
+            {t('aiSettings.lastRequest')}
+          </button>
+        </div>
+        {known?.tools === false && <p className="cv-help cv-update-problem">{t('aiSettings.modelNoTools', { model: chosen })}</p>}
+        {list.length > 0 && <p className="cv-help">{t('aiSettings.modelsListed', { n: list.length })}</p>}
+        {lastRequest?.provider === p && (
+          <details open className="cv-ai-last-request">
+            <summary>{t('aiSettings.lastRequestTitle')}</summary>
+            <p className="cv-help">{t('aiSettings.lastRequestHint')}</p>
+            <pre className="cv-mono cv-ai-result" data-field={`ai-last-request-body-${p}`}>{lastRequest.body}</pre>
+          </details>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="cv-ai-part" data-region="ai-providers">
+      <h3>{t('aiSettings.providersTitle')}</h3>
+      {!settings.chatEnabled && <p className="cv-help">{t('aiSettings.providersOff')}</p>}
+      {(Object.keys(PROVIDER_NAMES) as AiProviderId[]).map(card)}
+      {problem && <p className="cv-help cv-update-problem" role="alert" data-hint="ai-providers-problem">{problem}</p>}
+    </div>
+  );
+}
+
+/** 4. How long the record, the chat and proposals are kept, and the log. */
+function RetentionSection() {
+  const { settings, set, problem, setProblem } = useAiSettings();
+  const [log, setLog] = useState<AppLogInfo | null>(null);
+  const [verbose, setVerbose] = useState(false);
+  const [cleared, setCleared] = useState<number | null>(null);
+  useEffect(() => {
+    void ipc.appLogInfo().then((l) => {
+      setLog(l);
+      setVerbose(!!l && l.verboseUntilMs > Date.now());
+    }).catch(() => undefined);
+  }, []);
+  if (!settings) return null;
+  const days = (key: string, value: number, field: string) => (
+    <select className="cv-input" data-field={field} value={value} onChange={(e) => void set(key, e.target.value)}>
+      {[30, 90, 365].map((d) => (
+        <option key={d} value={d}>{t('aiSettings.days', { n: d })}</option>
+      ))}
+    </select>
+  );
+  const verboseOn = verbose;
+  const toggleVerbose = (on: boolean) => {
+    // The box moves at once; Rust's answer then says until when.
+    setVerbose(on);
+    void ipc.appLogVerbose(on).then((l) => {
+      setLog(l);
+      setVerbose(l.verboseUntilMs > Date.now());
+    }).catch((err: unknown) => {
+      setVerbose(!on);
+      setProblem(String(err));
+    });
+  };
+  const clear = async (all: boolean) => {
+    setProblem(null);
+    try {
+      setCleared(await ipc.aiChatClear(all));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="cv-ai-part" data-region="ai-retention">
+      <h3>{t('aiSettings.retentionTitle')}</h3>
+      <div className="cv-row">
+        <label className="cv-field">
+          <span>{t('aiSettings.auditRetention')}</span>
+          {days('aiAuditRetentionDays', settings.auditRetentionDays, 'ai-audit-retention')}
+        </label>
+        <label className="cv-field">
+          <span>{t('aiSettings.chatRetention')}</span>
+          {days('aiChatRetentionDays', settings.chatRetentionDays, 'ai-chat-retention')}
+        </label>
+        <label className="cv-field">
+          <span>{t('aiSettings.proposalTimeout')}</span>
+          <select className="cv-input" data-field="ai-proposal-timeout" value={settings.proposalTimeoutMinutes} onChange={(e) => void set('aiProposalTimeoutMinutes', e.target.value)}>
+            {[5, 10, 15, 30, 60].map((m) => (
+              <option key={m} value={m}>{t('aiSettings.minutes', { n: m })}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="cv-help">{t('aiSettings.retentionHint')}</p>
+      <div className="cv-row">
+        <button type="button" className="cv-btn cv-btn-small" data-action="ai-chat-clear" onClick={() => void clear(false)}>{t('aiSettings.clearChat')}</button>
+        <button type="button" className="cv-btn cv-btn-small is-danger" data-action="ai-chat-clear-all" onClick={() => void clear(true)}>{t('aiSettings.clearAllChats')}</button>
+        {cleared !== null && <span className="cv-help" role="status">{t('aiSettings.cleared', { n: cleared })}</span>}
+      </div>
+      <h4>{t('aiSettings.logTitle')}</h4>
+      <label className="cv-check">
+        <input type="checkbox" data-field="ai-verbose-logging" checked={verboseOn} onChange={(e) => toggleVerbose(e.target.checked)} />
+        {t('aiSettings.verbose')}
+      </label>
+      <p className="cv-help">{verboseOn && log && log.verboseUntilMs > 0 ? t('aiSettings.verboseUntil', { when: new Date(log.verboseUntilMs).toLocaleString() }) : t('aiSettings.verboseHint')}</p>
+      {log && (
+        <p className="cv-help" data-hint="ai-log-size">
+          {t('aiSettings.logSize', { size: (log.totalBytes / 1024 / 1024).toFixed(1), limit: Math.round(log.limitBytes / 1024 / 1024), folder: log.folder })}
+        </p>
+      )}
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+    </div>
+  );
+}
+
+/** The change record: every proposal, what was decided and what happened. */
+function ChangeHistory() {
+  const projectName = useStore((s) => s.meta?.name ?? 'project');
+  const live = useStore((s) => s.aiChanges);
+  const openApproval = useStore((s) => s.openApproval);
+  const [list, setList] = useState<Change[]>([]);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    void ipc.changeList(200).then(setList).catch((e: unknown) => setProblem(String(e)));
+  }, [live]);
+  const exportAs = async (format: 'md' | 'csv') => {
+    try {
+      const text = await ipc.changeExport(format);
+      await saveExport(`${slug(projectName)}-config-changes.${format}`, text, format === 'md' ? 'text/markdown' : 'text/csv');
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="cv-ai-part" data-region="ai-changes">
+      <h3>{t('changes.historyTitle')}</h3>
+      <p className="cv-help">{t('changes.historyHint')}</p>
+      <div className="cv-row">
+        <button type="button" className="cv-btn cv-btn-small" data-action="changes-export-md" disabled={list.length === 0} onClick={() => void exportAs('md')}>{t('changes.exportMd')}</button>
+        <button type="button" className="cv-btn cv-btn-small" data-action="changes-export-csv" disabled={list.length === 0} onClick={() => void exportAs('csv')}>{t('changes.exportCsv')}</button>
+      </div>
+      {list.length === 0 ? (
+        <p className="cv-help" data-hint="changes-none">{t('changes.none')}</p>
+      ) : (
+        <ul className="cv-ai-activity" data-region="changes-list">
+          {list.map((c) => (
+            <li key={c.id} data-change={c.id} data-status={c.status}>
+              <button type="button" className="cv-link-btn" onClick={() => openApproval(c.id)}>
+                <span className="cv-mono">{new Date(c.createdMs).toLocaleString()}</span> · {c.targets.map((x) => x.device).join(', ')} · {t(`changes.status.${c.status}`)}
+                {c.targets.some((x) => canRollBack(x.status)) ? ` · ${t('changes.rollbackAvailable')}` : ''}
+              </button>
+              <span className="cv-help"> {c.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+    </div>
+  );
+}
+
+/**
+ * 3. Whether Claude (Claude Code or Claude Desktop, through MCP) may use
+ * Corelens, how to connect it, and what it has been given.
  *
  * Off until switched on. While off nothing listens; while on, a client
  * started as `corelens-desktop-ai --mcp` can read the open project and run
- * read-only show commands through this window, and every call it makes is
- * listed here with exactly what it was given, already redacted.
+ * read-only show commands through this window — and propose changes, which
+ * only the approval dialog here can let through — and every call it makes
+ * is listed here with exactly what it was given, already redacted.
  */
-export function AiSettings() {
+function McpSection() {
   const projectName = useStore((s) => s.meta?.name ?? 'project');
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -92,8 +409,8 @@ export function AiSettings() {
         : { tone: 'off', text: t('ai.off') };
 
   return (
-    <section id="settings-ai" data-settings-section="ai" className="cv-settings-block" data-region="ai">
-      <h2>{t('settings.ai')}</h2>
+    <div className="cv-ai-part" data-region="ai-mcp">
+      <h3>{t('aiSettings.mcpTitle')}</h3>
       <p className="cv-help">{t('ai.intro')}</p>
       {!isDesktop && <p className="cv-help">{t('ai.desktopOnly')}</p>}
       <label className="cv-check">
@@ -108,13 +425,13 @@ export function AiSettings() {
       <p className="cv-help">{t('ai.data')}</p>
       {status?.enabled && (
         <div className="cv-ai-setup" data-region="ai-setup">
-          <h3>{t('ai.claudeCode')}</h3>
+          <h4>{t('ai.claudeCode')}</h4>
           <p className="cv-help">{t('ai.claudeCodeHint')}</p>
           <pre className="cv-mono" data-field="claude-code-command">{status.claudeCodeCommand}</pre>
           <button type="button" className="cv-btn cv-btn-small" data-action="copy-claude-code" onClick={() => copy('code', status.claudeCodeCommand)}>
             {copied === 'code' ? t('ai.copied') : t('ai.copy')}
           </button>
-          <h3>{t('ai.claudeDesktop')}</h3>
+          <h4>{t('ai.claudeDesktop')}</h4>
           <p className="cv-help">{t('ai.claudeDesktopHint')}</p>
           <pre className="cv-mono" data-field="claude-desktop-config">{status.claudeDesktopConfig}</pre>
           <button type="button" className="cv-btn cv-btn-small" data-action="copy-claude-desktop" onClick={() => copy('desktop', status.claudeDesktopConfig)}>
@@ -122,7 +439,7 @@ export function AiSettings() {
           </button>
         </div>
       )}
-      <h3>{t('ai.activity')}</h3>
+      <h4>{t('ai.activity')}</h4>
       <p className="cv-help">{t('ai.activityHint')}</p>
       <div className="cv-row">
         <button type="button" className="cv-btn cv-btn-small" data-action="ai-refresh" onClick={() => void refresh()}>{t('ai.refresh')}</button>
@@ -149,7 +466,7 @@ export function AiSettings() {
         </ul>
       )}
       {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
-    </section>
+    </div>
   );
 }
 

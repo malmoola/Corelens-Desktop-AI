@@ -60,6 +60,9 @@ await page.addInitScript(({ p, exe, activity }) => {
       if (cmd === "mcp_activity") return Promise.resolve(window.__activity);
       if (cmd === "mcp_clear_activity") { const n = window.__activity.length; window.__activity = []; return Promise.resolve(n); }
       if (cmd === "mcp_change_record") return Promise.resolve("# Change record — Example project\n");
+      // The rest of Settings → AI, as Rust answers it with nothing set up.
+      if (cmd === "ai_settings") return Promise.resolve({ chatEnabled: false, provider: "anthropic", models: { anthropic: "claude-opus-5-5", openai: "gpt-6-astra", ollama: "qwen3" }, openaiBaseUrl: "https://api.openai.com/v1", openaiStyle: "responses", ollamaBaseUrl: "http://localhost:11434", maxToolCalls: 15, toolOutputChars: 12000, chatRetentionDays: 90, auditRetentionDays: 90, proposalTimeoutMinutes: 10, keys: { anthropic: false, openai: false } });
+      if (cmd === "app_log_info") return Promise.resolve({ folder: "/nowhere/logs", files: [], totalBytes: 0, limitBytes: 52428800, verboseUntilMs: 0 });
       if (cmd === "pick_export_target") return Promise.resolve({ token: "t1", path: "/nowhere/example-project-ai-change-record.md" });
       if (cmd === "save_export") return Promise.resolve();
       return Promise.resolve([]);
@@ -85,7 +88,7 @@ const sent = (cmd) => page.evaluate((c) => window.__calls.filter((x) => x.cmd ==
 // ------------------------------------------------- off by default
 check("Settings has an AI block, listed in the nav", (await ai.count()) === 1 && (await page.locator(".cv-settings-nav", { hasText: "AI" }).count()) === 1);
 check("it says Claude never connects to a device", /Claude never connects to a device/.test(await ai.innerText()), (await ai.innerText()).slice(0, 200));
-check("and what reaches Anthropic, and that Corelens holds no Anthropic key", /reaches Anthropic through the Claude app/.test(await ai.innerText()) && /holds no Anthropic key/.test(await ai.innerText()));
+check("and what reaches Anthropic, and that this part of Corelens sends nothing there itself", /reaches Anthropic through the Claude app/.test(await ai.innerText()) && /sends nothing to Anthropic itself and holds no key/.test(await ai.innerText()));
 check("the switch is off until somebody turns it on", !(await ai.locator('[data-field="mcp-enabled"]').isChecked()));
 check("and says nothing is listening", (await ai.locator('[data-hint="mcp-state"]').getAttribute("data-tone")) === "off");
 check("nothing was asked to listen on load", (await sent("mcp_set_enabled")).length === 0);

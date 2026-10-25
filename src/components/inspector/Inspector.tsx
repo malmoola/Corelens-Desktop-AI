@@ -3,6 +3,8 @@ import { DEFAULTS, deviceColor, statusMark } from '../../theme';
 
 import { useStore, type InspectorTab } from '../../state/store';
 import { openSsh } from '../sshActions';
+import { deviceContext } from '../../lib/aiChat';
+import { isDesktop } from '../../lib/ipc';
 import { InventorySection } from './InventorySection';
 import { whySays } from '../../lib/evidence';
 // The catalogue's `t`, aliased: this file already has a `t` of its own.
@@ -1238,6 +1240,12 @@ function NodeInspector({ nodeId }: { nodeId: string }) {
           onClick={() => useStore.getState().requestWhereIs(primaryAddress(d) || d.mac || deviceLabel)}>
           {tr('whereis.find')}
         </button>
+        {isDesktop && (
+          <button type="button" className="cv-btn cv-btn-small" data-action="ask-ai-device"
+            onClick={() => useStore.getState().askAi(deviceContext(d))}>
+            {tr('aiChat.button')}
+          </button>
+        )}
         {/* The same sections, at a width this rail cannot give. */}
         <button type="button" className="cv-btn cv-btn-small cv-open-drawer"
           onClick={() => useStore.getState().openDrawer({ kind: 'device', nodeId })}>

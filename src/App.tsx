@@ -25,6 +25,8 @@ import { useStore } from './state/store';
 import { dockSideFor, dockWidthClass } from './lib/dockPlacement';
 import { NavRail } from './components/NavRail';
 import { CanvasToolbar } from './components/CanvasToolbar';
+import { AiChat } from './components/AiChat';
+import { ChangeApproval } from './components/ChangeApproval';
 
 import { DESKTOP_APP_URL } from './components/EmptyState';
 import { t } from './i18n';
@@ -245,6 +247,10 @@ export default function App() {
         )}
         </div>
         </div>
+        {/* Ask AI, and where a change it proposes is decided. Both sit over
+            the workspace: a proposal can arrive whichever screen is open. */}
+        <ErrorBoundary what="The AI chat"><AiChat /></ErrorBoundary>
+        <ErrorBoundary what="The change approval"><ChangeApproval /></ErrorBoundary>
       </div>
     </ReactFlowProvider>
   );
