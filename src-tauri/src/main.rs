@@ -26,6 +26,7 @@ mod meraki;
 mod updater;
 mod shared;
 mod mcp;
+mod ai;
 mod db;
 
 use std::sync::{Arc, Mutex};
@@ -136,8 +137,10 @@ fn main() {
     }
     // A crawl the last process died under is kept with what it had
     // found, and says so.
-    // The AI record kept inside its retention and size.
-    let _ = mcp::audit::prune(&conn, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0));
+    // The AI record and the chat transcript kept inside their retention.
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let _ = mcp::audit::prune(&conn, now_ms);
+    let _ = ai::transcript::prune(&conn, now_ms);
     // A proposal open when the app last closed has no one waiting for it.
     match mcp::changes::store::close_interrupted(&conn) {
         Ok(0) => {}
@@ -159,6 +162,7 @@ fn main() {
         .manage(updater::Pending::default())
         .manage(mcp::McpState::default())
         .manage(mcp::changes::ChangeHub::default())
+        .manage(ai::AiState::default())
         .manage(AppState {
             engine,
             db: Mutex::new(conn),
@@ -235,6 +239,17 @@ fn main() {
             mcp::mcp_clear_activity,
             mcp::mcp_change_record,
             applog::app_log_info,
+            ai::ai_settings,
+            ai::ai_setting_set,
+            ai::ai_key_import,
+            ai::ai_key_forget,
+            ai::ai_models,
+            ai::ai_test_connection,
+            ai::ai_chat_history,
+            ai::ai_chat_clear,
+            ai::ai_chat_send,
+            ai::ai_chat_stop,
+            ai::ai_last_request,
             applog::app_log_verbose,
             mcp::changes::change_list,
             mcp::changes::change_decide,

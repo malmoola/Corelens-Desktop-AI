@@ -551,7 +551,8 @@ const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_ru
 
 /// Schema 10: the change record (tier 2) and the chat transcript.
 fn schema_10(conn: &Connection) -> rusqlite::Result<()> {
-    crate::mcp::changes::store::tables(conn)
+    crate::mcp::changes::store::tables(conn)?;
+    crate::ai::transcript::tables(conn)
 }
 
 /// The steps that take a database from its version to
@@ -773,6 +774,7 @@ pub fn delete_project(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     // a call made with no project open has no project to belong to.
     crate::mcp::audit::clear(conn, Some(id))?;
     conn.execute("DELETE FROM config_changes WHERE project_id = ?1", params![id])?;
+    crate::ai::transcript::clear(conn, Some(id))?;
     Ok(())
 }
 
@@ -799,6 +801,7 @@ pub fn purge_orphans(conn: &Connection) -> rusqlite::Result<usize> {
     removed += tx.execute("DELETE FROM crawl_runs WHERE project_id NOT IN (SELECT id FROM projects)", [])?;
     removed += crate::mcp::audit::purge_orphans(&tx)?;
     removed += crate::mcp::changes::store::purge_orphans(&tx)?;
+    removed += crate::ai::transcript::purge_orphans(&tx)?;
     tx.commit()?;
     Ok(removed)
 }

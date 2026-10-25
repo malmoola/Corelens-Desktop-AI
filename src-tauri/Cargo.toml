@@ -57,6 +57,9 @@ zeroize = "1"
 tauri-plugin-updater = { version = ">=2.12, <2.13", default-features = false, features = ["system-proxy", "zip"] }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# A provider's API key is read from the clipboard here, in Rust, and the
+# clipboard cleared — so the key never passes through the page. Text only.
+arboard = { version = "3", default-features = false }
 
 [features]
 default = ["custom-protocol"]

@@ -14,7 +14,7 @@ pub mod fake_device;
 pub mod project;
 pub mod redact;
 #[cfg(test)]
-mod roundtrip;
+pub(crate) mod roundtrip;
 pub mod show;
 pub mod tools;
 
@@ -106,6 +106,7 @@ struct ShowArgs {
 #[derive(Debug, Clone)]
 pub enum Source {
     Mcp { client: Option<String> },
+    Chat { provider: String, model: String },
     Operator,
 }
 
@@ -113,6 +114,7 @@ impl Source {
     pub fn kind(&self) -> &'static str {
         match self {
             Source::Mcp { .. } => "mcp",
+            Source::Chat { .. } => "chat",
             Source::Operator => "operator",
         }
     }
@@ -122,6 +124,7 @@ impl Source {
         match self {
             Source::Mcp { client: Some(c) } => format!("{c} (MCP)"),
             Source::Mcp { client: None } => "an MCP client".into(),
+            Source::Chat { provider, model } => format!("Corelens chat ({provider}, {model})"),
             Source::Operator => "the engineer".into(),
         }
     }

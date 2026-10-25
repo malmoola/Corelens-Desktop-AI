@@ -71,9 +71,9 @@ MIT (23), ISC (9), MIT OR Apache-2.0 (3), Apache-2.0 OR MIT (1), BSD-3-Clause (1
 | yaml | 2.9.1 | ISC |
 | zustand | 4.5.7 | MIT |
 
-## Rust — 743 crates in the executable
+## Rust — 749 crates in the executable
 
-MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34), Zlib OR Apache-2.0 OR MIT (19), Unicode-3.0 (18), Unlicense OR MIT (10), Apache-2.0 (9), BSD-3-Clause (7), MIT OR Apache-2.0 OR Zlib (7), MPL-2.0 (5), Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT (5), ISC (4), Apache-2.0/MIT (3), Zlib (3), Apache-2.0 OR ISC OR MIT (3), MIT OR Zlib OR Apache-2.0 (2), BSD-3-Clause OR Apache-2.0 (2), BSD-3-Clause OR MIT OR Apache-2.0 (2), MIT OR Apache-2.0 OR LGPL-2.1-or-later (2), Unlicense/MIT (2), CDLA-Permissive-2.0 (2), BSD-2-Clause OR Apache-2.0 OR MIT (2), 0BSD OR MIT OR Apache-2.0 (1), BSD-2-Clause (1), ISC AND (Apache-2.0 OR ISC) (1), ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) (1), BSD-3-Clause AND MIT (1), BSD-3-Clause/MIT (1), Apache-2.0 AND MIT (1), CC0-1.0 OR MIT-0 OR Apache-2.0 (1), MIT OR Apache-2.0 OR BSD-1-Clause (1), Apache-2.0 / MIT (1), Apache-2.0 AND ISC (1), Apache-2.0 OR BSL-1.0 (1), (MIT OR Apache-2.0) AND Unicode-3.0 (1)
+MIT OR Apache-2.0 (358), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34), Zlib OR Apache-2.0 OR MIT (19), Unicode-3.0 (18), Unlicense OR MIT (10), Apache-2.0 (10), BSD-3-Clause (7), MIT OR Apache-2.0 OR Zlib (7), MPL-2.0 (5), Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT (5), ISC (4), Apache-2.0/MIT (3), Zlib (3), Apache-2.0 OR ISC OR MIT (3), BSL-1.0 (2), MIT OR Zlib OR Apache-2.0 (2), BSD-3-Clause OR Apache-2.0 (2), BSD-3-Clause OR MIT OR Apache-2.0 (2), MIT OR Apache-2.0 OR LGPL-2.1-or-later (2), Unlicense/MIT (2), CDLA-Permissive-2.0 (2), BSD-2-Clause OR Apache-2.0 OR MIT (2), 0BSD OR MIT OR Apache-2.0 (1), BSD-2-Clause (1), ISC AND (Apache-2.0 OR ISC) (1), ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) (1), BSD-3-Clause AND MIT (1), BSD-3-Clause/MIT (1), Apache-2.0 AND MIT (1), CC0-1.0 OR MIT-0 OR Apache-2.0 (1), MIT OR Apache-2.0 OR BSD-1-Clause (1), Apache-2.0 / MIT (1), Apache-2.0 AND ISC (1), Apache-2.0 OR BSL-1.0 (1), (MIT OR Apache-2.0) AND Unicode-3.0 (1)
 
 | Component | Version | Licence |
 | --- | --- | --- |
@@ -91,6 +91,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
 | arbitrary | 1.4.2 | MIT OR Apache-2.0 |
+| arboard | 3.7.0 | MIT OR Apache-2.0 |
 | argon2 | 0.5.3 | MIT OR Apache-2.0 |
 | argon2 | 0.6.0 | MIT OR Apache-2.0 |
 | arrayref | 0.3.9 | BSD-2-Clause |
@@ -156,6 +157,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
 | cipher | 0.4.4 | MIT OR Apache-2.0 |
 | cipher | 0.5.2 | MIT OR Apache-2.0 |
+| clipboard-win | 5.4.3 | BSL-1.0 |
 | cmov | 0.5.4 | Apache-2.0 OR MIT |
 | color_quant | 1.1.0 | MIT |
 | combine | 4.6.8 | MIT |
@@ -237,6 +239,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | equivalent | 1.0.2 | Apache-2.0 OR MIT |
 | erased-serde | 0.4.10 | MIT OR Apache-2.0 |
 | errno | 0.3.14 | MIT OR Apache-2.0 |
+| error-code | 3.4.0 | BSL-1.0 |
 | euclid | 0.22.14 | MIT OR Apache-2.0 |
 | event-listener | 5.4.2 | Apache-2.0 OR MIT |
 | event-listener-strategy | 0.5.4 | Apache-2.0 OR MIT |
@@ -280,6 +283,7 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | gdkx11-sys | 0.18.2 | MIT |
 | generic-array | 0.14.7 | MIT |
 | generic-array | 1.4.5 | MIT |
+| gethostname | 1.1.0 | Apache-2.0 |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 |
@@ -791,6 +795,8 @@ MIT OR Apache-2.0 (355), MIT (135), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (34),
 | wry | 0.55.1 | Apache-2.0 OR MIT |
 | x11 | 2.21.0 | MIT |
 | x11-dl | 2.21.0 | MIT |
+| x11rb | 0.13.2 | MIT OR Apache-2.0 |
+| x11rb-protocol | 0.13.2 | MIT OR Apache-2.0 |
 | xattr | 1.6.1 | MIT OR Apache-2.0 |
 | xdg-home | 1.3.0 | MIT |
 | xmlwriter | 0.1.0 | MIT |
@@ -871,6 +877,7 @@ one published by SPDX at `https://spdx.org/licenses/`.
 - asn1-rs-impl 0.2.0 — MIT/Apache-2.0
 - block2 0.6.2 — MIT
 - cesu8 1.1.0 — Apache-2.0/MIT
+- clipboard-win 5.4.3 — BSL-1.0
 - defmt-parser 1.0.0 — MIT OR Apache-2.0
 - delegate 0.13.5 — MIT OR Apache-2.0
 - dispatch2 0.3.1 — Zlib OR Apache-2.0 OR MIT
@@ -1372,7 +1379,7 @@ SOFTWARE.
 
 ## Rust
 
-### 281 components
+### 284 components
 
 - aead 0.5.2
 - aead 0.6.1
@@ -1472,6 +1479,7 @@ SOFTWARE.
 - fnv 1.0.7
 - form_urlencoded 1.2.2
 - futures-lite 2.6.1
+- gethostname 1.1.0
 - ghash 0.5.1
 - ghash 0.6.0
 - gif 0.13.3
@@ -1650,6 +1658,8 @@ SOFTWARE.
 - wit-bindgen 0.57.1
 - wnaf 0.14.0
 - wry 0.55.1
+- x11rb 0.13.2
+- x11rb-protocol 0.13.2
 - xattr 1.6.1
 - zeroize 1.9.0
 - zeroize_derive 1.5.0
@@ -2006,9 +2016,10 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### 59 components
+### 60 components
 
 - anyhow 1.0.104
+- arboard 3.7.0
 - async-trait 0.1.92
 - dtoa 1.0.11
 - dyn-clone 1.0.20
@@ -7420,6 +7431,37 @@ SOFTWARE.
 
 ### 2 components
 
+- error-code 3.4.0
+- ryu 1.0.23
+
+```
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare derivative works of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 2 components
+
 - fancy-regex 0.17.0
 - fancy-regex 0.19.2
 
@@ -9169,6 +9211,39 @@ insights.
 
 ### 2 components
 
+- x11rb 0.13.2
+- x11rb-protocol 0.13.2
+
+```
+Copyright 2019 x11rb Contributers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### 2 components
+
 - zerocopy 0.8.56
 - zerocopy-derive 0.8.56
 
@@ -9708,6 +9783,32 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### arboard 3.7.0
+
+```
+MIT License
+
+Copyright (c) 2022 The Arboard contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ### argon2 0.5.3
@@ -18538,34 +18639,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-### ryu 1.0.23
-
-```
-Boost Software License - Version 1.0 - August 17th, 2003
-
-Permission is hereby granted, free of charge, to any person or organization
-obtaining a copy of the software and accompanying documentation covered by
-this license (the "Software") to use, reproduce, display, distribute,
-execute, and transmit the Software, and to prepare derivative works of the
-Software, and to permit third-parties to whom the Software is furnished to
-do so, all subject to the following:
-
-The copyright notices in the Software and this entire statement, including
-the above license grant, this restriction and the following disclaimer,
-must be included in all copies of the Software, in whole or in part, and
-all derivative works of the Software, unless such copies or derivative
-works are solely in the form of machine-executable object code generated by
-a source language processor.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
-SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
-FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 ```
 
 ### salsa20 0.11.0
