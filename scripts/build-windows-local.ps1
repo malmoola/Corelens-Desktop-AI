@@ -34,6 +34,26 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 
+# The variables a GitHub Actions runner provides, which the sidecar and
+# signing scripts read. Set here only when unset, so a run inside CI keeps
+# the runner's own; outside it they point at this checkout and a scratch
+# folder under target\.
+$scratchRoot = Join-Path $root "target\build-windows-local"
+New-Item -ItemType Directory -Force -Path $scratchRoot | Out-Null
+$runnerTemp = Join-Path $scratchRoot "runner-temp"
+New-Item -ItemType Directory -Force -Path $runnerTemp | Out-Null
+$defaults = [ordered]@{
+  RUNNER_TEMP      = $runnerTemp
+  RUNNER_OS        = "Windows"
+  GITHUB_WORKSPACE = "$root"
+  GITHUB_ENV       = (Join-Path $scratchRoot "github-env.txt")
+}
+foreach ($name in $defaults.Keys) {
+  if (-not [Environment]::GetEnvironmentVariable($name)) {
+    [Environment]::SetEnvironmentVariable($name, $defaults[$name], "Process")
+  }
+}
+
 function Step([string]$what) { Write-Host ""; Write-Host "==> $what" -ForegroundColor Cyan }
 function Fail([string]$why) { Write-Host "build-windows-local: $why" -ForegroundColor Red; exit 1 }
 function Check([string]$what) { if ($LASTEXITCODE -ne 0) { Fail "$what failed (exit $LASTEXITCODE)" } }
@@ -72,8 +92,7 @@ if (-not $NoNpmCi) {
 
 Step "Code signing"
 $extra = @()
-$scratch = Join-Path $root "target\build-windows-local"
-New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+$scratch = $scratchRoot
 if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
   Write-Host "No certificate given (-Thumbprint or CORELENS_SIGN_THUMBPRINT): this installer is UNSIGNED."
   $env:CORELENS_SIGN_THUMBPRINT = ""

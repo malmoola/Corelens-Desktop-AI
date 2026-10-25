@@ -72,6 +72,17 @@ Installer: C:\...\target\release\bundle\nsis\Corelens-Desktop-AI_<version>_x64-s
 
 Beside it: `SHA256SUMS.txt`, `sbom\` and, when signed, the `.sig`.
 
+Outside CI the script sets the variables a GitHub Actions runner would
+(`RUNNER_TEMP`, `RUNNER_OS`, `GITHUB_WORKSPACE`, `GITHUB_ENV`) to this
+checkout and a scratch folder under `target\build-windows-local\`, and
+only those that are not set already, so a run inside CI keeps the runner's.
+
+esbuild's install script (it fetches the native binary for this machine) is
+approved in `package.json`'s `allowScripts`, which npm's install-script
+approval reads; with an npm that holds unapproved scripts back, `npm ci`
+still builds. Another package that needs its script would be approved with
+`npm approve-scripts <name>` and the change committed.
+
 If Windows refuses to run the script ("running scripts is disabled"),
 `pwsh -ExecutionPolicy Bypass -File scripts\build-windows-local.ps1` runs
 it once without changing the machine's policy.
