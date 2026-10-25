@@ -80,6 +80,16 @@ exactly as the terminal would. The model sees only what Corelens hands back.
   and its own approval. How each platform is pushed and rolled back was
   built from the vendor's documentation and tested against Corelens's own
   device simulator, not yet against hardware, and the dialog says so.
+- **Diagnose the network.** *Diagnose* in the top bar (or on a device, a
+  link, two devices, or asked for in the chat or from Claude) runs a
+  read-only sweep from per-vendor playbooks — health, interfaces and
+  errors, VLANs across trunks, spanning tree, routing neighbours, gateway
+  redundancy, DHCP relay, NTP, AAA, firewall HA, sessions and tunnels,
+  configuration drift, or a path hop by hop — and reports the likely root
+  causes ranked with their evidence, what passed, what could not be checked
+  and why, and what changed since the last run. Its fix plan arrives as
+  proposals, one per step, that wait for your approval like any other.
+  `docs/DIAGNOSE.md`.
 
 **What leaves the computer.** Through MCP, Corelens itself sends nothing to
 Anthropic: what it returns to the Claude app reaches Anthropic through that
@@ -817,3 +827,4 @@ unmodified, and the notices say where their source is.
 - `docs/PROBE_BEHAVIOR.md` — exact threshold and state-machine behaviour
 - `docs/BRAND_AND_LICENSING.md` — why no vendor icons ship, and where yours go
 - `docs/RELEASE-NOTES.md` — what changed in each version
+- `docs/DIAGNOSE.md` — Diagnose network: what it checks, the report, the fix plan and your approval

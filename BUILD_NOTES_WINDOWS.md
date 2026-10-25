@@ -113,7 +113,8 @@ the scan is skipped.
 ## What the AI features keep on the laptop
 
 Nothing new is needed to build them: the chat's HTTP client and the
-clipboard reader are Rust crates compiled into the executable.
+clipboard reader are Rust crates compiled into the executable, and the
+diagnose playbooks (`resources/diagnose/`) are compiled in as well.
 
 Once installed and used, Corelens keeps:
 
@@ -125,9 +126,12 @@ Once installed and used, Corelens keeps:
 - **Provider keys**, when pasted: Windows Credential Manager → *Windows
   Credentials* → `Corelens Desktop AI` (accounts `anthropic-api-key`,
   `openai-api-key`). *Forget key* in Settings removes them.
-- **The AI record, the change record and the chat transcript**: in the
-  project database (`%LOCALAPPDATA%\Corelens Desktop AI\corelens.db`),
-  deleted with their project and kept 30, 90 or 365 days as Settings says.
+- **The AI record, the change record, the chat transcript and the
+  diagnoses**: in the project database
+  (`%LOCALAPPDATA%\Corelens Desktop AI\corelens.db`), deleted with their
+  project and kept 30, 90 or 365 days as Settings says. A diagnosis only
+  reads its devices and leaves nothing on them; its fix plan's steps leave
+  what any approved change leaves (below).
 - **On a device that took a change** (IOS): `flash:corelens-<id>.cfg`, the
   copy made before the push, which `configure replace` rolls back to. NX-OS
   and AOS-CX keep a checkpoint named `corelens-<id>`, PAN-OS a saved

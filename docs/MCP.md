@@ -57,7 +57,7 @@ claude mcp list
 ```
 
 `claude mcp list` should show `corelens` as connected. In a Claude Code
-session, `/mcp` lists its twelve tools. `--scope user` makes it available in
+session, `/mcp` lists its fourteen tools. `--scope user` makes it available in
 every folder you start Claude Code in; leave it out to add it to the
 current project only.
 
@@ -211,3 +211,23 @@ then ends with a warning saying so, and names the window's own build
 names the executable of the Corelens you are running), run it, and restart
 the client: `claude mcp remove corelens` first if `add` says it exists.
 
+
+## 8. Diagnose: "check this network, what's going on"
+
+`run_diagnostic` runs Corelens's own read-only sweep of the open project,
+one site, named devices, or the path between two endpoints (`scope`
+`project`, `site`, `devices` or `path`; `depth` `quick` or `full`; an
+optional `symptom` in the engineer's words). It returns the report: a short
+summary, root causes ranked with their evidence, findings by severity, what
+passed, what could not be checked and why, what changed since the last run,
+and a fix plan. The plan's steps are proposed by Corelens itself and wait in
+the window for the engineer, one approval each — the model does not need to
+propose them again, and cannot approve them. `get_diagnosis` returns a
+report run earlier (the newest unless named), with where each step's
+proposal stands now.
+
+The call takes from seconds to many minutes on a large project; while it
+runs, the Corelens window shows each device's progress and can stop it.
+Claude Code waits as long as it takes; a client that gives up sooner can
+read the result with `get_diagnosis` once it is done. `docs/DIAGNOSE.md`
+describes what is checked.

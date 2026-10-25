@@ -89,3 +89,15 @@ The error says what is wrong, in words:
 | … cannot call tools | Pull and choose a model that can. |
 | Rate limited … try again in N seconds | Wait that long (Corelens retries twice by itself first). |
 | AI chat in Corelens is off | Turn it on in *Settings → AI*. |
+
+## 6. Diagnose
+
+Ask "check this network, what's going on", "run a full diag", or about a
+site, a device or a path, and the model runs `run_diagnostic` — Corelens's
+own read-only sweep — before it says anything. It then explains from the
+report, citing its evidence, may run a few more show commands to confirm
+what the report leaves open, and says when there is not enough data. The
+fix plan arrives as proposals in the approval dialog, one per step, as it
+does from the Diagnose button (`docs/DIAGNOSE.md`); the chat points to them
+rather than proposing them again. *Ask AI to explain* on a report opens the
+chat with a question about it, for you to send.
