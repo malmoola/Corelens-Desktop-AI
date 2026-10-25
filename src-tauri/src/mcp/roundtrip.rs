@@ -19,7 +19,8 @@ use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 
 use super::fake_device::{FakeDevice, PASSWORD};
-use super::{execute, Activity, Host};
+use super::changes::{Change, ChangeHub, ChangeStatus, Decision};
+use super::{execute, Activity, Host, Source};
 use crate::commands::AppState;
 use crate::db;
 
@@ -52,7 +53,7 @@ pub(super) fn app_state() -> AppState {
 
 /// The same, with the switch under another name and the vault either
 /// unlocked or still locked.
-fn app_state_as(label: &str, unlocked: bool) -> AppState {
+pub(crate) fn app_state_as(label: &str, unlocked: bool) -> AppState {
     let conn = Connection::open_in_memory().unwrap();
     db::migrate_for_tests(&conn);
     let (header, key) = corelens_discover::vault::create("fixture vault passphrase").unwrap();
@@ -94,18 +95,49 @@ fn app_state_as(label: &str, unlocked: bool) -> AppState {
     }
 }
 
-/// The window's end of the bridge, with the fake switch's port to dial.
-struct Window {
-    state: AppState,
-    ssh_port: u16,
+/// The window's end of the bridge, with the fake switch's port to dial,
+/// the hub proposals wait in, and every change it told the page about.
+pub(super) struct Window {
+    pub(super) state: AppState,
+    pub(super) ssh_port: u16,
+    pub(super) hub: Arc<ChangeHub>,
+    pub(super) shown: Arc<Mutex<Vec<Change>>>,
+    /// What the engineer clicks for every proposal, in a test that does
+    /// not decide them itself: deny, so nothing is ever pushed by accident.
+    pub(super) approve_all: bool,
+}
+
+impl Window {
+    pub(super) fn new(state: AppState, ssh_port: u16) -> Window {
+        Window { state, ssh_port, hub: Arc::new(ChangeHub::default()), shown: Arc::new(Mutex::new(Vec::new())), approve_all: false }
+    }
 }
 
 impl Backend for Window {
-    fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+    fn call<'a>(&'a self, tool: &'a str, arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
         Box::pin(async move {
             let emit = |_: &Activity| {};
+            let shown = Arc::clone(&self.shown);
+            let hub = Arc::clone(&self.hub);
+            let approve_all = self.approve_all;
+            let emit_change = move |c: &Change| {
+                shown.lock().unwrap().push(c.clone());
+                if c.status == ChangeStatus::Pending && hub.is_waiting(&c.id) {
+                    let d = if approve_all { Decision::Approve(c.targets.iter().map(|t| t.seq).collect()) } else { Decision::Deny("denied by the test".into()) };
+                    let _ = hub.decide(&c.id, d);
+                }
+            };
             let templates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/templates/ntc");
-            let host = Host { state: &self.state, templates: Some(templates), ssh_port: self.ssh_port, emit: &emit };
+            let host = Host {
+                state: &self.state,
+                templates: Some(templates),
+                ssh_port: self.ssh_port,
+                emit: &emit,
+                changes: Some(&self.hub),
+                emit_change: &emit_change,
+                source: Source::Mcp { client: client.map(str::to_string) },
+                app: None,
+            };
             execute(&host, tool, arguments).await
         })
     }
@@ -198,8 +230,19 @@ fn sample(key: &str, schema: &Value) -> Value {
         Some("string") => json!(match key {
             "target" => "SW1",
             "command" => "show ip arp",
+            "reason" => "a round-trip test",
+            "change_id" => "00000000",
             _ => "SW1",
         }),
+        Some("array") => match schema["items"]["type"].as_str() {
+            Some("string") => match key {
+                "commands" => json!(["interface Gi1/0/24", " description LAB-PORT"]),
+                "verify_commands" => json!(["show interfaces status"]),
+                _ => json!(["SW1"]),
+            },
+            Some("object") => json!([arguments(&schema["items"], false)]),
+            other => panic!("{key}: an array of {other:?} needs a sample here"),
+        },
         other => panic!("{key}: a property of type {other:?} needs a sample here"),
     }
 }
@@ -253,7 +296,7 @@ async fn with_window_over<T: Send + 'static>(state: AppState, run: impl FnOnce(P
     let dir = data_dir(home.path());
     std::fs::create_dir_all(&dir).unwrap();
     let dev = FakeDevice::start().await;
-    let listening = bridge::listen(bridge::endpoint(&dir), Arc::new(Window { state, ssh_port: dev.port })).await.unwrap();
+    let listening = bridge::listen(bridge::endpoint(&dir), Arc::new(Window::new(state, dev.port))).await.unwrap();
     let h = home.path().to_path_buf();
     let out = tokio::task::spawn_blocking(move || run(h)).await.unwrap();
     listening.stop().await;

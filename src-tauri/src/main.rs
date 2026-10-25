@@ -11,6 +11,7 @@ mod ratelimit;
 mod jobs;
 mod timeline;
 mod keychain;
+mod applog;
 #[cfg(test)]
 mod ipc_contract;
 #[cfg(test)]
@@ -115,24 +116,38 @@ fn main() {
     }
     // Before the window exists, or it opens on an empty profile.
     db::adopt_webview_data();
-    let db_path = db::data_dir().join(db::DB_FILE);
+    let data_dir = db::data_dir();
+    applog::init(&data_dir);
+    let db_path = data_dir.join(db::DB_FILE);
     let conn = db::open(&db_path).expect("could not open the local Corelens database");
+    // Verbose AI logging, if it was on and has not yet run out.
+    if let Some(until) = db::all_settings(&conn).ok().and_then(|s| s.get(applog::VERBOSE_SETTING).and_then(|v| v.parse::<i64>().ok())) {
+        applog::set_verbose_until(until);
+    }
     // Sweep up anything a project deleted before the cascade existed left
     // behind — its event timeline carries device names and the addresses they
     // were checked at, which is exactly what deleting a project is for.
     match db::purge_orphans(&conn) {
         Ok(0) => {}
-        Ok(n) => eprintln!("removed {n} rows belonging to projects that no longer exist"),
+        Ok(n) => applog::info("db", &format!("removed {n} rows belonging to projects that no longer exist")),
         // Not fatal: a start that refuses to happen is worse than one that
         // leaves the sweeping until next time.
-        Err(e) => eprintln!("could not sweep up after deleted projects: {e}"),
+        Err(e) => applog::warn("db", &format!("could not sweep up after deleted projects: {e}")),
     }
     // A crawl the last process died under is kept with what it had
     // found, and says so.
+    // The AI record kept inside its retention and size.
+    let _ = mcp::audit::prune(&conn, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0));
+    // A proposal open when the app last closed has no one waiting for it.
+    match mcp::changes::store::close_interrupted(&conn) {
+        Ok(0) => {}
+        Ok(n) => applog::info("change", &format!("{n} change(s) open when the app last closed were marked interrupted")),
+        Err(e) => applog::warn("change", &format!("could not close interrupted changes: {e}")),
+    }
     match db::mark_abandoned_runs(&conn) {
         Ok(0) => {}
-        Ok(n) => eprintln!("{n} crawl run(s) were still running when the app last closed; kept as aborted"),
-        Err(e) => eprintln!("could not mark abandoned crawl runs: {e}"),
+        Ok(n) => applog::info("db", &format!("{n} crawl run(s) were still running when the app last closed; kept as aborted")),
+        Err(e) => applog::warn("db", &format!("could not mark abandoned crawl runs: {e}")),
     }
     let (engine, rx) = Engine::new(DEFAULT_MAX_CONCURRENCY);
     let engine_for_exit = Arc::clone(&engine);
@@ -143,6 +158,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::Pending::default())
         .manage(mcp::McpState::default())
+        .manage(mcp::changes::ChangeHub::default())
         .manage(AppState {
             engine,
             db: Mutex::new(conn),
@@ -218,6 +234,12 @@ fn main() {
             mcp::mcp_activity,
             mcp::mcp_clear_activity,
             mcp::mcp_change_record,
+            applog::app_log_info,
+            applog::app_log_verbose,
+            mcp::changes::change_list,
+            mcp::changes::change_decide,
+            mcp::changes::change_rollback,
+            mcp::changes::change_export,
             updater::install_update,
             commands::list_icon_library,
             commands::list_bundled_icons,

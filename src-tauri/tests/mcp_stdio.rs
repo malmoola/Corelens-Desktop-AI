@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 struct Answers;
 impl Backend for Answers {
-    fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+    fn call<'a>(&'a self, tool: &'a str, arguments: Value, _client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
         Box::pin(async move { Outcome::ok(format!("the app ran {tool} with {arguments}")) })
     }
 }

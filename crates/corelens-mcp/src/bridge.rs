@@ -31,6 +31,9 @@ const HANDSHAKE: Duration = Duration::from_secs(5);
 /// Longer than any tool's own limit, so a slow device reports its own
 /// timeout rather than this one.
 pub const CALL_LIMIT: Duration = Duration::from_secs(120);
+/// For a tool that waits on a person (an approval): longer than the
+/// longest wait Settings allows, plus the change itself.
+pub const LONG_CALL_LIMIT: Duration = Duration::from_secs(75 * 60);
 
 pub const NOT_LISTENING: &str = "Corelens Desktop AI is not running, or \"Let Claude use Corelens\" is off in its Settings → AI. \
 Start the app, open the customer's project, switch it on, and try again.";
@@ -134,7 +137,7 @@ async fn write_line<W: AsyncWrite + Unpin>(writer: &mut W, value: &Value) -> std
 }
 
 /// The proxy's half of one call on an open stream.
-pub async fn call_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8], tool: &str, arguments: Value) -> Outcome {
+pub async fn call_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8], tool: &str, arguments: Value, client: Option<&str>) -> Outcome {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read);
     let mine = nonce();
@@ -153,13 +156,14 @@ pub async fn call_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8],
         Ok(Some(true)) => {}
         Ok(Some(false)) | Ok(None) | Err(_) => return Outcome::error(NOT_PROVEN),
     }
-    if write_line(&mut write, &json!({ "tool": tool, "arguments": arguments })).await.is_err() {
+    if write_line(&mut write, &json!({ "tool": tool, "arguments": arguments, "client": client })).await.is_err() {
         return Outcome::error("The connection to Corelens Desktop AI closed before the request was sent. Try again.");
     }
-    match tokio::time::timeout(CALL_LIMIT, read_line(&mut read)).await {
+    let limit = if crate::tools::find(tool).is_some_and(|t| t.long_running) { LONG_CALL_LIMIT } else { CALL_LIMIT };
+    match tokio::time::timeout(limit, read_line(&mut read)).await {
         Ok(Some(v)) => serde_json::from_value(v).unwrap_or_else(|_| Outcome::error("Corelens Desktop AI sent an answer this version does not read.")),
         Ok(None) => Outcome::error("Corelens Desktop AI closed the connection without answering (it may have been closed). Try again."),
-        Err(_) => Outcome::error(format!("Corelens Desktop AI did not answer within {} seconds.", CALL_LIMIT.as_secs())),
+        Err(_) => Outcome::error(format!("Corelens Desktop AI did not answer within {} seconds.", limit.as_secs())),
     }
 }
 
@@ -188,7 +192,8 @@ pub async fn serve_over<S: AsyncRead + AsyncWrite + Unpin>(stream: S, key: &[u8]
     let Some(request) = read_line(&mut read).await else { return };
     let tool = request.get("tool").and_then(Value::as_str).unwrap_or("").to_string();
     let arguments = request.get("arguments").cloned().unwrap_or_else(|| json!({}));
-    let outcome = backend.call(&tool, arguments).await;
+    let client = request.get("client").and_then(Value::as_str).map(|c| c.chars().take(100).collect::<String>());
+    let outcome = backend.call(&tool, arguments, client.as_deref()).await;
     let _ = write_line(&mut write, &serde_json::to_value(&outcome).unwrap_or(Value::Null)).await;
 }
 
@@ -198,12 +203,12 @@ pub struct Client {
 }
 
 impl Backend for Client {
-    fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+    fn call<'a>(&'a self, tool: &'a str, arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
         Box::pin(async move {
             // Read per call: the app writes a new key each time it starts.
             let Some(key) = read_key(&self.endpoint.key_file) else { return Outcome::error(NOT_LISTENING) };
             match connect(&self.endpoint.address).await {
-                Ok(stream) => call_over(stream, &key, tool, arguments).await,
+                Ok(stream) => call_over(stream, &key, tool, arguments, client).await,
                 Err(e) => {
                     if crate::server::debug() {
                         eprintln!("corelens-mcp: tools/call {tool}: the bridge did not connect: {e}");
@@ -363,7 +368,7 @@ mod tests {
 
     struct Named;
     impl Backend for Named {
-        fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+        fn call<'a>(&'a self, tool: &'a str, arguments: Value, _client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
             Box::pin(async move { Outcome::ok(format!("ran {tool} with {arguments}")) })
         }
     }
@@ -376,9 +381,25 @@ mod tests {
     async fn both_ends_with_the_key_run_a_call() {
         let (a, b) = tokio::io::duplex(1 << 16);
         let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
-        let out = call_over(a, &key(7), "get_device", json!({ "target": "SW1" })).await;
+        let out = call_over(a, &key(7), "get_device", json!({ "target": "SW1" }), None).await;
         server.await.unwrap();
         assert_eq!(out, Outcome::ok(r#"ran get_device with {"target":"SW1"}"#));
+    }
+
+    struct Who;
+    impl Backend for Who {
+        fn call<'a>(&'a self, _tool: &'a str, _arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
+            Box::pin(async move { Outcome::ok(format!("client {}", client.unwrap_or("none"))) })
+        }
+    }
+
+    #[tokio::test]
+    async fn the_clients_name_crosses_with_the_call() {
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let server = tokio::spawn(async move { serve_over(b, &key(7), &Who).await });
+        let out = call_over(a, &key(7), "corelens_status", json!({}), Some("Claude Code 2.1")).await;
+        server.await.unwrap();
+        assert_eq!(out, Outcome::ok("client Claude Code 2.1"));
     }
 
     #[tokio::test]
@@ -394,7 +415,7 @@ mod tests {
             let _ = tokio::time::timeout(Duration::from_millis(300), r.read_to_string(&mut rest)).await;
             (hello, rest)
         });
-        let out = call_over(a, &key(7), "get_config", json!({ "target": "SW1" })).await;
+        let out = call_over(a, &key(7), "get_config", json!({ "target": "SW1" }), None).await;
         assert_eq!(out, Outcome::error(NOT_PROVEN));
         let (hello, rest) = seen.await.unwrap();
         assert!(hello.get("tool").is_none() && !rest.contains("get_config") && !rest.contains("SW1"), "the request reached a server that had no key: {rest}");
@@ -404,7 +425,7 @@ mod tests {
     async fn a_client_without_the_key_runs_nothing() {
         let (a, b) = tokio::io::duplex(1 << 16);
         let server = tokio::spawn(async move { serve_over(b, &key(7), &Named).await });
-        let out = call_over(a, &key(8), "list_devices", json!({})).await;
+        let out = call_over(a, &key(8), "list_devices", json!({}), None).await;
         server.await.unwrap();
         assert!(out.is_error, "{out:?}");
     }
@@ -429,19 +450,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ep = endpoint(dir.path());
         let client = Client { endpoint: ep.clone() };
-        assert_eq!(client.call("corelens_status", json!({})).await, Outcome::error(NOT_LISTENING), "nothing listening yet");
+        assert_eq!(client.call("corelens_status", json!({}), None).await, Outcome::error(NOT_LISTENING), "nothing listening yet");
         let running = listen(ep.clone(), Arc::new(Named)).await.unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(std::fs::metadata(&ep.address).unwrap().permissions().mode() & 0o777, 0o600);
         }
-        let out = client.call("corelens_status", json!({})).await;
+        let out = client.call("corelens_status", json!({}), None).await;
         assert_eq!(out, Outcome::ok("ran corelens_status with {}"));
         running.stop().await;
         assert!(!ep.key_file.exists());
         let start = std::time::Instant::now();
-        assert_eq!(client.call("corelens_status", json!({})).await, Outcome::error(NOT_LISTENING));
+        assert_eq!(client.call("corelens_status", json!({}), None).await, Outcome::error(NOT_LISTENING));
         assert!(start.elapsed() < Duration::from_secs(1), "an absent app is reported at once, not after a wait");
     }
 }

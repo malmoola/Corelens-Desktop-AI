@@ -56,7 +56,9 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Whatever runs the tools: the bridge to the app in the stdio process, the
 /// app itself on the other end.
 pub trait Backend: Send + Sync + 'static {
-    fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome>;
+    /// One tool call. `client` is the client's name as it gave it
+    /// (`clientInfo`), for the change record; `None` when it gave none.
+    fn call<'a>(&'a self, tool: &'a str, arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome>;
 }
 
 fn server_info() -> Value {
@@ -119,11 +121,29 @@ pub struct Server<B: Backend> {
     /// starts, so one that finishes at once still finds itself and answers;
     /// a cancel removes it, and a task that finds itself gone sends nothing.
     running: Mutex<HashMap<String, Option<JoinHandle<()>>>>,
+    /// The client's name and version from `initialize`.
+    client: Mutex<Option<String>>,
+}
+
+/// How often a call that waits on a person reports that it still is.
+#[cfg(not(test))]
+const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_secs(20);
+#[cfg(test)]
+const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_millis(50);
+
+fn client_name(info: Option<&Value>) -> Option<String> {
+    let info = info?;
+    let name = info.get("name").and_then(Value::as_str)?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let version = info.get("version").and_then(Value::as_str).unwrap_or("").trim();
+    Some(if version.is_empty() { name.chars().take(64).collect() } else { format!("{} {}", name.chars().take(64).collect::<String>(), version.chars().take(32).collect::<String>()) })
 }
 
 impl<B: Backend> Server<B> {
     pub fn new(backend: B) -> Arc<Server<B>> {
-        Arc::new(Server { backend: Arc::new(backend), negotiated: Mutex::new(None), running: Mutex::new(HashMap::new()) })
+        Arc::new(Server { backend: Arc::new(backend), negotiated: Mutex::new(None), running: Mutex::new(HashMap::new()), client: Mutex::new(None) })
     }
 
     /// Reads requests from `input` until it closes, writing every reply to
@@ -209,6 +229,9 @@ impl<B: Backend> Server<B> {
                 let chosen = if LEGACY.contains(&asked) { asked } else { LEGACY[0] }.to_string();
                 if let Ok(mut n) = self.negotiated.lock() {
                     *n = Some(chosen.clone());
+                }
+                if let Ok(mut c) = self.client.lock() {
+                    *c = client_name(params.get("clientInfo"));
                 }
                 let body = obj(json!({
                     "protocolVersion": chosen,
@@ -296,6 +319,28 @@ impl<B: Backend> Server<B> {
                 return;
             }
         };
+        // The modern revision names the client on every request; the
+        // older ones once, at `initialize`.
+        let client = client_name(params.get("_meta").and_then(|m| m.get("io.modelcontextprotocol/clientInfo"))).or_else(|| self.client.lock().ok().and_then(|c| c.clone()));
+        // A call that waits on a person says so while it waits, when the
+        // client asked for progress.
+        let ticker = match (tools::find(name).is_some_and(|t| t.long_running), params.get("_meta").and_then(|m| m.get("progressToken")).cloned()) {
+            (true, Some(token)) if token.is_string() || token.is_number() => {
+                let tx = tx.clone();
+                Some(tokio::spawn(async move {
+                    let mut n = 0u64;
+                    loop {
+                        tokio::time::sleep(PROGRESS_EVERY).await;
+                        n += 1;
+                        let note = json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": { "progressToken": token, "progress": n, "message": "Waiting for the engineer to approve or deny in Corelens Desktop AI" } });
+                        if tx.send(note).is_err() {
+                            break;
+                        }
+                    }
+                }))
+            }
+            _ => None,
+        };
         let name = name.to_string();
         let key = id.to_string();
         let me = Arc::clone(self);
@@ -305,7 +350,10 @@ impl<B: Backend> Server<B> {
             r.insert(key.clone(), None);
         }
         let handle = tokio::spawn(async move {
-            let outcome = me.backend.call(&name, arguments).await;
+            let outcome = me.backend.call(&name, arguments, client.as_deref()).await;
+            if let Some(t) = ticker {
+                t.abort();
+            }
             // Cancelled meanwhile: the entry is gone and nothing is sent.
             let still_wanted = me.running.lock().map(|mut r| r.remove(&task_key).is_some()).unwrap_or(false);
             if still_wanted {
@@ -335,10 +383,15 @@ mod tests {
 
     struct Echo;
     impl Backend for Echo {
-        fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+        fn call<'a>(&'a self, tool: &'a str, arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
             Box::pin(async move {
                 if tool == "get_findings" {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                }
+                if tool == "get_change_status" {
+                    // A call that waits on a person, briefly.
+                    tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+                    return Outcome::ok(format!("asked by {}", client.unwrap_or("nobody")));
                 }
                 if arguments.get("target").and_then(Value::as_str) == Some("nowhere") {
                     return Outcome::error("nowhere is not a device of the open project");
@@ -387,6 +440,28 @@ mod tests {
 
     fn by_id(replies: &[Value], id: i64) -> &Value {
         replies.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no reply to {id}: {replies:?}"))
+    }
+
+    #[tokio::test]
+    async fn a_waiting_call_reports_progress_and_the_client_is_named_in_both_eras() {
+        let legacy_init = json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "claude-ai", "version": "0.1.0" } } }).to_string();
+        let call = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "get_change_status", "arguments": { "change_id": "c1" }, "_meta": { "progressToken": 7 } } }).to_string();
+        let (replies, _) = talk(&[legacy_init, call]).await;
+        assert_eq!(by_id(&replies, 1)["result"]["content"][0]["text"], "asked by claude-ai 0.1.0");
+        let progress: Vec<&Value> = replies.iter().filter(|r| r["method"] == "notifications/progress").collect();
+        assert!(!progress.is_empty(), "no progress while waiting: {replies:?}");
+        assert!(progress.iter().all(|p| p["params"]["progressToken"] == 7 && p["params"]["message"].as_str().unwrap().contains("approve")));
+
+        let (replies, _) = talk(&[modern(2, "tools/call", json!({ "name": "get_change_status", "arguments": { "change_id": "c1" } }))]).await;
+        assert_eq!(by_id(&replies, 2)["result"]["content"][0]["text"], "asked by t 1");
+        assert!(replies.iter().all(|r| r["method"] != "notifications/progress"), "no token, no progress");
+    }
+
+    #[tokio::test]
+    async fn a_quick_call_sends_no_progress_even_with_a_token() {
+        let call = modern(3, "tools/call", json!({ "name": "list_devices", "arguments": {}, "_meta": { META_VERSION: MODERN, META_CAPS: {}, "progressToken": "p" } }));
+        let (replies, _) = talk(&[call]).await;
+        assert!(replies.iter().all(|r| r["method"] != "notifications/progress"));
     }
 
     #[tokio::test]

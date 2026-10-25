@@ -45,6 +45,8 @@ fn shapes() -> &'static [(Regex, &'static str)] {
             (r(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\z)"), MARK),
             (r(r"\$(?:1|2[aby]?|5|6|7|8|9|14|y)\$[./A-Za-z0-9$=+-]{4,}"), MARK),
             (r(r"sk-ant-[A-Za-z0-9_-]{8,}"), MARK),
+            // OpenAI's keys: `sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`.
+            (r(r"\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}"), MARK),
         ]
     })
 }
@@ -54,6 +56,16 @@ fn word_bounded(text: &str, secret: &str) -> String {
     // replaced where it stands alone.
     let re = Regex::new(&format!(r"(^|[^A-Za-z0-9]){}($|[^A-Za-z0-9])", regex::escape(secret))).expect("an escaped literal");
     re.replace_all(text, |c: &regex::Captures| format!("{}{MARK}{}", &c[1], &c[2])).into_owned()
+}
+
+/// The text with the shapes of secrets removed (keys, hashes, API keys) —
+/// what the app's log is held to on top of the secrets it remembers.
+pub fn shapes_only(text: &str) -> String {
+    let mut out = text.to_string();
+    for (re, rep) in shapes() {
+        out = re.replace_all(&out, *rep).into_owned();
+    }
+    out
 }
 
 /// The text with every secret removed, or [`Withheld`].

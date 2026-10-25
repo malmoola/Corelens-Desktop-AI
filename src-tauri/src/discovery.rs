@@ -557,7 +557,7 @@ pub async fn start_crawl(
                 if let Some(run_id) = &pump_run_id {
                     if let (Ok(conn), Ok(json)) = (state.db.lock(), serde_json::to_string(device)) {
                         if let Err(e) = crate::db::append_crawl_device(&conn, run_id, &json) {
-                            eprintln!("could not write {} to crawl run {run_id}: {e}", device.address);
+                            crate::applog::warn("crawl", &format!("could not write {} to crawl run {run_id}: {e}", device.address));
                         }
                     }
                 }
@@ -686,7 +686,7 @@ pub async fn start_crawl(
                     crate::db::close_crawl_run(&conn, run_id, status, &summary.to_string()).map_err(|e| e.to_string())
                 });
             if let Err(e) = closed {
-                eprintln!("could not close crawl run {run_id}: {e}");
+                crate::applog::warn("crawl", &format!("could not close crawl run {run_id}: {e}"));
             }
         }
         let _ = handle.emit(

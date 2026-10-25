@@ -695,14 +695,18 @@ pub fn snmp_credentials(state: &AppState, id: &str) -> CmdResult<SnmpAuth> {
 }
 
 pub fn open_secret(key: &VaultKey, parts: &(Vec<u8>, Vec<u8>)) -> CmdResult<String> {
-    vault::open(
+    let secret = vault::open(
         key,
         &SealedSecret {
             nonce: parts.0.clone(),
             ciphertext: parts.1.clone(),
         },
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    // Every secret this process opens, the log is told about, so that no
+    // line of it can carry one whatever a call site passes.
+    crate::applog::remember_secret(&secret);
+    Ok(secret)
 }
 
 /// The credentials a package carries: those of `wanted` that exist, in the

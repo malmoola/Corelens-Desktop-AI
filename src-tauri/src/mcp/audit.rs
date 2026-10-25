@@ -85,6 +85,45 @@ pub fn list(conn: &Connection, project_id: Option<&str>, limit: i64) -> rusqlite
     rows.collect()
 }
 
+/// The app setting for how many days the record is kept: 30, 90 or 365.
+pub const RETENTION_SETTING: &str = "aiAuditRetentionDays";
+pub const DEFAULT_RETENTION_DAYS: i64 = 90;
+/// The most the record may hold, as five files of 10 MB would: past it,
+/// the oldest calls go first.
+pub const SIZE_CAP: i64 = 5 * 10 * 1024 * 1024;
+
+pub fn retention_days(conn: &Connection) -> i64 {
+    crate::db::all_settings(conn)
+        .ok()
+        .and_then(|s| s.get(RETENTION_SETTING).and_then(|v| v.parse::<i64>().ok()))
+        .filter(|d| [30, 90, 365].contains(d))
+        .unwrap_or(DEFAULT_RETENTION_DAYS)
+}
+
+/// Keeps the record inside its retention and its size: calls older than
+/// the retention are removed, then the oldest until what is left fits
+/// [`SIZE_CAP`]. The change record follows the same retention.
+pub fn prune(conn: &Connection, now_ms: i64) -> rusqlite::Result<usize> {
+    let days = retention_days(conn);
+    let before = now_ms - days * 86_400_000;
+    let mut removed = conn.execute("DELETE FROM mcp_audit WHERE at_ms < ?1", params![before])?;
+    let total: i64 = conn.query_row("SELECT COALESCE(SUM(LENGTH(result) + LENGTH(arguments) + 256), 0) FROM mcp_audit", [], |r| r.get(0))?;
+    if total > SIZE_CAP {
+        // The newest rows that fit, by a running total from the newest.
+        removed += conn.execute(
+            "DELETE FROM mcp_audit WHERE id IN (
+                SELECT id FROM (
+                    SELECT id, SUM(LENGTH(result) + LENGTH(arguments) + 256) OVER (ORDER BY at_ms DESC, id DESC) AS kept
+                    FROM mcp_audit
+                ) WHERE kept > ?1
+            )",
+            params![SIZE_CAP],
+        )?;
+    }
+    removed += crate::mcp::changes::store::prune(conn, now_ms, days)?;
+    Ok(removed)
+}
+
 pub fn clear(conn: &Connection, project_id: Option<&str>) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM mcp_audit WHERE (?1 IS NULL OR project_id = ?1)", params![project_id])
 }
@@ -138,6 +177,53 @@ pub fn change_record(project: &str, entries: &[Entry]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::migrate_for_tests(&c);
+        c
+    }
+
+    fn row(at_ms: i64, result: &str) -> Entry {
+        Entry { at_ms, tool: "get_device".into(), outcome: "ok".into(), result: result.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn calls_past_the_retention_go_and_the_setting_chooses_it() {
+        let c = conn();
+        let now = 400 * 86_400_000;
+        record(&c, &row(now - 100 * 86_400_000, "old")).unwrap();
+        record(&c, &row(now - 40 * 86_400_000, "middle")).unwrap();
+        record(&c, &row(now - 86_400_000, "new")).unwrap();
+        prune(&c, now).unwrap();
+        let left: Vec<String> = list(&c, None, 10).unwrap().into_iter().map(|e| e.result).collect();
+        assert_eq!(left, ["new", "middle"], "90 days by default");
+        crate::db::set_setting(&c, RETENTION_SETTING, Some("30")).unwrap();
+        prune(&c, now).unwrap();
+        assert_eq!(list(&c, None, 10).unwrap().len(), 1);
+        crate::db::set_setting(&c, RETENTION_SETTING, Some("7")).unwrap();
+        assert_eq!(retention_days(&c), DEFAULT_RETENTION_DAYS, "only 30, 90 or 365");
+    }
+
+    #[test]
+    fn past_the_size_cap_the_oldest_go_first() {
+        let c = conn();
+        let big = "x".repeat(4 * 1024 * 1024);
+        for i in 0..20 {
+            record(&c, &row(1_000 + i, &big)).unwrap();
+        }
+        prune(&c, 2_000).unwrap();
+        let left = list(&c, None, 100).unwrap();
+        let total: i64 = left.iter().map(|e| e.result.len() as i64 + 256 + 2).sum();
+        assert!(total <= SIZE_CAP, "{total}");
+        assert_eq!(left.len(), 12);
+        assert_eq!(left.last().unwrap().at_ms, 1_008, "the newest are what is kept");
+    }
 }
 
 #[cfg(test)]

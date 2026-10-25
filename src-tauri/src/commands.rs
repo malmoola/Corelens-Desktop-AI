@@ -713,7 +713,7 @@ pub fn import_visio(path: String) -> CmdResult<corelens_formats::visio_import::V
 /// page asked for runs; the call fails with why.
 #[tauri::command]
 pub fn ipc_refused(command: String, reason: String) -> CmdResult<()> {
-    eprintln!("corelens: refused a call to {command}: {reason}");
+    crate::applog::warn("ipc", &format!("refused a call to {command}: {reason}"));
     Err(format!("{command} was refused before it reached Corelens: {reason}."))
 }
 

@@ -8,6 +8,7 @@
 //! on, and turning it off removes the endpoint and its key.
 
 pub mod audit;
+pub mod changes;
 #[cfg(test)]
 pub mod fake_device;
 pub mod project;
@@ -49,7 +50,7 @@ fn now_ms() -> i64 {
 /// Every secret the unlocked vault holds, so a result can be cleaned of
 /// them by value. Nothing when locked: a locked vault opens no session
 /// either, so no device output can carry one of its secrets.
-fn vault_secrets(state: &AppState) -> redact::Secrets {
+pub(crate) fn vault_secrets(state: &AppState) -> redact::Secrets {
     let Ok(guard) = state.vault_key.lock() else { return redact::Secrets::default() };
     let Some(key) = guard.as_ref() else { return redact::Secrets::default() };
     let Ok(conn) = state.db.lock() else { return redact::Secrets::default() };
@@ -83,11 +84,11 @@ pub struct Activity {
 }
 
 /// A tool's raw result and what it touched, before the gate.
-struct Raw {
-    result: Result<String, String>,
-    device: String,
-    address: String,
-    command: String,
+pub(crate) struct Raw {
+    pub(crate) result: Result<String, String>,
+    pub(crate) device: String,
+    pub(crate) address: String,
+    pub(crate) command: String,
 }
 
 /// The device, the address to dial, and the logins to try, in order.
@@ -100,14 +101,68 @@ struct ShowArgs {
     command: String,
 }
 
+/// Who is asking: an MCP client (by the name it gave), the in-app chat
+/// (its provider and model), or the engineer in this window.
+#[derive(Debug, Clone)]
+pub enum Source {
+    Mcp { client: Option<String> },
+    Operator,
+}
+
+impl Source {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Source::Mcp { .. } => "mcp",
+            Source::Operator => "operator",
+        }
+    }
+
+    /// As the change record names the proposer.
+    pub fn describe(&self) -> String {
+        match self {
+            Source::Mcp { client: Some(c) } => format!("{c} (MCP)"),
+            Source::Mcp { client: None } => "an MCP client".into(),
+            Source::Operator => "the engineer".into(),
+        }
+    }
+}
+
 /// What a call needs from the window: its state, where the parser
-/// templates are, the port SSH sessions dial, and where to say a call has
-/// started or ended (the status strip).
+/// templates are, the port SSH sessions dial, where to say a call has
+/// started or ended (the status strip), and — for a change — the hub its
+/// decision comes through, where to tell the page about it, and who asked.
 pub struct Host<'a> {
     pub state: &'a AppState,
     pub templates: Option<std::path::PathBuf>,
     pub ssh_port: u16,
     pub emit: &'a (dyn Fn(&Activity) + Send + Sync),
+    /// `None` where changes cannot be decided (no window).
+    pub changes: Option<&'a changes::ChangeHub>,
+    pub emit_change: &'a (dyn Fn(&changes::Change) + Send + Sync),
+    pub source: Source,
+    /// For work that outlives the call (a commit's timer).
+    pub app: Option<AppHandle>,
+}
+
+/// The device a call names, the address to dial, and the logins to try:
+/// the device's own first, then the project's.
+pub(crate) fn login_for(state: &AppState, project_id: &str, target: &str) -> Result<Prepared, String> {
+    let package = {
+        let conn = state.db.lock().map_err(db_err)?;
+        db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?
+    };
+    let all = project::devices(&package.document);
+    let device = project::resolve(&all, target)?.clone();
+    let address = device.target().ok_or_else(|| format!("{} has no address in the project, so Corelens cannot reach it.", device.label()))?;
+    if state.vault_key.lock().map(|k| k.is_none()).unwrap_or(true) {
+        return Err("The vault in Corelens is locked, so no login can be used. The engineer unlocks it in the Corelens window, then ask again.".into());
+    }
+    let first = Some(device.field("sshCredentialId").to_string())
+        .filter(|c| !c.is_empty() && crate::vault_commands::credential_exists(state, c))
+        .or_else(|| crate::vault_commands::project_login_order(state, &[], None).into_iter().find(|id| crate::vault_commands::credential_exists(state, id)))
+        .ok_or_else(|| format!("No login is saved for {} or for the project, so Corelens cannot log in to it.", device.label()))?;
+    let chain = crate::vault_commands::ssh_login_chain(state, &first)?;
+    Ok((device, address, chain))
 }
 
 async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
@@ -121,25 +176,7 @@ async fn run_show(host: &Host<'_>, project_id: &str, arguments: &Value) -> Raw {
     };
     raw.command = args.command.trim().to_string();
     let state = host.state;
-    let prepared = (|| -> Result<Prepared, String> {
-        show::precheck(&args.command)?;
-        let package = {
-            let conn = state.db.lock().map_err(db_err)?;
-            db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?
-        };
-        let all = project::devices(&package.document);
-        let device = project::resolve(&all, &args.target)?.clone();
-        let address = device.target().ok_or_else(|| format!("{} has no address in the project, so Corelens cannot reach it.", device.label()))?;
-        if state.vault_key.lock().map(|k| k.is_none()).unwrap_or(true) {
-            return Err("The vault in Corelens is locked, so no login can be used. The engineer unlocks it in the Corelens window, then ask again.".into());
-        }
-        let first = Some(device.field("sshCredentialId").to_string())
-            .filter(|c| !c.is_empty() && crate::vault_commands::credential_exists(state, c))
-            .or_else(|| crate::vault_commands::project_login_order(state, &[], None).into_iter().find(|id| crate::vault_commands::credential_exists(state, id)))
-            .ok_or_else(|| format!("No login is saved for {} or for the project, so Corelens cannot log in to it.", device.label()))?;
-        let chain = crate::vault_commands::ssh_login_chain(state, &first)?;
-        Ok((device, address, chain))
-    })();
+    let prepared = show::precheck(&args.command).and_then(|_| login_for(state, project_id, &args.target));
     let (device, address, chain) = match prepared {
         Ok(p) => p,
         Err(e) => {
@@ -191,6 +228,9 @@ pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
     let raw = match &project_id {
         None => Raw { result: Err("No project is open in Corelens. The engineer opens the customer's project in the Corelens window; then ask again.".into()), device: device_arg, address: String::new(), command: String::new() },
         Some(p) if tool == "run_show_command" => run_show(host, p, &arguments).await,
+        Some(p) if tool == "propose_config_change" => changes::propose(host, p, &arguments).await,
+        Some(p) if tool == "propose_save_config" => changes::propose_save(host, p, &arguments).await,
+        Some(_) if tool == "get_change_status" => changes::status(host, &arguments).await,
         Some(p) => run_read(state, p, tool, &arguments),
     };
     let secrets = vault_secrets(state);
@@ -220,7 +260,9 @@ pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
     };
     if let Ok(conn) = state.db.lock() {
         let _ = audit::record(&conn, &entry);
+        let _ = audit::prune(&conn, now_ms());
     }
+    crate::applog::verbose_with("mcp", || format!("{tool} via {}: {kind}, {} bytes, {} ms", host.source.kind(), entry.bytes, entry.duration_ms));
     (host.emit)(&Activity { tool: tool.into(), device: raw.device, running: false, outcome: kind.into() });
     outcome
 }
@@ -230,13 +272,26 @@ struct AppBackend {
 }
 
 impl Backend for AppBackend {
-    fn call<'a>(&'a self, tool: &'a str, arguments: Value) -> BoxFuture<'a, Outcome> {
+    fn call<'a>(&'a self, tool: &'a str, arguments: Value, client: Option<&'a str>) -> BoxFuture<'a, Outcome> {
         Box::pin(async move {
             let state = self.app.state::<AppState>();
+            let hub = self.app.state::<changes::ChangeHub>();
             let emit = |a: &Activity| {
                 let _ = self.app.emit("corelens://mcp-activity", a);
             };
-            let host = Host { state: state.inner(), templates: crate::collection::templates_dir(&self.app).ok(), ssh_port: 22, emit: &emit };
+            let emit_change = |c: &changes::Change| {
+                let _ = self.app.emit(changes::EVENT, c);
+            };
+            let host = Host {
+                state: state.inner(),
+                templates: crate::collection::templates_dir(&self.app).ok(),
+                ssh_port: 22,
+                emit: &emit,
+                changes: Some(hub.inner()),
+                emit_change: &emit_change,
+                source: Source::Mcp { client: client.map(str::to_string) },
+                app: Some(self.app.clone()),
+            };
             execute(&host, tool, arguments).await
         })
     }
@@ -401,7 +456,8 @@ mod tests {
             let state = Arc::clone(&state);
             std::thread::spawn(move || {
                 let emit = |_: &Activity| {};
-                let host = Host { state: &state, templates: None, ssh_port: 22, emit: &emit };
+                let emit_change = |_: &changes::Change| {};
+                let host = Host { state: &state, templates: None, ssh_port: 22, emit: &emit, changes: None, emit_change: &emit_change, source: Source::Operator, app: None };
                 tauri::async_runtime::block_on(execute(&host, "get_device", json!({ "target": "SW1" })))
             })
         };

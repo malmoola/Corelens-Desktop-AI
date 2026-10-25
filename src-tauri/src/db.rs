@@ -12,7 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 /// Bumped whenever the diagram document shape changes; the frontend migrates.
 pub const DOCUMENT_VERSION: i64 = 1;
 
@@ -529,6 +529,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::collection_db::typed_columns(conn)?;
     crate::collection_db::topology_tables(conn)?;
     crate::mcp::audit::tables(conn)?;
+    schema_10(conn)?;
 
     apply_migrations(conn, MIGRATIONS)
 }
@@ -546,7 +547,12 @@ type Migration = (i64, fn(&Connection) -> rusqlite::Result<()>);
 /// Every migration ever written, oldest first. Adding a column is a new entry
 /// here and a bump of `SCHEMA_VERSION`, never an edit to an old one — a
 /// database in the field may be at any version in this list.
-const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables)];
+const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables), (10, schema_10)];
+
+/// Schema 10: the change record (tier 2) and the chat transcript.
+fn schema_10(conn: &Connection) -> rusqlite::Result<()> {
+    crate::mcp::changes::store::tables(conn)
+}
 
 /// The steps that take a database from its version to
 /// `SCHEMA_VERSION`, in one transaction with the version bump last.
@@ -766,6 +772,7 @@ pub fn delete_project(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     // What an assistant was given about it goes with it. Not a foreign key:
     // a call made with no project open has no project to belong to.
     crate::mcp::audit::clear(conn, Some(id))?;
+    conn.execute("DELETE FROM config_changes WHERE project_id = ?1", params![id])?;
     Ok(())
 }
 
@@ -791,6 +798,7 @@ pub fn purge_orphans(conn: &Connection) -> rusqlite::Result<usize> {
     )?;
     removed += tx.execute("DELETE FROM crawl_runs WHERE project_id NOT IN (SELECT id FROM projects)", [])?;
     removed += crate::mcp::audit::purge_orphans(&tx)?;
+    removed += crate::mcp::changes::store::purge_orphans(&tx)?;
     tx.commit()?;
     Ok(removed)
 }
