@@ -21,7 +21,9 @@ fn fake_location(script: &serde_json::Value, contexts: &str) -> SidecarLocation 
     // cargo builds every example before running the integration tests; the binary sits beside the test's own.
     let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("examples").join(if cfg!(windows) { "fake_sidecar.exe" } else { "fake_sidecar" });
     assert!(exe.exists(), "no fake sidecar at {}", exe.display());
-    let dir = std::env::temp_dir().join(format!("corelens-fake-sidecar-{}", std::process::id()));
+    // Cargo's own folder for an integration test's files, inside target/:
+    // nothing is left behind in the system's temporary folder.
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("corelens-fake-sidecar-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let script_path = dir.join(format!("script-{}.json", rand_suffix()));
     std::fs::write(&script_path, serde_json::to_string(script).unwrap()).unwrap();
