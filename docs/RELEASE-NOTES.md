@@ -115,8 +115,8 @@ Newest first.
   that trusted that root must import the new one as well before this
   installer, and every one after it, validates. The steps are in
   `docs/INSTALL-WINDOWS.md`.
-- The root's public certificate ships inside the installer, as
-  `corelens-root-ca.crt` in the application's folder, as well as beside it
+- The root's public certificate ships inside the installer, in the
+  application's folder, as well as beside it
   on the release page, so it is to hand on every machine the app is on.
 - The build fails if the certificate in the repository's secret is not the
   one published in `brand/`, so the install notes always describe the

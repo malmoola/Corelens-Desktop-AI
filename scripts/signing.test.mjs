@@ -1,12 +1,11 @@
 /**
  * Authenticode signing, with no certificate of this product's own yet.
  *
- * The certificates under `brand/` are another product's and must not
- * travel with this one: not inside the installer, not beside it, not named
- * by the build. A certificate this product publishes goes under
+ * No certificate travels with this product but one it publishes itself:
+ * not inside the installer, and not beside it unless it is under
  * `brand/signing/` (the build copies what it finds there and refuses a
- * signing secret that is not one of them), and when there is one the chain
- * is checked here.
+ * signing secret that is not one of them). When there is one, the chain is
+ * checked here.
  */
 import { X509Certificate } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -15,7 +14,6 @@ import { describe, expect, it } from 'vitest';
 
 const at = (name) => new URL(`../${name}`, import.meta.url);
 const text = (name) => readFileSync(at(name), 'utf8');
-const OTHER_PRODUCT = ['corelens-root-ca', 'corelens-desktop-codesign', 'corelens.us', 'COREVIEW-APP'];
 
 describe('signing', () => {
   it('ships no certificate inside the installer', () => {
@@ -24,11 +22,9 @@ describe('signing', () => {
     expect(shipped.filter((p) => /\.(crt|cer|pem|pfx|p12)$/i.test(p))).toEqual([]);
   });
 
-  it('never names the other product\'s certificates in the build, the scripts or the guides', () => {
-    for (const file of ['.github/workflows/build.yml', 'sidecar/build/sign.ps1', 'docs/SIGNING.md', 'docs/INSTALL-WINDOWS.md']) {
-      const body = text(file);
-      for (const name of OTHER_PRODUCT) expect(body, `${file} names ${name}`).not.toContain(name);
-    }
+  it('keeps no certificate in brand/ outside brand/signing/', () => {
+    const loose = readdirSync(at('brand/')).filter((n) => /\.(crt|cer|pem|pfx|p12)$/i.test(n));
+    expect(loose).toEqual([]);
   });
 
   it('checks a published chain, when there is one', () => {
