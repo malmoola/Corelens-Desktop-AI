@@ -40,7 +40,10 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # 60, not 30: with no Rust cache for main on the Windows runner (only
+    # Linux runs on a push, so only Linux saves one) the Windows leg compiles
+    # everything from cold and was cancelled at 30 minutes in Clippy.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
