@@ -345,15 +345,18 @@ by default; the privacy section above says exactly what the request carries.
 | Platform | Artifact | Contents |
 | --- | --- | --- |
 | Windows | `corelens-windows-v<version>` | NSIS `.exe`, signed, with `SHA256SUMS.txt` and the SBOMs |
-| macOS | `corelens-macos-v<version>` | universal `.dmg` |
+| macOS | `corelens-macos-v<version>` | universal `.dmg`, signed ad hoc, with the collector's Python for Apple Silicon (built on a run by hand with `macos` ticked) |
 
 Windows administrators: the installer is signed with the Corelens certificate,
 and `docs/INSTALL-WINDOWS.md` is how to check it and trust it (and what that
 does and does not do for SmartScreen and Defender).
 
+Mac users: `docs/INSTALL-MACOS.md` is how to open an app that is not
+notarized, and what the collector needs.
+
 Linux, the Windows `.msi` and the offline installer are all built by the
-workflow but switched off, so a push produces the Windows and macOS
-installers. Each is one edit away in `.github/workflows/build.yml`, and the
+workflow but switched off, so a tag or a run by hand produces the Windows
+installer, and the macOS one when asked for. Each is one edit away in `.github/workflows/build.yml`, and the
 `test` job still runs on Linux and Windows both, so nothing goes unchecked —
 only the bundling is paused.
 
@@ -823,6 +826,7 @@ unmodified, and the notices say where their source is.
 - `ARCHITECTURE.md` — structure, data model, probe lifecycle, security boundaries
 - `docs/USER_GUIDE.md` — how to use it (also built into the app's Help)
 - `docs/INSTALL-WINDOWS.md` — installing on Windows and trusting the signature
+- `docs/INSTALL-MACOS.md` — installing on a Mac: first open, the collector on Apple Silicon, where it keeps things
 - `docs/SIGNING.md` — how the Windows installer is signed and scanned
 - `docs/PROBE_BEHAVIOR.md` — exact threshold and state-machine behaviour
 - `docs/BRAND_AND_LICENSING.md` — why no vendor icons ship, and where yours go
