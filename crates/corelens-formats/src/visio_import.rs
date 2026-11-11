@@ -161,7 +161,7 @@ pub fn decode_xml(bytes: &[u8]) -> String {
     if utf16le || utf16be || looks_utf16 {
         let body = if utf16le || utf16be { &bytes[2..] } else { bytes };
         let units: Vec<u16> = body
-            .chunks_exact(2)
+            .as_chunks::<2>().0.iter()
             .map(|c| {
                 if utf16be {
                     u16::from_be_bytes([c[0], c[1]])

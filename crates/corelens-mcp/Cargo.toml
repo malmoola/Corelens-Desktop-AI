@@ -3,7 +3,7 @@ name = "corelens-mcp"
 version = "2.13.0"
 authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 description = "The Model Context Protocol server Corelens runs over stdio, and the authenticated local bridge to the running app"
 license = "LicenseRef-Almoola-Free-Proprietary"
 # Proprietary: never published to crates.io.

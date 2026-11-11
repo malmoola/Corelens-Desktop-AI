@@ -6,7 +6,7 @@ edition = "2021"
 license = "LicenseRef-Almoola-Free-Proprietary"
 # Proprietary: never published to crates.io.
 publish = false
-rust-version = "1.77"
+rust-version = "1.90"
 description = "Device discovery and configuration backup. No Tauri dependency, so the credential handling and command construction are unit-testable on their own."
 
 [dependencies]

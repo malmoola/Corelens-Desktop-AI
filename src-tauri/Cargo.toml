@@ -7,7 +7,7 @@ edition = "2021"
 license = "LicenseRef-Almoola-Free-Proprietary"
 # Proprietary: never published to crates.io.
 publish = false
-rust-version = "1.77"
+rust-version = "1.90"
 
 [build-dependencies]
 tauri-build = { version = "2", features = ["isolation"] }
@@ -29,7 +29,7 @@ tauri-plugin-dialog = "2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros"] }
 tokio-util = "0.7"
 uuid = { version = "1", features = ["v4"] }
@@ -47,15 +47,15 @@ roxmltree = "0.20"
 # Credential Manager, the macOS Keychain, or the Secret Service over D-Bus.
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 zeroize = "1"
-# The check for a newer release. Pinned below 2.13, which raises the
-# plugin's MSRV to 1.90 while these manifests say 1.77. Without its
+# The check for a newer release. 2.14.1 is the first on zip 9; older
+# releases carry a zip whose extract can abort the process. Without its
 # `rustls-tls` feature on purpose: that feature turns on rustls's *ring*
 # provider, and the rest of the workspace uses aws-lc-rs — with both enabled
 # rustls cannot pick a process-level provider and every TLS client in the
 # app panics at first use. The plugin's HTTP client gets its TLS from the
 # same reqwest the collectors use, named here so that does not depend on
 # feature unification happening to hold.
-tauri-plugin-updater = { version = ">=2.12, <2.13", default-features = false, features = ["system-proxy", "zip"] }
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["system-proxy", "zip"] }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 # A provider's API key is read from the clipboard here, in Rust, and the
