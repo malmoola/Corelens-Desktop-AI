@@ -11,14 +11,16 @@ name: build
 # install check and the release run on a `v*` tag, or when the workflow is
 # started by hand (Actions -> build -> Run workflow).
 #
-# For now only the standard Windows installer (NSIS, with the WebView2
-# bootstrapper) is built: the macOS bundle, the offline installer, the
-# Linux bundles, the AppImage and install checks and the release are
-# switched off with `if: false`, their steps kept, each saying what to
-# restore. The installer is the run's artifact `corelens-windows-v<version>`.
+# For now the standard Windows installer (NSIS, with the WebView2
+# bootstrapper) is built, and the macOS bundle only when asked for (below):
+# the offline installer, the Linux bundles, the AppImage and install checks
+# and the release are switched off with `if: false`, their steps kept, each
+# saying what to restore. The installer is the run's artifact `corelens-windows-v<version>`.
 # A run by hand with `windows_only` ticked runs the checks on Windows alone,
 # so the installer does not wait on the Linux leg:
 #   gh workflow run build.yml --ref main -f windows_only=true
+# Add `-f macos=true` for the macOS universal .dmg as well (artifact
+# `corelens-macos-v<version>`); it is unsigned and not notarized.
 #
 # A release is cut by pushing the tag `v<version>` for the version in
 # package.json: the `release` job checks the two agree, then publishes the
@@ -41,6 +43,11 @@ on:
       # runner that cannot reach its package mirrors holds the installer up.
       windows_only:
         description: Skip the Linux checks and build the Windows installer only
+        type: boolean
+        default: false
+      # The macOS bundle is otherwise paused; this builds it on a run by hand.
+      macos:
+        description: Also build the macOS universal .dmg
         type: boolean
         default: false
 
@@ -494,12 +501,13 @@ jobs:
   bundle-macos:
     name: bundle (macOS, universal .dmg)
     needs: test
-    # Paused: the standard Windows installer is the only bundle for now.
-    # To turn it back on, restore:
+    # Paused on tags: built only on a run by hand with `macos` ticked.
+    # To build it on every tag and run by hand as well, restore:
     # if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    if: false
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
     runs-on: macos-latest
-    timeout-minutes: 30
+    # Two architectures compiled from a cold cache.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
