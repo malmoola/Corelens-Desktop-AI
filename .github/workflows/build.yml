@@ -16,6 +16,9 @@ name: build
 # Linux bundles, the AppImage and install checks and the release are
 # switched off with `if: false`, their steps kept, each saying what to
 # restore. The installer is the run's artifact `corelens-windows-v<version>`.
+# A run by hand with `windows_only` ticked runs the checks on Windows alone,
+# so the installer does not wait on the Linux leg:
+#   gh workflow run build.yml --ref main -f windows_only=true
 #
 # A release is cut by pushing the tag `v<version>` for the version in
 # package.json: the `release` job checks the two agree, then publishes the
