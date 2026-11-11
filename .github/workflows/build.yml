@@ -32,6 +32,14 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      # Tick this to get the Windows installer without waiting on the Linux
+      # checks: the installer job needs the whole test matrix, so a Linux
+      # runner that cannot reach its package mirrors holds the installer up.
+      windows_only:
+        description: Skip the Linux checks and build the Windows installer only
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,7 +56,7 @@ jobs:
       fail-fast: false
       matrix:
         # Linux on every push; Windows as well on a tag or a run by hand.
-        os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        os: ${{ fromJSON(inputs.windows_only && '["windows-latest"]' || ((startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]')) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -68,6 +76,9 @@ jobs:
       # src-tauri does; on Windows nothing extra is required.
       - name: Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
+        # Usually under two minutes. When the runner cannot resolve the
+        # Ubuntu mirrors apt retries each package for the whole job.
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y \
