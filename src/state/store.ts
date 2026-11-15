@@ -176,9 +176,9 @@ export interface SshTab {
   /** The saved login it was opened with — its id, never a secret —
    *  so an ended session can be opened again from its own tab. */
   credentialId?: string;
-  /** The device it was reached through, for one this machine cannot reach
-   *  directly; reopening goes the same way. */
-  via?: { label: string; address: string };
+  /** The neighbour it was reached through, when it was not reached
+   *  directly: that device's address and name. Reopening goes the same way. */
+  via?: { address: string; label: string };
 }
 
 export interface ProjectDocument {
@@ -390,9 +390,8 @@ export interface TerminalSettings {
   /** The command that opens somebody else's terminal, with {user}, {host} and
    *  {port}. Empty means the sensible one for this platform. */
   externalCommand: string;
-  /** Highlighting text copies it, the way PuTTY does. Off until it is
-   *  asked for — it replaces the clipboard every time a line is highlighted
-   *  to read it, which is a nasty surprise for anyone who did not expect it. */
+  /** Highlighting text copies it, the way PuTTY does — on unless it is
+   *  turned off, which is what a terminal's users expect of one. */
   copyOnSelect: boolean;
   /** Right-click pastes into the session instead of opening the menu.
    *  Off until asked for: it types into a live device with no confirmation. */
@@ -407,10 +406,13 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   // Long enough not to be chatter, short enough to beat a five-minute idle
   // timer and to hold a NAT translation open.
   keepaliveSeconds: 30,
-  logByDefault: false,
+  // A transcript of every session, kept beside the device's backups: what
+  // an engineer wants after the fact and cannot go back for. Written only
+  // where a configuration folder has been chosen.
+  logByDefault: true,
   openWith: 'panel',
   externalCommand: '',
-  copyOnSelect: false,
+  copyOnSelect: true,
   pasteOnRight: false,
 };
 
@@ -480,6 +482,10 @@ interface Store {
   dockTab: DockTab;
   /** The dock taking the canvas's room, until it is restored. */
   dockMax: boolean;
+  /** The dock is in a window of its own rather than in the main one. Window
+   *  state: not saved, because a window can only be opened by a click. */
+  dockDetached: boolean;
+  setDockDetached: (on: boolean) => void;
   /** Which side each dock tab sits on when it is not the default: a
    *  per-machine override of `dockSideFor`. The dock follows the active
    *  tab's side, so discovering devices and the terminal open down the
@@ -1535,6 +1541,7 @@ export const useStore = create<Store>((set, get) => ({
   panelOpen: viewPref('panelOpen'),
   dockTab: 'objects',
   dockMax: false,
+  dockDetached: false,
   dockPlacements: readDockPlacements(),
   inspectorTab: 'status',
   backupHandover: null,
@@ -1599,7 +1606,8 @@ export const useStore = create<Store>((set, get) => ({
       updatedAt: now,
       archived: false,
     };
-    const document = doc ?? emptyDocument();
+    // An imported package may be in an older shape than this build draws.
+    const document = doc ? migrateDocument(doc).doc : emptyDocument();
     // Re-key probes so a seeded sample never shares ids with another project.
     document.probes = document.probes.map((p) => ({ ...p, projectId: meta.id }));
     await ipc.saveProject({ meta, documentVersion: 1, document });
@@ -2050,6 +2058,9 @@ export const useStore = create<Store>((set, get) => ({
   },
   setDockMax(on) {
     set({ dockMax: on });
+  },
+  setDockDetached(on) {
+    if (get().dockDetached !== on) set({ dockDetached: on });
   },
 
   setDockPlacement(tab, side) {
@@ -4728,8 +4739,10 @@ useStore.subscribe((s) => {
 
 // The Playwright harness cannot start a real validation session — that needs
 // the Tauri backend — so in dev the store is reachable from the page and the
-// harness stages session state directly. Never present in a shipped build:
-// only a bundle made with VITE_BENCH=1, for e2e/bench-real.mjs, carries it.
+// harness stages session state directly. Never present in a build.
+// For the harnesses, and for a benchmark against a production build made
+// with VITE_BENCH=1. Both conditions are replaced at build time, so an
+// ordinary build carries none of this.
 if ((import.meta.env.DEV || import.meta.env.VITE_BENCH === '1') && typeof window !== 'undefined') {
   (window as unknown as { __cvStore: typeof useStore }).__cvStore = useStore;
 }

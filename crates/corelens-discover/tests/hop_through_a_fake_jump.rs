@@ -6,6 +6,10 @@
 //! that target's commands — exactly the sequence captured when
 //! sshing from an SN2010 to a 6200. The test logs in, hops, and checks it
 //! landed at the target and can read the target's `show version`.
+//!
+//! 2: `open_shell_through` does the same for a person: logs in to the jump,
+//! works out how that device spells `ssh`, hops, and hands back the channel
+//! as an interactive shell on the far device.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +19,7 @@ use russh::{Channel, ChannelId};
 
 use corelens_discover::hop::HopDialect;
 use corelens_discover::hostkeys::HostKeyStore;
-use corelens_discover::ssh::{Credentials, Device, Secret, SshOptions};
+use corelens_discover::ssh::{open_shell_through, Credentials, Device, Secret, SshError, SshOptions};
 
 /// How far into the hop this connection has got.
 #[derive(Clone, Copy, PartialEq)]
@@ -164,47 +168,58 @@ async fn a_hop_to_a_dead_address_fails_with_a_reason() {
     assert!(err.to_string().contains("10.0.0.99"), "{err}");
 }
 
-/// The terminal's way through: log in to the jump host, pick its `ssh`
-/// spelling from what it is, hop, and hand over the channel as a plain
-/// interactive shell on the far device.
-#[tokio::test]
-async fn a_terminal_session_opens_on_the_far_device_through_the_jump() {
-    let port = free_port().await;
-    start(port).await;
-    let store = Arc::new(std::sync::Mutex::new(HostKeyStore::new()));
-    let creds = Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None };
-    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(10), command_timeout: Duration::from_secs(10), ..SshOptions::default() };
-
-    let (mut shell, landed) = corelens_discover::ssh::open_shell_through("127.0.0.1", &[creds], "198.51.100.4", options, store, 100, 30, None)
-        .await
-        .expect("a shell on the far device");
-    assert_eq!(landed, "cx-1", "the prompt the hop landed on names the far device");
-
-    // Keystrokes now reach the far device, and its own screen comes back.
-    shell.send(b"show version\n").await.unwrap();
+/// Reads the shell until `needle` has gone by, or gives up.
+async fn read_until(shell: &mut corelens_discover::ssh::Shell, needle: &str) -> String {
     let mut seen = String::new();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while !seen.contains("ML.10.18.1002") {
-        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
-        match tokio::time::timeout(left, shell.read()).await {
-            Ok(Some(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
-            _ => panic!("the far device's answer never came: {seen:?}"),
+    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        while !seen.contains(needle) {
+            match shell.read().await {
+                Some(bytes) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+                None => break,
+            }
         }
-    }
-    assert!(seen.contains("cx-1#"), "{seen:?}");
+    })
+    .await;
+    seen
 }
 
 #[tokio::test]
-async fn a_terminal_through_a_jump_that_cannot_reach_the_device_says_so() {
+async fn a_shell_opened_through_a_jump_is_a_shell_on_the_far_device() {
     let port = free_port().await;
     start(port).await;
     let store = Arc::new(std::sync::Mutex::new(HostKeyStore::new()));
-    let creds = Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None };
-    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(2), command_timeout: Duration::from_secs(2), ..SshOptions::default() };
-    let err = match corelens_discover::ssh::open_shell_through("127.0.0.1", &[creds], "10.0.0.99", options, store, 100, 30, None).await {
-        Ok(_) => panic!("the jump cannot reach 10.0.0.99"),
+    // The first login is refused by the jump; the second is the one that
+    // gets in, and so the one the hop is made with.
+    let logins = [
+        Credentials { username: "netops".into(), password: Secret::new("not-this-one"), enable_password: None },
+        Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None },
+    ];
+    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(10), command_timeout: Duration::from_secs(10), ..SshOptions::default() };
+
+    let (mut shell, landed, taken) = open_shell_through("127.0.0.1", &logins, "198.51.100.4", options, store, 120, 40, None)
+        .await
+        .expect("a shell through the jump host");
+    assert_eq!(landed, "cx-1", "the name of the device the shell is on");
+    assert_eq!(taken, 1, "the login that got in is the second");
+    assert_eq!(shell.host(), "198.51.100.4", "and the session is the far device's, not the jump's");
+
+    // Raw bytes in, the far device's own answer out.
+    shell.send(b"show version\n").await.expect("typing into the far device");
+    let seen = read_until(&mut shell, "ML.10.18.1002").await;
+    assert!(seen.contains("ArubaOS-CX") && seen.contains("ML.10.18.1002"), "{seen:?}");
+}
+
+#[tokio::test]
+async fn a_jump_that_cannot_reach_the_target_says_which_device_it_could_not_reach() {
+    let port = free_port().await;
+    start(port).await;
+    let store = Arc::new(std::sync::Mutex::new(HostKeyStore::new()));
+    let logins = [Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None }];
+    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(3), command_timeout: Duration::from_secs(3), ..SshOptions::default() };
+    let err = match open_shell_through("127.0.0.1", &logins, "10.0.0.99", options, store, 120, 40, None).await {
+        Ok(_) => panic!("there is no such device behind the jump"),
         Err(e) => e,
     };
-    assert!(matches!(err, corelens_discover::ssh::SshError::Hop { .. }), "{err:?}");
+    assert!(matches!(err, SshError::Hop { .. }), "{err:?}");
     assert!(err.to_string().contains("10.0.0.99"), "{err}");
 }

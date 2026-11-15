@@ -135,36 +135,35 @@ describe('trustedComment', () => {
 });
 
 describe('checksums', () => {
-  it('lists every installer and archive a person can download, in the form sha256sum -c reads', () => {
+  it('is a line per file a person downloads, as sha256sum writes and reads them', () => {
     const files = [
-      { name: 'a-setup.exe', bytes: Buffer.from('windows') },
+      { name: 'b-setup.exe', bytes: Buffer.from('windows') },
       { name: 'a.dmg', bytes: Buffer.from('mac') },
-      { name: 'a.app.tar.gz', bytes: Buffer.from('update') },
     ];
-    const sha = (b) => createHash('sha256').update(b).digest('hex');
-    expect(checksums(files)).toBe(files.map((f) => `${sha(f.bytes)}  ${f.name}`).join('\n') + '\n');
+    const sha = (text) => createHash('sha256').update(text).digest('hex');
+    expect(checksums(files)).toBe(`${sha('windows')}  b-setup.exe\n${sha('mac')}  a.dmg\n`);
   });
-});
 
-describe('the release job', () => {
-  it('attaches a SHA256SUMS.txt that covers the Windows installer, the disk image and the update archive', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cv-release-'));
+  it('is written by the command for every installer, and listed for attaching', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'manifest-'));
     const dl = join(dir, 'dl');
     mkdirSync(join(dl, 'windows'), { recursive: true });
-    mkdirSync(join(dl, 'macos'), { recursive: true });
-    const sig = Buffer.from('untrusted comment: x\nRUS\ntrusted comment: timestamp:1\tfile:x\nAA\n').toString('base64');
-    writeFileSync(join(dl, 'windows', 'C_2.13.0_x64-setup.exe'), 'windows');
-    writeFileSync(join(dl, 'windows', 'C_2.13.0_x64-setup.exe.sig'), sig);
-    writeFileSync(join(dl, 'windows', 'SHA256SUMS.txt'), 'only the exe\n');
-    writeFileSync(join(dl, 'macos', 'C_2.13.0_universal.dmg'), 'mac');
-    writeFileSync(join(dl, 'macos', 'C.app.tar.gz'), 'update');
-    writeFileSync(join(dl, 'macos', 'C.app.tar.gz.sig'), sig);
+    mkdirSync(join(dl, 'mac'));
+    const version = readFileSync(new URL('../docs/RELEASE-NOTES.md', import.meta.url), 'utf8').match(/^## (\d+\.\d+\.\d+)/m)[1];
+    const sig = Buffer.from('untrusted comment: x\nAAAA\ntrusted comment: file:x\nBBBB\n').toString('base64');
+    writeFileSync(join(dl, 'windows', 'App_x64-setup.exe'), 'windows installer');
+    writeFileSync(join(dl, 'windows', 'App_x64-setup.exe.sig'), sig);
+    // The Windows job's own file: superseded, not attached beside the new one.
+    writeFileSync(join(dl, 'windows', 'SHA256SUMS.txt'), 'stale  App_x64-setup.exe\n');
+    writeFileSync(join(dl, 'mac', 'App_universal.dmg'), 'disk image');
+    writeFileSync(join(dl, 'mac', 'App.app.tar.gz'), 'update archive');
+    writeFileSync(join(dl, 'mac', 'App.app.tar.gz.sig'), sig);
     const out = join(dir, 'release');
-    const listed = execFileSync('node', [fileURLToPath(new URL('./release-manifest.mjs', import.meta.url)), '--version', '2.13.0', '--artifacts', dl, '--repo', 'o/n', '--out', out], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-      .trim().split('\n');
-    const sums = listed.filter((p) => p.endsWith('SHA256SUMS.txt'));
-    expect(sums).toEqual([join(out, 'SHA256SUMS.txt')]);
-    const text = readFileSync(sums[0], 'utf8');
-    for (const name of ['C_2.13.0_x64-setup.exe', 'C_2.13.0_universal.dmg', 'C.app.tar.gz']) expect(text).toMatch(new RegExp(`^[0-9a-f]{64}  ${name.replace(/\./g, '\\.')}$`, 'm'));
+    const printed = execFileSync(process.execPath, [fileURLToPath(new URL('./release-manifest.mjs', import.meta.url)), '--version', version, '--artifacts', dl, '--repo', 'owner/name', '--out', out], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('\n');
+    const sums = readFileSync(join(out, 'SHA256SUMS.txt'), 'utf8');
+    const sha = (text) => createHash('sha256').update(text).digest('hex');
+    expect(sums).toBe(`${sha('windows installer')}  App_x64-setup.exe\n${sha('disk image')}  App_universal.dmg\n${sha('update archive')}  App.app.tar.gz\n`);
+    expect(printed).toContain(join(out, 'SHA256SUMS.txt'));
+    expect(printed.filter((p) => p.endsWith('SHA256SUMS.txt'))).toHaveLength(1);
   });
 });

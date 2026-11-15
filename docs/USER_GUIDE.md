@@ -65,7 +65,12 @@ underlined and the inspector says why.
   begin with.
 - **Stacking** — `Ctrl+]` / `Ctrl+[` bring forward or send backward a step,
   `Ctrl+Shift+]` / `Ctrl+Shift+[` to the front or back; also on the right-click
-  menu. A selection moves as a block.
+  menu. A selection moves as a block. A filled box at the back is under the
+  links as well as the devices; names and port labels that land on it are
+  written in ink chosen for its fill.
+- **Box around the selection** — on the right-click menu of a device or a
+  selection: draws a rounded box sized to fit, with room for the names, and
+  puts it behind everything. One undo takes it away.
 - **Pan** — middle-drag or right-drag, or hold Space and drag. **Zoom** — the
   wheel zooms to the cursor and Shift+wheel scrolls; pinch on a trackpad.
   Settings ▸ Display can make the wheel scroll like a document instead, with
@@ -365,6 +370,17 @@ objects, the paths and the backups stay along the bottom where their wide
 tables want the room. Moving one with **Dock to the right** or **Dock
 below** is remembered for that tab alone. **Hide** folds the dock to one
 row that keeps the counts and the strip.
+
+**Open in its own window** — the window button beside it — moves the whole
+dock into a second window, which you can put on another screen: the
+monitored objects, the backups, the terminal and its open sessions go with
+it, and the diagram keeps the whole of the main window. It is the same
+dock, not a copy — a row chosen there selects the device on the diagram, a
+session typed into there is the same session — and asking for a panel from
+the main window brings that window forward. The same button there, or
+closing that window, puts the dock back. Closing the main window closes
+both. It is not remembered between runs: the dock starts in the main
+window each time.
 
 **Paths.** Path-Trace, Path check, Tracert and Where is answer one
 question, so it is asked once: the destination, the application, its
@@ -1012,6 +1028,18 @@ tab.
 
 **The controls on the SSH tab** apply to every session you have open:
 
+**A device this computer cannot reach.** Where only a neighbour can reach
+a device — a management network with no route from here — right-click it
+and choose **SSH through** *the neighbour's name*: there is one entry for
+each device a link on the page joins it to that has an address, up to six.
+Corelens logs in to the neighbour, runs that device's own `ssh` to the
+target with the same login, and hands you the session as an ordinary
+terminal tab; the tab's tooltip says which way it went, and reopening it
+goes the same way. The password is typed only at the far device's own
+prompt. Nothing is changed on either device, and a hop made from a Linux
+host writes nothing to its `known_hosts`. A wireless controller has no
+client to hop from and says so.
+
 - **Font** and **Size** — how the terminal is drawn. Remembered on this
   computer, not in the project.
 - **Colour the output** — adds colour to devices that send plain text: errors
@@ -1024,7 +1052,10 @@ tab.
   the same file-name pattern, with `session` as the kind. One file per device
   per day, appended to, so reconnecting continues the same transcript. Escape
   sequences are taken out, so the file can be read and diffed. A ✎ on a tab
-  says that session is being recorded.
+  says that session is being recorded. On to begin with, wherever a
+  configuration folder has been chosen; **Settings ▸ Start every session
+  logging** turns that off.
+- **Copy on select** — highlighting text copies it. On to begin with.
 - **Keepalive** — how often, in seconds, to tell the device the session is
   still there, so its idle timer does not close it. **Nothing is typed into the
   session**; this is an SSH-level message. **Last confirmed** says when the
@@ -1477,6 +1508,15 @@ The **Export** menu gives you:
 - **Devices and links**, **Cable schedule**, **Ports**, **VLANs** and **Probe
   results as CSV** — the pages chosen under **Pages** at the top of the
   menu: this page, or all of them
+- **Device details for as-builts (CSV)** — one row per device for an as-built
+  document: name, hostname, type, role, vendor, model, serial number, asset
+  tag, software, management IP and every other address, MAC, site, rack and
+  rack unit, stack members, ports in use, VLANs, what it is cabled to with
+  both ports, and its notes. Drawn shapes are left out
+- **As-built workbook (Excel)** — the same device table and the links,
+  ports, VLANs and addresses beside it, as the tabs of one `.xlsx`. The
+  header row is bold and stays in view; text that begins with `=` is kept as
+  text
 - **Validation report (Markdown)** — project metadata, object counts, status
   summary, the drawings (as images inside the file), the full transition table
   and the cable schedule
@@ -1512,6 +1552,20 @@ Choose the sheet, check the header row, say whether each row is a device or a
 link, and match each field to a column — the guesses come from the column names
 and every one can be changed. Nothing is added until **Add**. An old `.xls` has
 to be saved as `.xlsx` first.
+
+An inventory kept the way inventories usually are reads as it stands:
+
+- **A heading row per site** — a row with one cell in it, over rows with
+  several — names the site of the devices under it, unless a row gives a site
+  of its own. With more than one site, each site's devices are put down
+  together inside a frame titled with its name.
+- **Connects to** — a column naming the device each row hangs off
+  (`Management device`, `Uplink`, `Connected to`…) becomes a link to that
+  device, whether it is in the same sheet or already on the page.
+- **Rack position** — the lowest rack unit as it is, or the **top rack unit**
+  with a **height**: a 2U device whose top is at 20 is placed in 19–20. With
+  no height in the sheet, the height the device is drawn with is used. `12`,
+  `U12` and `12U` all read as 12.
 
 **NetBox.** The same tab reads a NetBox export saved as JSON or YAML — the API's
 output for devices, cables and IP addresses, in one file or several. Devices

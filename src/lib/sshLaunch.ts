@@ -55,7 +55,7 @@ export function planSsh(d: DeviceNodeData, projectSsh?: string): SshPlan {
   return { ok: true, address, credentialId, label: sshLabel(d), inherited: !own };
 }
 
-/** How many "SSH through …" entries a device's menu offers at most. */
+/** How many neighbours the menu offers a session through. */
 export const MAX_JUMPS = 6;
 
 export interface JumpCandidate {
@@ -65,28 +65,30 @@ export interface JumpCandidate {
 }
 
 /**
- * The devices a session to `nodeId` could go through, for one this machine
- * cannot reach directly: those linked to it on the page that have an
- * address of their own, once each, by name. A neighbour is the device most
- * likely to have a route to it — it is what the crawl reached it through.
+ * The devices a session to `nodeId` could go through: the ones a link on
+ * the page joins it to, that have an address to log in to — by name, each
+ * once, and only a handful.
+ *
+ * For a device this machine cannot route to and its neighbours can. The
+ * drawing is what says who the neighbours are; whether one of them can
+ * actually reach it is found out by trying.
  */
 export function jumpCandidates(
   nodeId: string,
   nodes: readonly { id: string; type?: string; data: unknown }[],
   edges: readonly { source: string; target: string }[],
 ): JumpCandidate[] {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const seen = new Set<string>();
-  const out: JumpCandidate[] = [];
+  const linked = new Set<string>();
   for (const e of edges) {
-    const other = e.source === nodeId ? e.target : e.target === nodeId ? e.source : null;
-    if (!other || other === nodeId || seen.has(other)) continue;
-    seen.add(other);
-    const n = byId.get(other);
-    if (!n || n.type !== 'device') continue;
-    const data = n.data as DeviceNodeData;
-    const address = sshAddress(data);
-    if (address) out.push({ nodeId: other, label: sshLabel(data), address });
+    if (e.source === nodeId && e.target !== nodeId) linked.add(e.target);
+    if (e.target === nodeId && e.source !== nodeId) linked.add(e.source);
   }
-  return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })).slice(0, MAX_JUMPS);
+  const found: JumpCandidate[] = [];
+  for (const n of nodes) {
+    if (!linked.has(n.id) || n.type !== 'device') continue;
+    const d = n.data as DeviceNodeData;
+    const address = sshAddress(d);
+    if (address) found.push({ nodeId: n.id, label: sshLabel(d), address });
+  }
+  return found.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })).slice(0, MAX_JUMPS);
 }

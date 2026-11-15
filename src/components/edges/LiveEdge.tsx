@@ -27,6 +27,7 @@ import type { Side } from '../../lib/routeLinks';
 import { useLinkLayout } from '../../state/linkLayoutStore';
 import { segmentMidpoints, waypointRoute } from '../../lib/waypointRoute';
 import { activePage, pageNodeById } from '../../lib/pages';
+import { fillAt, labelInkVars } from '../../lib/backdrop';
 import { bezierPath, type Side as BezierSide } from '../../lib/bezierPath';
 import {
   anchorPoint,
@@ -356,6 +357,11 @@ function LiveEdgeInner(props: EdgeProps) {
     registerPath(id, edgePath);
   }, [id, edgePath]);
   useEffect(() => () => forgetPath(id), [id]);
+  // The tooltip's element exists only while the pointer is on the link: a
+  // `<title>` in every link's hit band is one more element per link for the
+  // engine to carry through every pan, to describe links nobody is pointing
+  // at.
+  const [tipped, setTipped] = useState(false);
   // A link deleted while the pointer was on it would otherwise leave every
   // other link faded with nothing traced.
   useEffect(() => () => {
@@ -771,6 +777,10 @@ function LiveEdgeInner(props: EdgeProps) {
   const targetPortPoint = targetPortFraction === undefined ? null : pointAt(edgePath, targetPortFraction);
   const targetPortAnchorX = anchors ? anchors.t.x + targetPush.dx : targetX + (sourceX - targetX) * PORT_LABEL_AT;
   const targetPortAnchorY = anchors ? anchors.t.y + targetPush.dy : targetY + (sourceY - targetY) * PORT_LABEL_AT;
+  // A label lying on a filled shape takes ink that reads on that fill.
+  const sourceInk = useStore((s) => (data.sourcePortLabel ? fillAt(activePage(s.doc).nodes, sourcePortPoint ? sourcePortPoint.x : sourcePortAnchorX, sourcePortPoint ? sourcePortPoint.y : sourcePortAnchorY) : undefined));
+  const targetInk = useStore((s) => (data.targetPortLabel ? fillAt(activePage(s.doc).nodes, targetPortPoint ? targetPortPoint.x : targetPortAnchorX, targetPortPoint ? targetPortPoint.y : targetPortAnchorY) : undefined));
+  const centreInk = useStore((s) => (data.label ? fillAt(activePage(s.doc).nodes, labelPoint ? labelPoint.x : labelX, labelPoint ? labelPoint.y : labelY) : undefined));
   const livePath = wpDrag
     ? lay
       ? linkPath(data.pathType, lay, wpDrag.points).path
@@ -942,6 +952,10 @@ function LiveEdgeInner(props: EdgeProps) {
         }}
         markerEnd={double ? undefined : markerEnd}
         markerStart={double ? undefined : markerStart}
+        // The engine's own wide, invisible path is what makes a thin line
+        // practical to point at below the devices; the band in the label
+        // layer does the same above them and carries the tooltip. A third
+        // path here used to duplicate both.
         interactionWidth={18}
       />
       {/* The arrowheads of a double line go on a path of their own, outside
@@ -949,12 +963,6 @@ function LiveEdgeInner(props: EdgeProps) {
       {double && (markerEnd || markerStart) && (
         <path d={drawnPath} fill="none" stroke="none" strokeWidth={width} markerEnd={markerEnd} markerStart={markerStart} />
       )}
-      {/* Hovering and clicking the thin line where no device covers it is
-          React Flow's own interaction path (`interactionWidth` below); the
-          band above the devices, in the label layer, carries the tooltip. A
-          third, transparent copy of the line used to sit here with the
-          tooltip again: two elements a link for nothing the other two did
-          not already do. */}
 
       {status === 'down' && (
         <circle cx={labelX} cy={labelY} r={4} fill={STATUS_COLOR.down} opacity={0.9} />
@@ -988,9 +996,15 @@ function LiveEdgeInner(props: EdgeProps) {
             // not pointing at any of them, and tracing each in turn flickered
             // the whole diagram — and at 5,000 links cost most of every frame.
             onPointerEnter={(e) => {
-              if (e.buttons === 0) setTraced(id);
+              if (e.buttons === 0) {
+                setTraced(id);
+                setTipped(true);
+              }
             }}
-            onPointerLeave={() => setTraced(null)}
+            onPointerLeave={() => {
+              setTraced(null);
+              setTipped(false);
+            }}
             onPointerDown={(e) => {
               // Ahead of the pane's own handler, which would clear the
               // selection this is making.
@@ -998,7 +1012,7 @@ function LiveEdgeInner(props: EdgeProps) {
               useStore.getState().select(null, id);
             }}
           >
-            <title>{tooltip}</title>
+            {tipped && <title>{tooltip}</title>}
           </path>
         </svg>
 
@@ -1010,6 +1024,7 @@ function LiveEdgeInner(props: EdgeProps) {
               transform: `translate(-50%, -50%) translate(${
                 sourcePortPoint ? sourcePortPoint.x : sourcePortAnchorX
               }px, ${sourcePortPoint ? sourcePortPoint.y : sourcePortAnchorY}px)`,
+              ...labelInkVars(sourceInk),
               ...cssOf(data.portLabelStyle),
             }}
             onPointerDown={beginLabelDrag(
@@ -1029,6 +1044,7 @@ function LiveEdgeInner(props: EdgeProps) {
                 labelPoint ? labelPoint.y : labelY
               }px)`,
               borderColor: color,
+              ...labelInkVars(centreInk),
               ...cssOf(data.labelStyle),
             }}
             title={tooltip}
@@ -1213,6 +1229,7 @@ function LiveEdgeInner(props: EdgeProps) {
               transform: `translate(-50%, -50%) translate(${
                 targetPortPoint ? targetPortPoint.x : targetPortAnchorX
               }px, ${targetPortPoint ? targetPortPoint.y : targetPortAnchorY}px)`,
+              ...labelInkVars(targetInk),
               ...cssOf(data.portLabelStyle),
             }}
             onPointerDown={beginLabelDrag(

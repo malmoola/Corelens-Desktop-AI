@@ -19,13 +19,13 @@ use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 use delegate::delegate;
-use digest::typenum::{U12, U20, U32, U64};
+use digest::typenum::{U12, U20, U32, U64}; // CORELENS PATCH: U12
 use hmac::Hmac;
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
 use ssh_encoding::Encode;
 
-use self::crypto::{CryptoMacAlgorithm, TruncatedMacAlgorithm};
+use self::crypto::{CryptoMacAlgorithm, TruncatedMacAlgorithm}; // CORELENS PATCH: TruncatedMacAlgorithm
 use self::crypto_etm::CryptoEtmMacAlgorithm;
 use self::none::NoMacAlgorithm;
 
@@ -106,12 +106,12 @@ pub(crate) static _HMAC_SHA512_ETM: CryptoEtmMacAlgorithm<Hmac<Sha512>, U64> =
 pub const ALL_MAC_ALGORITHMS: &[&Name] = &[
     &NONE,
     &HMAC_SHA1,
-    &HMAC_SHA1_96,
     &HMAC_SHA256,
     &HMAC_SHA512,
     &HMAC_SHA1_ETM,
     &HMAC_SHA256_ETM,
     &HMAC_SHA512_ETM,
+    &HMAC_SHA1_96, // CORELENS PATCH
 ];
 
 pub(crate) static MACS: LazyLock<HashMap<&'static Name, &(dyn MacAlgorithm + Send + Sync)>> =
@@ -119,12 +119,12 @@ pub(crate) static MACS: LazyLock<HashMap<&'static Name, &(dyn MacAlgorithm + Sen
         let mut h: HashMap<&'static Name, &(dyn MacAlgorithm + Send + Sync)> = HashMap::new();
         h.insert(&NONE, &_NONE);
         h.insert(&HMAC_SHA1, &_HMAC_SHA1);
-        h.insert(&HMAC_SHA1_96, &_HMAC_SHA1_96);
         h.insert(&HMAC_SHA256, &_HMAC_SHA256);
         h.insert(&HMAC_SHA512, &_HMAC_SHA512);
         h.insert(&HMAC_SHA1_ETM, &_HMAC_SHA1_ETM);
         h.insert(&HMAC_SHA256_ETM, &_HMAC_SHA256_ETM);
         h.insert(&HMAC_SHA512_ETM, &_HMAC_SHA512_ETM);
+        h.insert(&HMAC_SHA1_96, &_HMAC_SHA1_96); // CORELENS PATCH
         assert_eq!(h.len(), ALL_MAC_ALGORITHMS.len());
         h
     });

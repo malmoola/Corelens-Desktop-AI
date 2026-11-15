@@ -5,13 +5,19 @@
  * Devices, links and the cable schedule already had their own files; these
  * are the rest of what an engineer is asked for in a spreadsheet. Every page
  * is included, because a table is an inventory, not a drawing.
+ *
+ * `asBuiltCsv` is the device table of an as-built document: one row per
+ * device with what it is, where it is, how it is addressed and what it is
+ * cabled to. `asBuiltWorkbook` is that table and the others an as-built
+ * needs, as the tabs of one Excel file.
  */
 import { toCsv } from './csv';
+import { writeXlsx } from './xlsx';
 import { buildIpam, ipamRows } from './ipam';
 import { availability, type Sample } from './sparkline';
 import type { ProjectDocument } from '../state/store';
-import type { DeviceNodeData, Probe, ProbeRuntime } from '../types/domain';
-import { allNodes } from './pages';
+import { SHAPE_DEVICE_TYPES, type DeviceNodeData, type LinkData, type Probe, type ProbeRuntime } from '../types/domain';
+import { allEdges, allNodes } from './pages';
 
 const devicesOf = (doc: ProjectDocument) =>
   allNodes(doc)
@@ -24,6 +30,10 @@ export function ipamCsv(doc: ProjectDocument): string {
 }
 
 export function portsCsv(doc: ProjectDocument): string {
+  return toCsv(portRows(doc));
+}
+
+function portRows(doc: ProjectDocument): unknown[][] {
   const rows: unknown[][] = [];
   for (const { d, page } of devicesOf(doc)) {
     for (const p of d.inventory?.ports ?? []) {
@@ -34,15 +44,19 @@ export function portsCsv(doc: ProjectDocument): string {
       ]);
     }
   }
-  return toCsv([
+  return [
     ['Device', 'Page', 'Port', 'Description', 'Status', 'Speed', 'Duplex', 'Mode', 'VLAN', 'Trunk VLANs', 'Input errors', 'CRC', 'Output errors', 'Collisions', 'Drops', 'Resets'],
     ...rows,
-  ]);
+  ];
 }
 
 /** One row per VLAN per device, with how many of the device's ports carry it
  *  untagged. */
 export function vlansCsv(doc: ProjectDocument): string {
+  return toCsv(vlanRows(doc));
+}
+
+function vlanRows(doc: ProjectDocument): unknown[][] {
   const rows: unknown[][] = [];
   for (const { d, page } of devicesOf(doc)) {
     for (const v of d.inventory?.vlans ?? []) {
@@ -51,7 +65,7 @@ export function vlansCsv(doc: ProjectDocument): string {
     }
   }
   rows.sort((a, b) => Number(a[0]) - Number(b[0]) || String(a[2]).localeCompare(String(b[2])));
-  return toCsv([['VLAN', 'Name', 'Device', 'Page', 'Access ports'], ...rows]);
+  return [['VLAN', 'Name', 'Device', 'Page', 'Access ports'], ...rows];
 }
 
 export function probeResultsCsv(
@@ -74,4 +88,116 @@ export function probeResultsCsv(
       ];
     }),
   ]);
+}
+
+/** A crawl's VLAN ids as ranges: `1,10,14-16`. */
+function vlanRanges(ids: number[]): string {
+  const sorted = [...new Set(ids)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j++;
+    out.push(j > i ? `${sorted[i]}-${sorted[j]}` : String(sorted[i]));
+    i = j;
+  }
+  return out.join(',');
+}
+
+/**
+ * The device table an as-built document wants: one row per device, in site
+ * then name order. Drawn shapes — boxes, zones, text — are not devices and
+ * are left out. A cell that holds several things separates them with
+ * semicolons, as the other device files do.
+ */
+export function asBuiltCsv(doc: ProjectDocument): string {
+  return toCsv(asBuiltRows(doc));
+}
+
+function asBuiltRows(doc: ProjectDocument): unknown[][] {
+  const devices = devicesOf(doc).filter(({ d }) => !SHAPE_DEVICE_TYPES.has(d.deviceType));
+  const names = new Map(devices.map(({ id, d }) => [id, d.label]));
+  // Each device's cables, told from its own end.
+  const cabled = new Map<string, string[]>();
+  for (const e of allEdges(doc)) {
+    const l = (e.data ?? {}) as Partial<LinkData>;
+    if (l.kind === 'leader') continue;
+    const ends = [
+      [e.source, l.sourcePortLabel, e.target, l.targetPortLabel],
+      [e.target, l.targetPortLabel, e.source, l.sourcePortLabel],
+    ] as const;
+    for (const [here, port, there, farPort] of ends) {
+      const far = names.get(there);
+      if (!names.has(here) || far === undefined) continue;
+      const text = `${port ? `${port} to ` : ''}${far}${farPort ? ` ${farPort}` : ''}`;
+      cabled.set(here, [...(cabled.get(here) ?? []), text]);
+    }
+  }
+  const rows = devices
+    .map(({ id, d, page }) => {
+      const primary = d.addresses?.find((a) => a.isPrimary) ?? d.addresses?.[0];
+      const others = (d.addresses ?? []).filter((a) => a !== primary && a.address);
+      const ports = d.inventory?.ports ?? [];
+      const up = ports.filter((p) => /^(connected|up)$/i.test(p.status)).length;
+      return [
+        d.label, d.hostname ?? '', d.deviceType, d.role ?? '', d.vendor ?? '', d.model ?? '', d.serial ?? '', d.assetTag ?? '',
+        d.osVersion ?? '', primary?.address ?? '',
+        others.map((a) => (a.label ? `${a.label}: ${a.address}` : a.address)).join('; '),
+        d.mac ?? '', d.site ?? '', d.rack ?? '', d.rackU ?? '', d.rackUnits ?? '',
+        d.stackKind ?? '', (d.stackMembers ?? '').split('\n').filter(Boolean).join('; '),
+        ports.length ? `${up} of ${ports.length}` : '',
+        vlanRanges((d.inventory?.vlans ?? []).map((v) => v.id)),
+        (cabled.get(id) ?? []).join('; '),
+        d.inventory?.collectedAt ? new Date(d.inventory.collectedAt).toISOString() : '',
+        page, d.notes ?? '',
+      ];
+    })
+    .sort((a, b) => String(a[12]).localeCompare(String(b[12])) || String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }));
+  return [
+    ['Device', 'Hostname', 'Type', 'Role', 'Vendor', 'Model', 'Serial number', 'Asset tag',
+     'Software', 'Management IP', 'Other addresses', 'MAC address', 'Site', 'Rack', 'Rack U', 'Height (U)',
+     'Stack', 'Stack members', 'Ports in use', 'VLANs', 'Connects to', 'Last read', 'Page', 'Notes'],
+    ...rows,
+  ];
+}
+
+/** Every cable once, by the names of its two ends. A leader from a note to
+ *  the thing it points at is not a cable. */
+function linkRows(doc: ProjectDocument): unknown[][] {
+  const devices = new Map(devicesOf(doc).filter(({ d }) => !SHAPE_DEVICE_TYPES.has(d.deviceType)).map((x) => [x.id, x]));
+  const rows: unknown[][] = [];
+  for (const e of allEdges(doc)) {
+    const l = (e.data ?? {}) as Partial<LinkData>;
+    const a = devices.get(e.source);
+    const b = devices.get(e.target);
+    if (l.kind === 'leader' || !a || !b) continue;
+    rows.push([a.d.label, l.sourcePortLabel ?? '', b.d.label, l.targetPortLabel ?? '', l.label ?? '', l.cableType ?? '', l.cableLength ?? '', a.page, l.notes ?? '']);
+  }
+  rows.sort((x, y) => String(x[0]).localeCompare(String(y[0]), undefined, { numeric: true }) || String(x[2]).localeCompare(String(y[2]), undefined, { numeric: true }));
+  return [['From', 'From port', 'To', 'To port', 'Label', 'Cable', 'Length', 'Page', 'Notes'], ...rows];
+}
+
+/** A cell that holds a whole number, as a number: a spreadsheet sorts and
+ *  sums a column of them, and files a column of text digits under text. An
+ *  identifier that only happens to be digits is left as it was typed. */
+function typed(rows: unknown[][], numeric: readonly string[]): unknown[][] {
+  const header = rows[0] ?? [];
+  const at = new Set(numeric.map((h) => header.indexOf(h)).filter((i) => i >= 0));
+  return rows.map((r, y) => (y === 0 ? r : r.map((v, x) => (at.has(x) && typeof v === 'string' && /^\d{1,9}$/.test(v) ? Number(v) : v))));
+}
+
+/**
+ * The as-built tables in one workbook: devices, links, ports, VLANs and
+ * addresses, a tab each, with the same columns the separate CSV files have.
+ */
+export function asBuiltWorkbook(doc: ProjectDocument, when = new Date()): Uint8Array {
+  return writeXlsx(
+    [
+      { name: 'Devices', rows: asBuiltRows(doc) },
+      { name: 'Links', rows: linkRows(doc) },
+      { name: 'Ports', rows: portRows(doc) },
+      { name: 'VLANs', rows: vlanRows(doc) },
+      { name: 'Addresses', rows: typed(ipamRows(buildIpam(allNodes(doc), doc.ipam), doc.ipam?.customFields), ['VLAN', 'Prefix']) },
+    ],
+    when,
+  );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_JUMPS, jumpCandidates, planSsh, sshAddress, sshLabel } from './sshLaunch';
+import { planSsh, sshAddress, sshLabel, jumpCandidates, MAX_JUMPS } from './sshLaunch';
 import type { DeviceNodeData } from '../types/domain';
 
 const device = (over: Partial<DeviceNodeData> = {}): DeviceNodeData =>
@@ -70,36 +70,32 @@ describe('a device with no login of its own inherits the project\u2019s', () => 
   });
 });
 
-describe('which devices a session can go through', () => {
-  const dev = (id: string, label: string, address = ''): { id: string; type: string; data: DeviceNodeData } =>
-    ({ id, type: 'device', data: { label, addresses: address ? [{ id: `a-${id}`, label: 'Management', address, isPrimary: true }] : [] } as unknown as DeviceNodeData });
-  const nodes = [dev('leaf', 'LEAF-04', '10.66.250.14'), dev('s2', 'SPINE-2', '192.0.2.2'), dev('s1', 'SPINE-1', '192.0.2.1'), dev('ap', 'AP-1'), dev('far', 'FAR', '192.0.2.9'), dev('lone', 'LONE', '192.0.2.50'), { id: 'n', type: 'note', data: {} as DeviceNodeData }];
-  const edges = [
-    { source: 'leaf', target: 's2' },
-    { source: 's1', target: 'leaf' },
-    { source: 's1', target: 'leaf' },
-    { source: 'leaf', target: 'ap' },
-    { source: 'leaf', target: 'n' },
-    { source: 's1', target: 'far' },
-  ];
+describe('the devices a session can go through', () => {
+  const node = (id: string, label: string, address?: string) => ({
+    id, type: 'device', data: device({ label, hostname: undefined, addresses: address ? [at(address, true)] : [] }),
+  });
+  const edge = (source: string, target: string) => ({ source, target });
 
-  it('offers the devices linked to it that have an address, once each, by name', () => {
-    expect(jumpCandidates('leaf', nodes, edges)).toEqual([
-      { nodeId: 's1', label: 'SPINE-1', address: '192.0.2.1' },
-      { nodeId: 's2', label: 'SPINE-2', address: '192.0.2.2' },
+  it('are the ones linked to it that have an address, by name', () => {
+    const nodes = [node('t', 'TARGET', '192.0.2.50'), node('b', 'SW-B', '192.0.2.2'), node('a', 'SW-A', '192.0.2.1'), node('far', 'FAR', '192.0.2.9'), node('bare', 'NO-ADDRESS')];
+    const edges = [edge('t', 'b'), edge('a', 't'), edge('bare', 't'), edge('a', 'far')];
+    expect(jumpCandidates('t', nodes, edges)).toEqual([
+      { nodeId: 'a', label: 'SW-A', address: '192.0.2.1' },
+      { nodeId: 'b', label: 'SW-B', address: '192.0.2.2' },
     ]);
   });
 
-  it('offers nothing for a device with no linked neighbour it could go through', () => {
-    expect(jumpCandidates('lone', nodes, edges)).toEqual([]);
-    // An address-less neighbour is never offered, but a device without one
-    // can still be reached through a neighbour that has one.
-    expect(jumpCandidates('ap', nodes, edges).map((j) => j.label)).toEqual(['LEAF-04']);
+  it('name each neighbour once however many links join them, and never the device itself', () => {
+    const nodes = [node('t', 'TARGET', '192.0.2.50'), node('a', 'SW-A', '192.0.2.1')];
+    const edges = [edge('t', 'a'), edge('a', 't'), edge('t', 't')];
+    expect(jumpCandidates('t', nodes, edges).map((c) => c.nodeId)).toEqual(['a']);
   });
 
-  it('never more than a menu can hold', () => {
-    const many = Array.from({ length: 9 }, (_, i) => dev(`d${i}`, `D-${i}`, `192.0.2.${10 + i}`));
-    const spokes = many.map((d) => ({ source: 'hub', target: d.id }));
-    expect(jumpCandidates('hub', [dev('hub', 'HUB', '192.0.2.100'), ...many], spokes)).toHaveLength(MAX_JUMPS);
+  it('stop at a handful, so a hub does not fill the menu', () => {
+    const nodes = [node('t', 'TARGET', '192.0.2.50'), ...Array.from({ length: 12 }, (_, i) => node(`n${i}`, `SW-${String(i).padStart(2, '0')}`, `192.0.2.${100 + i}`))];
+    const edges = nodes.slice(1).map((n) => edge('t', n.id));
+    const found = jumpCandidates('t', nodes, edges);
+    expect(found).toHaveLength(MAX_JUMPS);
+    expect(found[0]!.label).toBe('SW-00');
   });
 });

@@ -15,8 +15,11 @@ import type { DeviceNodeData } from '../types/domain';
  * The two ways this fails before anything is sent — no address, no credential
  * of its own — are decided by `planSsh` and reported as themselves. A timeout
  * would be the wrong answer to both.
+ *
+ * With `via`, the session goes through that neighbour: this machine logs in
+ * to it, and it to the device, with the same login.
  */
-export async function openSsh(nodeId: string, data: DeviceNodeData, via?: { label: string; address: string }) {
+export async function openSsh(nodeId: string, data: DeviceNodeData, via?: { address: string; label: string }) {
   const store = useStore.getState();
   // The project's login is what a device with none of its own uses.
   const plan = planSsh(data, store.doc.credentialDefaults?.ssh);
@@ -34,7 +37,7 @@ export async function openSsh(nodeId: string, data: DeviceNodeData, via?: { labe
     // one as soon as it has been laid out.
     const { keepaliveSeconds, logByDefault } = store.settings.terminal;
     const id = await ipc.sshOpen(plan.address, plan.credentialId, { cols: 120, rows: 30 }, undefined, keepaliveSeconds, via?.address);
-    useStore.getState().openSshTab({ id, address: plan.address, label: plan.label, nodeId, status: 'open', credentialId: plan.credentialId, via });
+    useStore.getState().openSshTab({ id, address: plan.address, label: plan.label, nodeId, status: 'open', credentialId: plan.credentialId, ...(via ? { via } : {}) });
     useStore.getState().setStatusMessage(null);
     // Logging every session without being asked each time.
     const folder = useStore.getState().settings.backupFolder;

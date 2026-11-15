@@ -174,11 +174,11 @@ pub async fn ssh_open(
     if address.is_empty() {
         return Err("That device has no address to connect to.".into());
     }
-    // A device this machine cannot route to is reached through one that
-    // can: logged in to, and its own ssh run from there.
+    // Through a neighbour: this machine logs in to `via`, and `via` to the
+    // device, for one this machine cannot reach itself.
     let via = via.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     if via.as_deref() == Some(address.as_str()) {
-        return Err("A device cannot be reached through itself; choose another device to go through.".into());
+        return Err("A device cannot be reached through itself.".into());
     }
 
     // The chosen login, then every other SSH login the project keeps, for
@@ -214,8 +214,8 @@ pub async fn ssh_open(
         }
     });
 
-    let mut shell = if let Some(via) = &via {
-        let opened = corelens_discover::ssh::open_shell_through(
+    let opened = match &via {
+        Some(via) => corelens_discover::ssh::open_shell_through(
             via,
             &logins,
             &address,
@@ -225,20 +225,9 @@ pub async fn ssh_open(
             rows.unwrap_or(30),
             Some(progress_tx),
         )
-        .await;
-        progress_task.abort();
-        // Every login the jump was offered, and the one sent on to the
-        // device behind it, is a use of that login.
-        let offered = match &opened {
-            Err(SshError::AuthFailed { .. }) => chain.len(),
-            _ => 1,
-        };
-        for (id, _) in chain.iter().take(offered) {
-            crate::vault_commands::note_use(&state, id, &format!("SSH session through {via}"), &address);
-        }
-        opened.map_err(describe)?.0
-    } else {
-        let opened = corelens_discover::ssh::open_shell_first_accepted(
+        .await
+        .map(|(shell, _landed, taken)| (shell, taken)),
+        None => corelens_discover::ssh::open_shell_first_accepted(
             &address,
             &logins,
             options,
@@ -247,20 +236,26 @@ pub async fn ssh_open(
             rows.unwrap_or(30),
             Some(progress_tx),
         )
-        .await;
-        // The sender is dropped with `opened` either way; make sure the forwarder
-        // is finished before the session's own events start.
-        progress_task.abort();
-        let sent = match &opened {
-            Ok((_, taken)) => taken + 1,
-            Err(SshError::AuthFailed { .. }) => chain.len(),
-            Err(_) => 1,
-        };
-        for (i, (id, _)) in chain.iter().take(sent).enumerate() {
-            crate::vault_commands::note_use(&state, id, if i == 0 { "SSH session" } else { "SSH session (fallback login)" }, &address);
-        }
-        opened.map_err(describe)?.0
+        .await,
     };
+    // The sender is dropped with `opened` either way; make sure the forwarder
+    // is finished before the session's own events start.
+    progress_task.abort();
+    let sent = match &opened {
+        Ok((_, taken)) => taken + 1,
+        Err(SshError::AuthFailed { .. }) => chain.len(),
+        Err(_) => 1,
+    };
+    for (i, (id, _)) in chain.iter().take(sent).enumerate() {
+        let what = match (&via, i) {
+            (Some(via), 0) => format!("SSH session through {via}"),
+            (Some(via), _) => format!("SSH session through {via} (fallback login)"),
+            (None, 0) => "SSH session".to_string(),
+            (None, _) => "SSH session (fallback login)".to_string(),
+        };
+        crate::vault_commands::note_use(&state, id, &what, &address);
+    }
+    let (mut shell, _) = opened.map_err(describe)?;
     crate::discovery::persist_host_keys(&app, &store);
 
     let id = format!("ssh-{}", uuid::Uuid::new_v4());

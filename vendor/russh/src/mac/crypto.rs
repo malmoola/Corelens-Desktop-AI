@@ -62,25 +62,25 @@ where
     }
 }
 
-// CORELENS PATCH: an HMAC whose tag is cut to its first TL bytes, as RFC 4253
-// defines `hmac-sha1-96` (the full 20-byte key, the first 12 bytes of the
-// tag). Older network devices are often locked to it.
+// CORELENS PATCH: a truncated HMAC (RFC 4253 section 6.4, `hmac-sha1-96`).
+// The MAC is computed in full by the same code as above and only its first
+// `TL` bytes are sent and compared. See CORELENS-PATCHES.md.
 pub struct TruncatedMacAlgorithm<
     M: digest::Mac + KeyInit + Send + 'static,
     KL: ArrayLength + 'static,
-    TL: ArrayLength + Send + 'static,
+    TL: Unsigned + 'static,
 >(pub PhantomData<M>, pub PhantomData<KL>, pub PhantomData<TL>);
 
 pub struct TruncatedMac<
     M: digest::Mac + KeyInit + Send + 'static,
     KL: ArrayLength + 'static,
-    TL: ArrayLength + Send + 'static,
+    TL: Unsigned + 'static,
 > {
-    full: CryptoMac<M, KL>,
-    p: PhantomData<TL>,
+    pub(crate) full: CryptoMac<M, KL>,
+    pub(crate) p: PhantomData<TL>,
 }
 
-impl<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static, TL: ArrayLength + Send + 'static>
+impl<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static, TL: Unsigned + Send + 'static>
     MacAlgorithm for TruncatedMacAlgorithm<M, KL, TL>
 where
     <M as OutputSizeUser>::OutputSize: ArrayLength,
@@ -93,13 +93,16 @@ where
         let mut key = GenericArray::<u8, KL>::default();
         key.copy_from_slice(mac_key);
         Box::new(TruncatedMac::<M, KL, TL> {
-            full: CryptoMac { key, p: PhantomData },
+            full: CryptoMac::<M, KL> {
+                key,
+                p: PhantomData,
+            },
             p: PhantomData,
         }) as Box<dyn Mac + Send>
     }
 }
 
-impl<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static, TL: ArrayLength + Send + 'static> Mac
+impl<M: digest::Mac + KeyInit + Send + 'static, KL: ArrayLength + 'static, TL: Unsigned + Send + 'static> Mac
     for TruncatedMac<M, KL, TL>
 where
     <M as OutputSizeUser>::OutputSize: ArrayLength,
@@ -109,14 +112,19 @@ where
     }
 
     fn compute(&self, sequence_number: u32, payload: &[u8], output: &mut [u8]) {
-        let mut whole = GenericArray::<u8, M::OutputSize>::default();
-        self.full.compute(sequence_number, payload, &mut whole);
-        output.copy_from_slice(&whole[..TL::to_usize()]);
+        let mut buf = GenericArray::<u8, M::OutputSize>::default();
+        self.full.compute(sequence_number, payload, &mut buf);
+        #[allow(clippy::indexing_slicing)] // TL is never longer than the MAC it shortens
+        output.copy_from_slice(&buf[..TL::to_usize()]);
     }
 
     fn verify(&self, sequence_number: u32, payload: &[u8], mac: &[u8]) -> bool {
-        let mut buf = GenericArray::<u8, TL>::default();
-        self.compute(sequence_number, payload, &mut buf);
-        buf.ct_eq(mac).into()
+        let mut buf = GenericArray::<u8, M::OutputSize>::default();
+        self.full.compute(sequence_number, payload, &mut buf);
+        #[allow(clippy::indexing_slicing)]
+        let ours = &buf[..TL::to_usize()];
+        // Constant time, and a MAC of any other length is simply wrong.
+        mac.len() == ours.len() && bool::from(ours.ct_eq(mac))
     }
 }
+// END CORELENS PATCH

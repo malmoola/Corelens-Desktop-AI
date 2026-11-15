@@ -18,6 +18,7 @@
   /** Each command, and the argument names the page may send it. */
   var COMMANDS = {
     app_info: [],
+    close_dock_windows: [],
     check_for_update: [],
     install_update: [],
     mcp_status: [],
