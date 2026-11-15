@@ -5,16 +5,16 @@ name: build
 # produces the NSIS .exe and the MSI; macOS produces a universal .dmg that
 # runs on both Apple Silicon and Intel.
 #
-# The repository is private, so every runner minute is billed, and Windows
-# and macOS minutes cost several times Linux's. A push or a pull request
-# runs the checks on Linux only. The Windows checks, the installers, the
+# A push or a pull request runs the checks on Linux only; Windows and macOS
+# runners are slower and were billed while the repository was private. The Windows checks, the installers, the
 # install check and the release run on a `v*` tag, or when the workflow is
 # started by hand (Actions -> build -> Run workflow).
 #
-# For now the standard Windows installer (NSIS, with the WebView2
-# bootstrapper) is built, and the macOS bundle only when asked for (below):
-# the offline installer, the Linux bundles, the AppImage and install checks
-# and the release are switched off with `if: false`, their steps kept, each
+# A tag builds the standard Windows installer (NSIS, with the WebView2
+# bootstrapper) and the macOS universal bundle and publishes the release; a
+# run by hand builds the Windows installer, and the macOS one when asked for
+# (below). The offline installer, the Linux bundles and the AppImage and
+# install checks are switched off with `if: false`, their steps kept, each
 # saying what to restore. The installer is the run's artifact `corelens-windows-v<version>`.
 # A run by hand with `windows_only` ticked runs the checks on Windows alone,
 # so the installer does not wait on the Linux leg:
@@ -25,8 +25,7 @@ name: build
 # A release is cut by pushing the tag `v<version>` for the version in
 # package.json: the `release` job checks the two agree, then publishes the
 # installers, their updater signatures and `latest.json`, which the app's
-# own "Check for updates" reads. Started by hand on main, the job makes the
-# tag itself when the version has no release yet.
+# own "Check for updates" reads. A run by hand never publishes.
 #
 # Every job has `timeout-minutes`, set at about twice its usual length, so
 # a test that hangs costs that much and no more (the default is six hours).
@@ -356,6 +355,7 @@ jobs:
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $extra = @()
           if ("${{ matrix.os }}" -eq "windows-latest") {
@@ -524,10 +524,8 @@ jobs:
   bundle-macos:
     name: bundle (macOS, universal .dmg)
     needs: test
-    # Paused on tags: built only on a run by hand with `macos` ticked.
-    # To build it on every tag and run by hand as well, restore:
-    # if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    # On every tag, for the release, and on a run by hand with `macos` ticked.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.macos)
     runs-on: macos-latest
     # Two architectures compiled from a cold cache.
     timeout-minutes: 60
@@ -570,6 +568,7 @@ jobs:
       - name: Build bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           extra=(--config src-tauri/tauri.sidecar.conf.json --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}')
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
@@ -762,13 +761,12 @@ jobs:
   # nothing in this workflow triggers on tags.
   release:
     name: release (GitHub Release and latest.json)
-    needs: [bundle, bundle-macos, install-check-windows]
-    # Paused: a release needs the macOS update archive as well as the
-    # Windows installer (release-manifest.mjs refuses one without the
-    # other), so while only Windows is built the installer is the run's
-    # artifact. To turn it back on with bundle-macos, restore:
-    # if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    if: false
+    # The Windows installer and the macOS bundle, both with their updater
+    # signatures (release-manifest.mjs refuses one without the other). The
+    # install check stays paused and is not waited on. Only a tag publishes:
+    # a run by hand builds the installers as artifacts and stops there.
+    needs: [bundle, bundle-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
