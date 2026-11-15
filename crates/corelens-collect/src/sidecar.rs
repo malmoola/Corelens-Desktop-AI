@@ -210,8 +210,8 @@ impl Sidecar {
     /// mismatch. `None` is first contact; the reply's `host_key` is then the
     /// key to remember.
     #[allow(clippy::too_many_arguments)] // one request, every field of it
-    pub async fn open(&mut self, session: &str, host: &str, port: u16, os: &str, auth: &Auth, session_spec: &Value, connect_ms: u64, auth_ms: u64, known_host_key: Option<&str>, transport: &str) -> Result<Reply, SidecarError> {
-        let body = json!({
+    pub async fn open(&mut self, session: &str, host: &str, port: u16, os: &str, auth: &Auth, session_spec: &Value, connect_ms: u64, auth_ms: u64, known_host_key: Option<&str>, transport: &str, via: &[crate::run::ViaHop]) -> Result<Reply, SidecarError> {
+        let mut body = json!({
             "op": "open", "session": session, "host": host, "port": port, "os": os,
             "auth": auth, "session_spec": session_spec,
             "timeouts": {"connect_ms": connect_ms, "auth_ms": auth_ms},
@@ -219,7 +219,12 @@ impl Sidecar {
             // "ssh" or "telnet".
             "transport": transport,
         });
-        self.request(body, Duration::from_millis(connect_ms + auth_ms + 30_000)).await
+        // Each hop is another connect and login, so each adds its own wait.
+        let hops = via.len() as u64;
+        if hops > 0 {
+            body["via"] = json!(via);
+        }
+        self.request(body, Duration::from_millis((connect_ms + auth_ms) * (hops + 1) + 30_000)).await
     }
 
     /// Send one command. **The read-only guard lives here**: every
