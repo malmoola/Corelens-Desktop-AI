@@ -163,3 +163,48 @@ async fn a_hop_to_a_dead_address_fails_with_a_reason() {
     assert!(matches!(err, corelens_discover::ssh::SshError::Hop { .. }), "{err:?}");
     assert!(err.to_string().contains("10.0.0.99"), "{err}");
 }
+
+/// The terminal's way through: log in to the jump host, pick its `ssh`
+/// spelling from what it is, hop, and hand over the channel as a plain
+/// interactive shell on the far device.
+#[tokio::test]
+async fn a_terminal_session_opens_on_the_far_device_through_the_jump() {
+    let port = free_port().await;
+    start(port).await;
+    let store = Arc::new(std::sync::Mutex::new(HostKeyStore::new()));
+    let creds = Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None };
+    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(10), command_timeout: Duration::from_secs(10), ..SshOptions::default() };
+
+    let (mut shell, landed) = corelens_discover::ssh::open_shell_through("127.0.0.1", &[creds], "198.51.100.4", options, store, 100, 30, None)
+        .await
+        .expect("a shell on the far device");
+    assert_eq!(landed, "cx-1", "the prompt the hop landed on names the far device");
+
+    // Keystrokes now reach the far device, and its own screen comes back.
+    shell.send(b"show version\n").await.unwrap();
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !seen.contains("ML.10.18.1002") {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(left, shell.read()).await {
+            Ok(Some(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+            _ => panic!("the far device's answer never came: {seen:?}"),
+        }
+    }
+    assert!(seen.contains("cx-1#"), "{seen:?}");
+}
+
+#[tokio::test]
+async fn a_terminal_through_a_jump_that_cannot_reach_the_device_says_so() {
+    let port = free_port().await;
+    start(port).await;
+    let store = Arc::new(std::sync::Mutex::new(HostKeyStore::new()));
+    let creds = Credentials { username: "netops".into(), password: Secret::new("correct-horse"), enable_password: None };
+    let options = SshOptions { port, connect_timeout: Duration::from_secs(5), auth_timeout: Duration::from_secs(2), command_timeout: Duration::from_secs(2), ..SshOptions::default() };
+    let err = match corelens_discover::ssh::open_shell_through("127.0.0.1", &[creds], "10.0.0.99", options, store, 100, 30, None).await {
+        Ok(_) => panic!("the jump cannot reach 10.0.0.99"),
+        Err(e) => e,
+    };
+    assert!(matches!(err, corelens_discover::ssh::SshError::Hop { .. }), "{err:?}");
+    assert!(err.to_string().contains("10.0.0.99"), "{err}");
+}

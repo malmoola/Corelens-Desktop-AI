@@ -2086,10 +2086,13 @@ export const ipc = {
     size: { cols: number; rows: number },
     port?: number,
     keepaliveSeconds?: number,
+    /** The address of a device to log in to and go on from, for one this
+     *  machine cannot reach directly. */
+    via?: string,
   ) {
     if (!isDesktop) throw new BackendUnavailable('An SSH session');
     return invoke<string>('ssh_open', {
-      address, credentialId, port, cols: size.cols, rows: size.rows, keepaliveSeconds,
+      address, credentialId, port, cols: size.cols, rows: size.rows, keepaliveSeconds, via,
     });
   },
   /** Append this session's transcript beside the device's backups.

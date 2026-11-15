@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { planSsh, sshAddress, sshLabel } from './sshLaunch';
+import { MAX_JUMPS, jumpCandidates, planSsh, sshAddress, sshLabel } from './sshLaunch';
 import type { DeviceNodeData } from '../types/domain';
 
 const device = (over: Partial<DeviceNodeData> = {}): DeviceNodeData =>
@@ -67,5 +67,39 @@ describe('a device with no login of its own inherits the project\u2019s', () => 
   it('and with neither there is still nothing to try', () => {
     expect(planSsh(plain, '   ')).toEqual({ ok: false, reason: 'noCredential' });
     expect(planSsh(plain)).toEqual({ ok: false, reason: 'noCredential' });
+  });
+});
+
+describe('which devices a session can go through', () => {
+  const dev = (id: string, label: string, address = ''): { id: string; type: string; data: DeviceNodeData } =>
+    ({ id, type: 'device', data: { label, addresses: address ? [{ id: `a-${id}`, label: 'Management', address, isPrimary: true }] : [] } as unknown as DeviceNodeData });
+  const nodes = [dev('leaf', 'LEAF-04', '10.66.250.14'), dev('s2', 'SPINE-2', '192.0.2.2'), dev('s1', 'SPINE-1', '192.0.2.1'), dev('ap', 'AP-1'), dev('far', 'FAR', '192.0.2.9'), dev('lone', 'LONE', '192.0.2.50'), { id: 'n', type: 'note', data: {} as DeviceNodeData }];
+  const edges = [
+    { source: 'leaf', target: 's2' },
+    { source: 's1', target: 'leaf' },
+    { source: 's1', target: 'leaf' },
+    { source: 'leaf', target: 'ap' },
+    { source: 'leaf', target: 'n' },
+    { source: 's1', target: 'far' },
+  ];
+
+  it('offers the devices linked to it that have an address, once each, by name', () => {
+    expect(jumpCandidates('leaf', nodes, edges)).toEqual([
+      { nodeId: 's1', label: 'SPINE-1', address: '192.0.2.1' },
+      { nodeId: 's2', label: 'SPINE-2', address: '192.0.2.2' },
+    ]);
+  });
+
+  it('offers nothing for a device with no linked neighbour it could go through', () => {
+    expect(jumpCandidates('lone', nodes, edges)).toEqual([]);
+    // An address-less neighbour is never offered, but a device without one
+    // can still be reached through a neighbour that has one.
+    expect(jumpCandidates('ap', nodes, edges).map((j) => j.label)).toEqual(['LEAF-04']);
+  });
+
+  it('never more than a menu can hold', () => {
+    const many = Array.from({ length: 9 }, (_, i) => dev(`d${i}`, `D-${i}`, `192.0.2.${10 + i}`));
+    const spokes = many.map((d) => ({ source: 'hub', target: d.id }));
+    expect(jumpCandidates('hub', [dev('hub', 'HUB', '192.0.2.100'), ...many], spokes)).toHaveLength(MAX_JUMPS);
   });
 });

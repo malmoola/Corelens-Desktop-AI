@@ -51,6 +51,7 @@ import { resetToDefault, styleOf } from '../lib/linkDefaults';
 import { useStore, type TopoEdge, type TopoNode, moveGroups } from '../state/store';
 import { activePage, withPage, pageNodeById } from '../lib/pages';
 import { openSsh, openSshElsewhere } from './sshActions';
+import { jumpCandidates } from '../lib/sshLaunch';
 import { isDesktop } from '../lib/ipc';
 import { t } from '../i18n';
 import { diagnoseArgs } from '../lib/diagnose';
@@ -487,6 +488,14 @@ export function Canvas() {
                 { label: t('ssh.connect'), onSelect: () => void openSsh(nodeId, node.data as DeviceNodeData) },
                 { label: t('ssh.external'), onSelect: () => void openSshElsewhere(node.data as DeviceNodeData) },
               ])
+        : []),
+      // A device this machine cannot route to, reached through one linked
+      // to it that can.
+      ...(node?.type === 'device' && isDesktop
+        ? jumpCandidates(nodeId, pg.nodes, pg.edges).map((j) => ({
+            label: t('ssh.through', { name: j.label }),
+            onSelect: () => void openSsh(nodeId, node.data as DeviceNodeData, { label: j.label, address: j.address }),
+          }))
         : []),
       ...(node?.type === 'device' && isDesktop
         ? [{ label: t('aiChat.askDevice'), onSelect: () => useStore.getState().askAi(deviceContext(node.data as DeviceNodeData)) }]

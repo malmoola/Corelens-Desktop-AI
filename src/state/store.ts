@@ -176,6 +176,9 @@ export interface SshTab {
   /** The saved login it was opened with — its id, never a secret —
    *  so an ended session can be opened again from its own tab. */
   credentialId?: string;
+  /** The device it was reached through, for one this machine cannot reach
+   *  directly; reopening goes the same way. */
+  via?: { label: string; address: string };
 }
 
 export interface ProjectDocument {

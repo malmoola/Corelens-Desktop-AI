@@ -151,7 +151,7 @@
     ssh_keepalive: ["id", "seconds"],
     ssh_log_start: ["id", "folder", "device", "address", "site", "pattern"],
     ssh_log_stop: ["id"],
-    ssh_open: ["address", "credentialId", "port", "cols", "rows", "keepaliveSeconds"],
+    ssh_open: ["address", "credentialId", "port", "cols", "rows", "keepaliveSeconds", "via"],
     ssh_resize: ["id", "cols", "rows"],
     ssh_send: ["id", "bytes"],
     ssh_sessions: [],

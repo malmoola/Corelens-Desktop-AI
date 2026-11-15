@@ -42,7 +42,9 @@ const project = {
   document: {
     activePageId: "p1", probes: [],
     pages: [{ id: "p1", name: "Core",
-      canvas: { gridEnabled: true, snapEnabled: true, minimap: false, nodeStyle: "glyph" }, edges: [],
+      canvas: { gridEnabled: true, snapEnabled: true, minimap: false, nodeStyle: "glyph" },
+      // CORE-SW1 reaches ACCESS-SW7; nothing else is linked.
+      edges: [{ id: "ab", source: "a", target: "b", type: "live", data: { label: "", pathType: "bezier", direction: "none", width: 2, enabled: true, maintenance: false } }],
       nodes: [
         node("a", "CORE-SW1", { hostname: "CORE-SW1", sshCredentialId: "cred-1",
           addresses: [{ id: "x", label: "Mgmt", address: "192.0.2.10", isPrimary: true }] }),
@@ -541,6 +543,25 @@ await closedTab.locator(".cv-ssh-close").click();
 await page.waitForTimeout(400);
 check("closing a tab takes it away", (await page.locator(".cv-ssh-tab").count()) === 1);
 check("and tells the backend to end it", (await st(() => window.__closed)).includes(newId), JSON.stringify(await st(() => window.__closed)));
+
+// ------------------------------ through a device that can reach it
+
+await rightClick("NO-ADDRESS");
+check("a device with no linked neighbour offers nothing to go through", (await menuItem("SSH through").count()) === 0);
+await page.keyboard.press("Escape");
+await rightClick("ACCESS-SW7");
+check("a device linked to another offers to go through it", (await menuItem("SSH through CORE-SW1").count()) === 1);
+const openedBefore = (await st(() => window.__opened)).length;
+await menuItem("SSH through CORE-SW1").click();
+await page.waitForTimeout(700);
+const through = await st(() => window.__opened.at(-1));
+check("and opens the session on the device, through the neighbour's address",
+  (await st(() => window.__opened)).length === openedBefore + 1 && through?.address === "192.0.2.11" && through?.via === "192.0.2.10" && through?.credentialId === "cred-1",
+  JSON.stringify(through));
+const throughTab = await st(() => window.__cvStore.getState().sshSessions.at(-1));
+check("the tab remembers the way it went, for reopening", throughTab?.via?.address === "192.0.2.10" && throughTab?.via?.label === "CORE-SW1", JSON.stringify(throughTab));
+const direct = (await st(() => window.__opened)).filter((o) => !o.via);
+check("a direct session sends no device to go through", direct.length > 0 && direct.every((o) => o.via === undefined));
 
 // ------------------------------------ closing the project ends every shell
 

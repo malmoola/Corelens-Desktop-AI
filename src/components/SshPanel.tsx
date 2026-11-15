@@ -60,7 +60,7 @@ async function reconnect(held: Held) {
   held.term.write(`\r\n\x1b[2m${t('ssh.reconnecting', { name: tab.label })}\x1b[0m\r\n`);
   try {
     const { keepaliveSeconds, logByDefault } = useStore.getState().settings.terminal;
-    const id = await ipc.sshOpen(tab.address, tab.credentialId, { cols: held.term.cols, rows: held.term.rows }, undefined, keepaliveSeconds);
+    const id = await ipc.sshOpen(tab.address, tab.credentialId, { cols: held.term.cols, rows: held.term.rows }, undefined, keepaliveSeconds, tab.via?.address);
     terminals.set(id, held);
     terminals.delete(held.id);
     held.id = id;
@@ -395,7 +395,7 @@ export function SshPanel() {
             <button type="button" role="tab" aria-selected={tab.id === active}
               tabIndex={tab.id === active ? 0 : -1}
               className={tab.id === active ? 'is-active' : ''}
-              title={tab.status === 'closed' ? tab.reason : tab.address}
+              title={tab.status === 'closed' ? tab.reason : tab.via ? t('ssh.tabThrough', { address: tab.address, via: tab.via.label }) : tab.address}
               onClick={() => setActive(tab.id)}>
               <span className={`cv-ssh-dot${tab.status === 'closed' ? ' is-closed' : ''}`} aria-hidden="true" />{' '}
               {tab.label}

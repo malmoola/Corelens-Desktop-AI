@@ -408,6 +408,14 @@ one row of what you do with a device: **SSH** (a shell in the panel),
 crawl's last sighting of its address) and **Open as drawer**. Links, notes
 and the project keep the inspector they had.
 
+A device this computer cannot route to — one on a fabric only its
+neighbours reach — opens from the right-click menu's **SSH through
+<neighbour>**, one entry for each device linked to it that has an address.
+Corelens logs in to that neighbour, runs its own `ssh` to the device with
+the same login, and gives you the device's shell in the panel; nothing is
+written to the neighbour, and the device's own paging is left as it is. The
+tab names the neighbour, and reopening an ended tab goes the same way.
+
 Autosave writes about two and a half seconds after you stop editing. The top bar
 says either *Unsaved changes* or *Saved* with a time.
 
