@@ -2,7 +2,31 @@
 
 Newest first.
 
-## Unreleased
+## 2.14.0 — 2026-11-15
+
+**Updates from inside the app**
+- *Settings → Check for updates* now finds and installs new releases: each
+  release publishes its Windows installer, its macOS bundle and the signed
+  `latest.json` the app reads. A download is installed only when its
+  signature matches the key built into the app.
+- Each release carries one `SHA256SUMS.txt` for everything it offers to
+  download — the Windows installer, the macOS disk image and the macOS
+  update archive.
+
+**Reaching devices you cannot route to**
+- **SSH through a neighbour.** Right-click a device and choose *SSH through
+  <neighbour>* — one entry for each device linked to it that has an
+  address. Corelens logs in to that neighbour, runs its own `ssh` to the
+  device with the same login and opens the device's shell in the panel.
+  Nothing is written to the neighbour, and the device's paging is left as
+  it is. Reopening an ended tab goes the same way.
+- **The collector hops too.** *Reach each device by hopping through the one
+  that found it* on the Discover form now works with the Corelens
+  collector as well as the classic crawler. A hop that cannot be made
+  reaches that device directly instead.
+- **Devices locked to `hmac-sha1-96`** — older switches that offer no other
+  SSH MAC — are reached. It is offered last, after every stronger one.
+
 
 **Links meet a device on its ring**
 - A link ends on the ring round a device, where the four connection dots
@@ -34,11 +58,18 @@ Newest first.
 - *Project package* and *Project as a folder* failed on a project last
   saved before pages existed. The stored project is brought up to date
   before it is exported.
+- The AI part of Settings says when it could not read its settings, instead
+  of the whole Settings screen going blank.
+- A link draws one hidden element fewer, a little less for the canvas to
+  hit-test and paint on a large diagram.
 
-**Security updates in the backend**
+**Security updates**
 - The SSH library moves to `russh` 0.65 for an advisory in its agent
   server, a part Corelens does not use, and the QUIC library under the
-  HTTP client to its fixed releases.
+  HTTP client to its fixed releases; `crypto-bigint` and `ctutils` to the
+  releases that fix their timing advisories.
+- The build tools move to Vite 7, Vitest 5 and current typescript-eslint;
+  `npm audit` finds nothing.
 
 ## 2.13.0 — 2026-10-22
 
