@@ -18,7 +18,7 @@ release's assets:
 | --- | --- |
 | `Corelens-Desktop-AI_<version>_x64-setup.exe` | The installer. |
 | `Corelens-Desktop-AI_<version>_x64-setup.exe.sig` | Its updater signature, which the app checks before installing an update. |
-| `SHA256SUMS.txt` | The installer's SHA-256, recorded after the VirusTotal scan passed. |
+| `SHA256SUMS.txt` | The installer's SHA-256, recorded after the VirusTotal scan passed. A release's copy lists every file it offers to download: this installer, the macOS disk image and the macOS update archive. |
 | `sbom/*.cdx.json` | CycloneDX software bills of materials: the Rust executable, the collector sidecar's Python, the page's npm packages. |
 
 No private key is ever in any of these.
@@ -30,7 +30,7 @@ No private key is ever in any of these.
 Get-Content .\SHA256SUMS.txt
 ```
 
-The two must be equal.
+The first must equal the installer's line in the second.
 
 ## 2. SmartScreen and Microsoft Defender
 
