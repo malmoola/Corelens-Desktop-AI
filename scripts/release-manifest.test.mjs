@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -159,7 +160,7 @@ describe('the release job', () => {
     writeFileSync(join(dl, 'macos', 'C.app.tar.gz'), 'update');
     writeFileSync(join(dl, 'macos', 'C.app.tar.gz.sig'), sig);
     const out = join(dir, 'release');
-    const listed = execFileSync('node', [new URL('./release-manifest.mjs', import.meta.url).pathname, '--version', '2.13.0', '--artifacts', dl, '--repo', 'o/n', '--out', out], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const listed = execFileSync('node', [fileURLToPath(new URL('./release-manifest.mjs', import.meta.url)), '--version', '2.13.0', '--artifacts', dl, '--repo', 'o/n', '--out', out], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .trim().split('\n');
     const sums = listed.filter((p) => p.endsWith('SHA256SUMS.txt'));
     expect(sums).toEqual([join(out, 'SHA256SUMS.txt')]);
