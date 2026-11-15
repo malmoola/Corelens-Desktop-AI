@@ -942,16 +942,19 @@ function LiveEdgeInner(props: EdgeProps) {
         }}
         markerEnd={double ? undefined : markerEnd}
         markerStart={double ? undefined : markerStart}
+        interactionWidth={18}
       />
       {/* The arrowheads of a double line go on a path of their own, outside
           the mask that would cut them in half and at the line's own scale. */}
       {double && (markerEnd || markerStart) && (
         <path d={drawnPath} fill="none" stroke="none" strokeWidth={width} markerEnd={markerEnd} markerStart={markerStart} />
       )}
-      {/* Invisible wide path so hovering the thin line is practical. */}
-      <path d={drawnPath} fill="none" stroke="transparent" strokeWidth={18}>
-        <title>{tooltip}</title>
-      </path>
+      {/* Hovering and clicking the thin line where no device covers it is
+          React Flow's own interaction path (`interactionWidth` below); the
+          band above the devices, in the label layer, carries the tooltip. A
+          third, transparent copy of the line used to sit here with the
+          tooltip again: two elements a link for nothing the other two did
+          not already do. */}
 
       {status === 'down' && (
         <circle cx={labelX} cy={labelY} r={4} fill={STATUS_COLOR.down} opacity={0.9} />
