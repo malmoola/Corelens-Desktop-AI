@@ -8,6 +8,7 @@
  */
 import { EMPTY_TREE, readTree, type FolderTree } from './projectFolders';
 import type { PagingMode } from './showCommands';
+import { readAiSettings } from './aiSettings';
 import type { BackupCheck, CheckResult } from './checks';
 import { backupCheck, backupInput, crawlInput, credentialInput, eventRow, probeConfig, projectPackage, saveCredential, sweepOptions, visioDrawing, collectionInput, topologyViewOptions, pathRequest, pathLiveInput } from './ipcPayloads';
 import type {
@@ -1902,10 +1903,10 @@ export const ipc = {
   // The in-app chat and its providers.
   async aiSettings(): Promise<AiSettingsDto | null> {
     if (!isDesktop) return null;
-    return invoke<AiSettingsDto>('ai_settings');
+    return readAiSettings(await invoke<unknown>('ai_settings'));
   },
-  aiSettingSet(key: string, value: string | null) {
-    return invoke<AiSettingsDto>('ai_setting_set', { key, value });
+  async aiSettingSet(key: string, value: string | null): Promise<AiSettingsDto | null> {
+    return readAiSettings(await invoke<unknown>('ai_setting_set', { key, value }));
   },
   /** Rust reads the key from the clipboard, keeps it in the keychain and
    *  empties the clipboard; the key never passes through here. */

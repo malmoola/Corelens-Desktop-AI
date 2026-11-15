@@ -1369,6 +1369,7 @@ export const en = {
   'aiSettings.providersOff': 'Keys can be kept now; nothing is sent until the chat is turned on.',
   'aiSettings.keyKept': 'A key is kept in the system keychain.',
   'aiSettings.keyNone': 'No key yet.',
+  'aiSettings.unreadable': 'The AI settings could not be read from Corelens, so this part of Settings is not shown. Restart Corelens; if it stays, the app log says why.',
   'aiSettings.pasteKey': 'Paste key from the clipboard',
   'aiSettings.forgetKey': 'Forget key',
   'aiSettings.keyHint': 'Copy the API key, then press Paste. Corelens reads it from the clipboard, keeps it in the system keychain and empties the clipboard; it never appears on this page, in a log or in an export.',
