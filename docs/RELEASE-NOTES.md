@@ -2,6 +2,149 @@
 
 Newest first.
 
+## 2.16.0 — 2026-11-15
+
+Brings across everything Corelens Desktop 2.15.0 to 2.16.0 added outside AI,
+so the two products are the same program apart from the AI.
+
+**A saved password cannot be read back, anywhere**
+- The eye beside a saved login is gone, and so is the command behind it. A
+  password, community or key is visible while it is typed and at no other
+  time. To check one, replace it.
+- Saved secrets were already encrypted on disk and still are. What changes
+  is that nothing in the application can ask for one in the clear.
+- A firewall's API login could end up inside an error message when its
+  request failed — kept in the run's log and shown on the Collect tab. The
+  address is now taken off such an error and the log is redacted before it
+  is kept.
+
+**A project's logins and host keys are its own**
+- The start screen no longer lists saved logins or SSH host keys. With no
+  project open there is the vault's lock and passphrase, and nothing else.
+- Each project lists its own logins and its own host keys under Settings,
+  and can use no other project's. A login a project could use before the
+  update is still there after it: where two projects used one login, each
+  now has a copy of its own.
+- A host key remembered for an address belongs to the projects whose
+  diagram or crawl has that address. Two customers who both have a
+  10.1.1.1 no longer share one remembered key for it.
+- Logins that belong to no project — left by earlier versions, or by
+  projects since deleted — are counted on the start screen with one
+  button to delete them. They cannot be listed or used.
+- A duplicated project starts with no saved logins.
+
+**Nothing of one project reaches another**
+- Closing a project ends its crawl, collection, backup and sweep, and
+  clears what they found from the window. A run that finishes late reports
+  to nobody; it used to be handed to the next project opened.
+- What was copied from one project's diagram or racks is not pasteable into
+  another.
+- Deleting a project now deletes everything it had: its collection runs
+  with every table read from the devices, its settings, its saved logins,
+  its host keys, its login-use log, its crash-recovery copy, and the
+  diagnostics and logs its runs wrote. Those files are kept in a folder per
+  project from now on.
+- While a project is open, the backend refuses a request for another
+  project's events, runs, backups or settings.
+
+**Smaller**
+- Diagnostics, debug logs, login transcripts, terminal session logs and
+  Meraki backups are readable by their owner alone on Linux and macOS.
+- A support capture redacts saved SNMP logins and per-device logins as well
+  as the run's own.
+- Exporting a project's logins needs the vault unlocked.
+
+**Not changed, and worth knowing**
+- Diagnostics and logs written by earlier versions are in one folder for
+  the machine (`diagnostics`, `logs`, `logins` under the application's data
+  folder). They are not attributed to a project and are left where they
+  are; delete them by hand if they are no longer needed.
+
+**The AI follows the same rule**
+- The chat, Diagnose network and Claude through MCP log in only to the open
+  project's devices, with the open project's logins. A run or a check that
+  outlives its project — the read after a commit's confirm timer — is given
+  no login from the project open in its place.
+- Changing project ends a Diagnose run and a chat turn still going, as it
+  ends a crawl.
+- A proposed change is approved only from the project it was proposed in.
+- *Settings → AI* lists the open project's activity alone; clearing every
+  project's is still there.
+
+**The dock in a window of its own**
+- A new button on the dock, *Open in its own window*, moves the whole dock —
+  monitored objects, events, backups, the terminal with its open sessions,
+  and the rest — into a second window, so the diagram keeps the main one.
+  Put it on another screen. It is the same dock, drawn from the same
+  project in memory: nothing is copied and nothing can fall out of step.
+  The same button there, or closing that window, brings it back.
+
+**A Nexus is read in its own words**
+- A crawl asks a Nexus for its bundles with `show port-channel summary` and
+  reads NX-OS's table, wrapped member lists included. It used to ask
+  `show etherchannel summary`, which NX-OS rejects, so no bundle was drawn.
+- Trunks and port status are asked as `show interface trunk` and
+  `show interface status` — NX-OS rejects the plural — and the trunk table
+  is read in NX-OS's layout, with each trunk's native VLAN and the VLANs it
+  carries.
+- The ARP table is asked for every VRF. `show ip arp` alone is the default
+  VRF's, which on a switch managed through `mgmt0` is often empty.
+- A learned MAC entry keeps its VLAN: NX-OS puts a marker column in front
+  of it.
+- Read against real NX-OS output and against the sample output in Cisco's
+  Nexus 9000 (NX-OS 9.3) and Nexus 7000 references. Not yet checked against
+  a capture from a switch of yours.
+
+**The canvas is easier on the eye**
+- Both grounds are softer. The dark one is a slate page on a charcoal desk
+  instead of near-black; the light one is a warm off-white page with soft
+  black ink instead of pure white and pure black. High contrast and print
+  are as they were.
+- A device's name and address were haloed in the desk's colour while
+  standing on the page — a brown glow round every label on the light
+  ground. The halo is the page's colour now.
+
+**Boxes behind devices**
+- A filled box sent to the back is under the links as well as the devices,
+  on screen and in the SVG, PNG and PDF exports. It used to cover the links.
+- A name, an address, a port label or a link label on a filled box is
+  written in ink chosen for that fill, with a halo in the fill's colour, on
+  screen and in the exports. A box's own text does the same on its own fill.
+- *Box around the selection*, on the right-click menu, draws a box sized to
+  the selected devices and puts it behind everything, in one undo step.
+
+**As-built workbook**
+- *Export → As-built workbook (Excel)* writes one `.xlsx` with a tab each
+  for devices, links, ports, VLANs and addresses. The header row is bold and
+  stays in view; anything typed like a formula is kept as text.
+
+**Importing an inventory**
+- A heading row over each site's devices names their site, and each site
+  arrives in a titled frame of its own.
+- A column naming the device each row connects to becomes links.
+- Rack position can be given as the top rack unit and a height; the lowest
+  unit is worked out. `U12` and `12U` read as 12.
+
+**Terminal**
+- *Copy on select* and saving the session log are on to begin with. A
+  choice already made on this computer is kept. The log is written only
+  where a configuration folder has been chosen.
+
+**Fixed**
+- A project package in the older single-page shape opened to a broken
+  canvas.
+- A link's tooltip element is made when the link is pointed at, not kept
+  for every link on the page.
+
+**Device details for an as-built**
+- *Export → Device details for as-builts (CSV)* writes one row per device,
+  by site and then by name: name, hostname, type, role, vendor, model, serial
+  number, asset tag, software, management IP and every other address, MAC,
+  site, rack and rack unit, stack members, ports in use, VLANs, what it is
+  cabled to with both ports, when it was last read, and its notes. Boxes,
+  zones and text are left out. It follows the *Pages* choice at the top of
+  the menu, like the other tables.
+
 ## 2.14.0 — 2026-11-15
 
 **Updates from inside the app**

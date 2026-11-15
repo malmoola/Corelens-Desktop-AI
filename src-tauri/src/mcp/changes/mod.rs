@@ -1080,6 +1080,10 @@ pub(crate) fn decide_as_operator(state: &AppState, hub: &ChangeHub, id: &str, ap
         let conn = state.db.lock().map_err(db_err)?;
         store::get(&conn, id).map_err(db_err)?.ok_or("There is no such proposal.")?
     };
+    // Approved only from the project it was proposed in.
+    if change.project_id.is_none() || change.project_id != open_project(state) {
+        return Err("That proposal belongs to a project other than the one that is open.".into());
+    }
     if change.status != ChangeStatus::Pending || !hub.is_waiting(id) {
         return Err("That proposal is no longer waiting for a decision.".into());
     }

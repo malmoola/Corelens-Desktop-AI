@@ -47,20 +47,20 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-/// Every secret the unlocked vault holds, so a result can be cleaned of
-/// them by value. Nothing when locked: a locked vault opens no session
+/// Every secret the unlocked vault holds, every project's, so a result can
+/// be cleaned of them by value. Nothing when locked: a locked vault opens no session
 /// either, so no device output can carry one of its secrets.
 pub(crate) fn vault_secrets(state: &AppState) -> redact::Secrets {
     let Ok(guard) = state.vault_key.lock() else { return redact::Secrets::default() };
     let Some(key) = guard.as_ref() else { return redact::Secrets::default() };
     let Ok(conn) = state.db.lock() else { return redact::Secrets::default() };
-    let ids: Vec<String> = conn
-        .prepare("SELECT id FROM credentials")
-        .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(0)).map(|rows| rows.filter_map(Result::ok).collect()))
+    let ids: Vec<(String, String)> = conn
+        .prepare("SELECT project_id, id FROM credentials")
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map(|rows| rows.filter_map(Result::ok).collect()))
         .unwrap_or_default();
     let mut values = Vec::new();
-    for id in ids {
-        let Ok(Some(stored)) = db::credential(&conn, &id) else { continue };
+    for (project, id) in ids {
+        let Ok(Some(stored)) = db::credential(&conn, &project, &id) else { continue };
         if let Ok(s) = crate::vault_commands::open_secret(key, &stored.secret) {
             values.push(s);
         }
@@ -154,6 +154,11 @@ pub struct Host<'a> {
 /// The device a call names, the address to dial, and the logins to try:
 /// the device's own first, then the project's.
 pub(crate) fn login_for(state: &AppState, project_id: &str, target: &str) -> Result<Prepared, String> {
+    // The logins below are the open project's; a device of any other is
+    // given none of them.
+    if open_project(state).as_deref() != Some(project_id) {
+        return Err("That belongs to a project other than the one that is open.".into());
+    }
     let package = {
         let conn = state.db.lock().map_err(db_err)?;
         db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?
@@ -405,15 +410,17 @@ pub async fn mcp_set_enabled(app: AppHandle, enabled: bool) -> CmdResult<McpStat
     Ok(status_of(&app).await)
 }
 
-/// The audit log, newest first: the open project's, or every project's.
+/// The open project's audit log, newest first. Another project's is never
+/// listed: what an assistant ran names that customer's devices.
+/// `all_projects` is refused; clearing every project's stays possible.
 #[tauri::command(async)]
 pub fn mcp_activity(state: State<'_, AppState>, all_projects: bool, limit: Option<i64>) -> CmdResult<Vec<audit::Entry>> {
-    let project = if all_projects { None } else { open_project(&state) };
-    if !all_projects && project.is_none() {
-        return Ok(Vec::new());
+    if all_projects {
+        return Err("Only the open project's activity is shown.".into());
     }
+    let Some(project) = open_project(&state) else { return Ok(Vec::new()) };
     let conn = state.db.lock().map_err(db_err)?;
-    audit::list(&conn, project.as_deref(), limit.unwrap_or(200).clamp(1, 5000)).map_err(db_err)
+    audit::list(&conn, Some(&project), limit.unwrap_or(200).clamp(1, 5000)).map_err(db_err)
 }
 
 /// Clears the open project's audit log, or every project's.
@@ -441,6 +448,26 @@ pub fn mcp_change_record(state: State<'_, AppState>) -> CmdResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A login is used only for the project open in the window. A task
+    /// that outlives its project — the check after a commit's confirm
+    /// timer, a run still finishing — names that project's device; the
+    /// logins it would be offered are the open project's, another
+    /// customer's, and none of them is sent.
+    #[test]
+    fn a_device_of_a_project_that_is_not_open_is_offered_no_login() {
+        let state = super::roundtrip::app_state();
+        assert!(login_for(&state, "p1", "SW1").is_ok(), "the open project's device has its login");
+        {
+            let conn = state.db.lock().unwrap();
+            let mut other = db::load_project(&conn, "p1").unwrap().unwrap();
+            other.meta.id = "p2".into();
+            db::upsert_project(&conn, &other).unwrap();
+        }
+        *state.open_project.lock().unwrap() = Some("p2".into());
+        let err = login_for(&state, "p1", "SW1").err().expect("no login for a project that is not open");
+        assert!(err.contains("other than the one that is open"), "{err}");
+    }
 
     #[test]
     fn the_setup_text_starts_this_executable_with_mcp() {

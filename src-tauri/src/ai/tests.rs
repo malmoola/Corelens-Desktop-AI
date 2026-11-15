@@ -313,3 +313,20 @@ async fn a_whole_turn_with_verbose_logging_on_leaves_no_secret_in_any_log() {
         assert!(!all.contains(s), "{s} reached the log:\n{all}");
     }
 }
+
+/// A change of project ends every turn still being answered: a turn reads
+/// and proposes against the project it was asked in.
+#[tokio::test]
+async fn every_turn_is_ended_when_the_project_changes() {
+    let ai = super::AiState::default();
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tauri::async_runtime::spawn(async move {
+        let _keep = tx;
+        std::future::pending::<()>().await;
+    });
+    ai.running.lock().unwrap().insert("project-a".into(), handle);
+    assert_eq!(ai.stop_all(), vec!["project-a".to_string()]);
+    // The task is gone, and with it the sender it held.
+    assert!(tokio::time::timeout(std::time::Duration::from_secs(5), rx).await.expect("the turn ends").is_err());
+    assert!(ai.stop_all().is_empty(), "and nothing is left to stop");
+}

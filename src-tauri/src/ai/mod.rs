@@ -64,6 +64,20 @@ pub struct AiState {
     last_body: Mutex<HashMap<String, Value>>,
 }
 
+impl AiState {
+    /// Ends every turn still being answered, for a change of project, and
+    /// says whose they were.
+    pub fn stop_all(&self) -> Vec<String> {
+        let Ok(mut running) = self.running.lock() else { return Vec::new() };
+        let mut stopped: Vec<String> = running.drain().filter(|(_, h)| !h.inner().is_finished()).map(|(p, h)| {
+            h.abort();
+            p
+        }).collect();
+        stopped.sort();
+        stopped
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSettings {

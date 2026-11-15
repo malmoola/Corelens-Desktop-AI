@@ -77,6 +77,11 @@ impl DiagnoseHub {
         self.running.lock().ok().and_then(|m| m.get(id).map(|tx| tx.send(true).is_ok())).unwrap_or(false)
     }
 
+    /// Tells every run going on to stop, for a change of project; how many.
+    pub fn cancel_all(&self) -> usize {
+        self.running.lock().map(|m| m.values().filter(|tx| tx.send(true).is_ok()).count()).unwrap_or(0)
+    }
+
     pub fn done(&self, id: &str) {
         if let Ok(mut m) = self.running.lock() {
             m.remove(id);

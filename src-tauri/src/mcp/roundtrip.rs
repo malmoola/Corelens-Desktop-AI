@@ -74,8 +74,7 @@ pub(crate) fn app_state_as(label: &str, unlocked: bool) -> AppState {
         extra: None,
         detail: String::new(),
     };
-    db::save_credential(&conn, &login, 1).unwrap();
-    db::set_credential_owner(&conn, "cred-1", Some("p1")).unwrap();
+    db::save_credential(&conn, "p1", &login, 1).unwrap();
     let mut document = super::project::fixture::document();
     document["pages"][0]["nodes"][0]["data"]["addresses"][0]["address"] = json!("127.0.0.1");
     document["pages"][0]["nodes"][0]["data"]["label"] = json!(label);

@@ -13,7 +13,7 @@ use corelens_collect::sidecar::{Auth, Sidecar, SidecarLocation};
 use corelens_collect::tables::normalise_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use crate::collection_db as cdb;
 use crate::commands::AppState;
@@ -121,13 +121,15 @@ pub enum CollectionEvent {
 
 struct Emit {
     app: AppHandle,
+    /// The project the run began in; see `commands::emit_in`.
+    epoch: u64,
     run_id: String,
     device_id: String,
 }
 
 impl Emit {
     fn send(&self, ev: CollectionEvent) {
-        let _ = self.app.emit("corelens://collection", &ev);
+        crate::commands::emit_in(&self.app, self.epoch, "corelens://collection", &ev);
     }
 }
 
@@ -387,6 +389,9 @@ fn persist_device(state: &AppState, run_id: &str, run: &DeviceRun, diagnostic: O
     let device_id = device_id_of(&run.host);
     let conn = state.db.lock().map_err(db_err)?;
     let plan = run.plan.as_ref().map(|p| serde_json::to_value(p).unwrap_or(Value::Null));
+    // The device's log is kept and shown, so it is redacted like every
+    // other line that is: a failure's text can quote what was sent.
+    let log: Vec<String> = run.log.iter().map(|l| corelens_discover::support::redact(l, secrets).trim_end().to_string()).collect();
     cdb::write_device(
         &conn,
         run_id,
@@ -400,7 +405,7 @@ fn persist_device(state: &AppState, run_id: &str, run: &DeviceRun, diagnostic: O
         run.context_kind.as_deref(),
         &run.contexts,
         run.failure.as_deref(),
-        &run.log,
+        &log,
         plan.as_ref(),
     )
     .map_err(db_err)?;
@@ -417,6 +422,7 @@ fn persist_device(state: &AppState, run_id: &str, run: &DeviceRun, diagnostic: O
         // Configuration secrets as well as the login's own: a capability probe
         // such as `show run | include ^crypto` carries a pre-shared key line.
         std::fs::write(&path, corelens_discover::support::redact(&corelens_collect::scrub::scrub(raw), secrets)).ok()?;
+        crate::db::owner_only(&path);
         Some(format!("{}/{}", host_dir.file_name()?.to_string_lossy(), name))
     };
     for p in &run.probes {
@@ -491,6 +497,8 @@ fn split_targets(text: &str) -> Vec<String> {
 
 #[tauri::command]
 pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input: CollectionInput, credentials: Option<CredentialInput>, backup: Option<CredentialInput>) -> CmdResult<String> {
+    let epoch = crate::commands::project_epoch();
+    crate::commands::not_another_project(&state, &input.project_id)?;
     state.limiter.allow(crate::ratelimit::Job::Crawl)?;
     let targets = split_targets(&input.targets);
     if targets.is_empty() {
@@ -567,6 +575,9 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
         Some(id) => {
             let a = crate::vault_commands::snmp_credentials(&state, id)?;
             crate::vault_commands::note_use(&state, id, "Collection (SNMP fallback)", &input.targets);
+            // Its community or passwords are redacted from what is kept, as
+            // the SSH login's are.
+            secrets.extend(a.secrets());
             Some(a)
         }
         None => None,
@@ -580,7 +591,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
     let progress = ticket.progress();
     let stamp = crate::db::now_ms();
     let run_id = format!("col-{stamp}");
-    let diagnostic: Option<PathBuf> = if input.keep_diagnostic { Some(crate::db::data_dir().join("diagnostics").join(format!("collection-{stamp}"))) } else { None };
+    let diagnostic: Option<PathBuf> = if input.keep_diagnostic { Some(crate::db::project_dir(&crate::commands::open_project(&state).ok_or("Open a project first.")?).join("diagnostics").join(format!("collection-{stamp}"))) } else { None };
     if let Some(d) = &diagnostic {
         std::fs::create_dir_all(d).map_err(|e| format!("The diagnostic folder could not be made: {e}"))?;
     }
@@ -630,7 +641,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
     let role_override = input.role_override.clone().filter(|s| !s.trim().is_empty());
     let app2 = app.clone();
     let run_id2 = run_id.clone();
-    let _ = app.emit("corelens://collection", &CollectionEvent::Started { run_id: run_id.clone(), targets: targets.len() });
+    crate::commands::emit_in(&app, epoch, "corelens://collection", &CollectionEvent::Started { run_id: run_id.clone(), targets: targets.len() });
     tauri::async_runtime::spawn(async move {
         use tauri::Manager;
         let _ticket = ticket;
@@ -643,7 +654,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
                 if let Ok(conn) = state_arc.db.lock() {
                     let _ = cdb::finish_run(&conn, &run_id2, "failed");
                 }
-                let _ = app2.emit("corelens://collection", &CollectionEvent::Failed { run_id: run_id2.clone(), error: e.to_string() });
+                crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Failed { run_id: run_id2.clone(), error: e.to_string() });
                 return;
             }
         };
@@ -676,7 +687,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
                 };
                 let mut added = 0;
                 for scan in &scans {
-                    let _ = app2.emit("corelens://collection", &CollectionEvent::Scanned { run_id: run_id2.clone(), subnet: scan.subnet.clone(), tried: scan.tried, answered: scan.answered.len() });
+                    crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Scanned { run_id: run_id2.clone(), subnet: scan.subnet.clone(), tried: scan.tried, answered: scan.answered.len() });
                     added += frontier.add_scanned(&scan.answered);
                 }
                 if added == 0 {
@@ -692,8 +703,8 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
             let total = (devices + 1 + frontier.waiting()) as u64;
             progress.set(format!("Collecting {host}"), devices as u64, Some(total));
             let device_id = device_id_of(host);
-            let _ = app2.emit("corelens://collection", &CollectionEvent::Device { run_id: run_id2.clone(), device_id: device_id.clone(), host: host.clone(), phase: "connecting".into() });
-            let sink = Emit { app: app2.clone(), run_id: run_id2.clone(), device_id: device_id.clone() };
+            crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Device { run_id: run_id2.clone(), device_id: device_id.clone(), host: host.clone(), phase: "connecting".into() });
+            let sink = Emit { app: app2.clone(), epoch, run_id: run_id2.clone(), device_id: device_id.clone() };
             let known_host_key = host_keys.lock().ok().and_then(|k| k.known(host, port));
             // The hint and the role override are for what the operator named, not what was followed.
             // Through the device that found it, the way that device was reached
@@ -728,7 +739,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
             if run.failure.as_deref() == Some("auth") {
                 for (nth, login) in logins_after_first(&auth, &more_logins).iter().enumerate() {
                     let phase = if nth == 0 { "second login".to_string() } else { format!("login {}", nth + 2) };
-                    let _ = app2.emit("corelens://collection", &CollectionEvent::Device { run_id: run_id2.clone(), device_id: device_id.clone(), host: host.clone(), phase });
+                    crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Device { run_id: run_id2.clone(), device_id: device_id.clone(), host: host.clone(), phase });
                     let Some(mut again) = slot.collect(&catalogs, &target, login, &options, &sink, &token).await else {
                         cancelled = true;
                         break;
@@ -751,7 +762,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
                 if let Ok(conn) = state_arc.db.lock() {
                     let _ = cdb::finish_run(&conn, &run_id2, "failed");
                 }
-                let _ = app2.emit("corelens://collection", &CollectionEvent::Failed { run_id: run_id2.clone(), error: reason });
+                crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Failed { run_id: run_id2.clone(), error: reason });
                 slot.quit().await;
                 return;
             }
@@ -813,7 +824,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
             if run.failure.is_some() {
                 failed += 1;
             }
-            let _ = app2.emit("corelens://collection", &CollectionEvent::DeviceDone { run_id: run_id2.clone(), device_id, host: host.clone(), os: run.os.clone(), failure: run.failure.clone(), commands });
+            crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::DeviceDone { run_id: run_id2.clone(), device_id, host: host.clone(), os: run.os.clone(), failure: run.failure.clone(), commands });
             // A sidecar that stopped answering has been replaced; the run goes on.
         }
         slot.quit().await;
@@ -821,7 +832,7 @@ pub async fn start_collection(app: AppHandle, state: State<'_, AppState>, input:
             let _ = cdb::finish_run(&conn, &run_id2, if cancelled { "cancelled" } else { "finished" });
         }
         progress.set("Finished", devices as u64, Some(devices as u64));
-        let _ = app2.emit("corelens://collection", &CollectionEvent::Finished { run_id: run_id2, devices, failed, cancelled });
+        crate::commands::emit_in(&app2, epoch, "corelens://collection", &CollectionEvent::Finished { run_id: run_id2, devices, failed, cancelled });
     });
     Ok(run_id)
 }
@@ -832,8 +843,23 @@ pub fn cancel_collection(state: State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+/// Refuses a collection run that belongs to a project other than the one
+/// open. A run id is all the page sends for a run's devices, tables, raw
+/// replies, path and topology, so the project is looked up here.
+fn own_run(state: &AppState, run_id: &str) -> CmdResult<()> {
+    let owner: Option<String> = {
+        let conn = state.db.lock().map_err(db_err)?;
+        conn.query_row("SELECT project_id FROM collection_runs WHERE id = ?1", [run_id], |r| r.get(0)).ok()
+    };
+    match owner {
+        Some(project) => crate::commands::not_another_project(state, &project),
+        None => Ok(()),
+    }
+}
+
 #[tauri::command(async)]
 pub fn list_collection_runs(state: State<'_, AppState>, project_id: String) -> CmdResult<Vec<cdb::RunSummary>> {
+    crate::commands::not_another_project(&state, &project_id)?;
     let conn = state.db.lock().map_err(db_err)?;
     cdb::list_runs(&conn, &project_id).map_err(db_err)
 }
@@ -849,6 +875,7 @@ pub struct RunDetail {
 
 #[tauri::command(async)]
 pub fn collection_run(state: State<'_, AppState>, id: String) -> CmdResult<RunDetail> {
+    own_run(&state, &id)?;
     let conn = state.db.lock().map_err(db_err)?;
     let project = cdb::run_project(&conn, &id).map_err(db_err)?.ok_or("That collection run no longer exists.")?;
     let run = cdb::list_runs(&conn, &project).map_err(db_err)?.into_iter().find(|r| r.id == id);
@@ -859,12 +886,14 @@ pub fn collection_run(state: State<'_, AppState>, id: String) -> CmdResult<RunDe
 /// often they disagreed — across every run of the project.
 #[tauri::command(async)]
 pub fn shadow_report(state: State<'_, AppState>, project_id: String) -> CmdResult<Vec<cdb::ShadowLine>> {
+    crate::commands::not_another_project(&state, &project_id)?;
     let conn = state.db.lock().map_err(db_err)?;
     cdb::shadow_report(&conn, Some(&project_id)).map_err(db_err)
 }
 
 #[tauri::command(async)]
 pub fn collection_table(state: State<'_, AppState>, run_id: String, table: String, device_id: Option<String>) -> CmdResult<Vec<Value>> {
+    own_run(&state, &run_id)?;
     let conn = state.db.lock().map_err(db_err)?;
     cdb::read_table(&conn, &run_id, &table, device_id.as_deref()).map_err(db_err)
 }
@@ -872,6 +901,7 @@ pub fn collection_table(state: State<'_, AppState>, run_id: String, table: Strin
 /// One kept reply, from the run's own diagnostic folder and nowhere else.
 #[tauri::command(async)]
 pub fn collection_raw(state: State<'_, AppState>, run_id: String, raw_ref: String) -> CmdResult<String> {
+    own_run(&state, &run_id)?;
     let dir = {
         let conn = state.db.lock().map_err(db_err)?;
         let project = cdb::run_project(&conn, &run_id).map_err(db_err)?.ok_or("That collection run no longer exists.")?;
@@ -902,6 +932,8 @@ fn raw_ref_is_inside_the_run(raw_ref: &str) -> bool {
 /// `parse` op. VRF-expanded commands are found by their file names.
 #[tauri::command]
 pub async fn import_captures(app: AppHandle, state: State<'_, AppState>, project_id: String, folder: String) -> CmdResult<String> {
+    let epoch = crate::commands::project_epoch();
+    crate::commands::not_another_project(&state, &project_id)?;
     let root = PathBuf::from(&folder);
     if !root.is_dir() {
         return Err("That folder does not exist.".into());
@@ -929,7 +961,7 @@ pub async fn import_captures(app: AppHandle, state: State<'_, AppState>, project
     sidecar.quit().await;
     let conn = state.db.lock().map_err(db_err)?;
     cdb::finish_run(&conn, &run_id, "finished").map_err(db_err)?;
-    let _ = app.emit("corelens://collection", &CollectionEvent::Finished { run_id: run_id.clone(), devices: imported, failed: 0, cancelled: false });
+    crate::commands::emit_in(&app, epoch, "corelens://collection", &CollectionEvent::Finished { run_id: run_id.clone(), devices: imported, failed: 0, cancelled: false });
     Ok(run_id)
 }
 
@@ -1235,6 +1267,7 @@ fn path_model(state: &AppState, run_id: &str) -> CmdResult<corelens_path::Net> {
 /// when the request carries one.
 #[tauri::command(async)]
 pub fn collection_path(state: State<'_, AppState>, run_id: String, request: corelens_path::Request) -> CmdResult<corelens_path::Outcome> {
+    own_run(&state, &run_id)?;
     check_path_request(&request)?;
     let net = path_model(&state, run_id.trim())?;
     Ok(corelens_path::run(&net, &request))
@@ -1463,6 +1496,7 @@ pub struct TopologyBuilt {
 
 #[tauri::command(async)]
 pub fn collection_topology(state: State<'_, AppState>, run_id: String, options: Option<corelens_topology::crawl_view::ViewOptions>) -> CmdResult<TopologyBuilt> {
+    own_run(&state, &run_id)?;
     let mut options = options.unwrap_or_default();
     let conn = state.db.lock().map_err(db_err)?;
     let project = cdb::run_project(&conn, &run_id).map_err(db_err)?.ok_or("That collection run no longer exists.")?;

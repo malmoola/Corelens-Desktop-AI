@@ -527,3 +527,14 @@ async fn a_report_run_earlier_is_read_back_through_the_tool_layer() {
     assert!(!ran.is_error && ran.text.contains("# Diagnosis") && ran.text.contains("pending proposal"), "{}", ran.text);
     assert!(lab.configured().is_empty(), "the tool read and proposed nothing by itself without a window: {:?}", lab.configured());
 }
+
+/// A change of project stops every run still going: each reads the devices
+/// of the project it was started in, and from then on reports to nobody.
+#[test]
+fn every_run_is_stopped_when_the_project_changes() {
+    let hub = DiagnoseHub::default();
+    let a = hub.register("run-a");
+    let b = hub.register("run-b");
+    assert_eq!(hub.cancel_all(), 2);
+    assert!(*a.borrow() && *b.borrow(), "both runs are told to stop");
+}
