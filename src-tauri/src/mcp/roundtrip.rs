@@ -26,14 +26,20 @@ use crate::db;
 
 const MODERN: &str = "2026-07-28";
 
-/// The binary cargo built beside this test. Unit tests are not given
+/// The binary cargo built with this test. Unit tests are not given
 /// `CARGO_BIN_EXE_*`, but `cargo test` builds the binary for the
-/// integration tests in the same run, next to `deps/`.
+/// integration tests in the same run, in the profile's folder. The test
+/// itself sits below that folder — in `deps/` on older Cargo, under
+/// `build/<package>/<hash>/` from Rust 1.100 — so the folders above it are
+/// searched rather than one assumed.
 fn binary() -> PathBuf {
-    let deps = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
-    let exe = deps.parent().unwrap().join(format!("corelens-desktop-ai{}", std::env::consts::EXE_SUFFIX));
-    assert!(exe.exists(), "{} is not built; run `cargo test -p corelens-desktop-ai` so the binary is built with the tests", exe.display());
-    exe
+    let name = format!("corelens-desktop-ai{}", std::env::consts::EXE_SUFFIX);
+    let here = std::env::current_exe().unwrap();
+    here.ancestors()
+        .skip(1)
+        .map(|dir| dir.join(&name))
+        .find(|exe| exe.is_file())
+        .unwrap_or_else(|| panic!("no {name} above {}; run `cargo test -p corelens-desktop-ai` so the binary is built with the tests", here.display()))
 }
 
 /// The data folder the binary will look in, under a scratch home.

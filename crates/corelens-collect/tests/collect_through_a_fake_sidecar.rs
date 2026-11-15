@@ -19,8 +19,11 @@ fn repo() -> PathBuf {
 /// Build the fake once and hand back a `python`-shaped location that runs it.
 fn fake_location(script: &serde_json::Value, contexts: &str) -> SidecarLocation {
     // cargo builds every example before running the integration tests; the binary sits beside the test's own.
-    let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("examples").join(if cfg!(windows) { "fake_sidecar.exe" } else { "fake_sidecar" });
-    assert!(exe.exists(), "no fake sidecar at {}", exe.display());
+    // In the profile's `examples/`, above the test binary however deep Cargo
+    // put it (`deps/` before Rust 1.100, `build/<package>/<hash>/` from it).
+    let name = if cfg!(windows) { "fake_sidecar.exe" } else { "fake_sidecar" };
+    let here = std::env::current_exe().unwrap();
+    let exe = here.ancestors().skip(1).map(|dir| dir.join("examples").join(name)).find(|p| p.is_file()).unwrap_or_else(|| panic!("no fake sidecar in an examples/ folder above {}", here.display()));
     // Cargo's own folder for an integration test's files, inside target/:
     // nothing is left behind in the system's temporary folder.
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("corelens-fake-sidecar-{}", std::process::id()));
