@@ -322,7 +322,8 @@ pub fn network_device_algorithms() -> Preferred {
     ]);
 
     let mut mac: Vec<mac::Name> = Preferred::DEFAULT.mac.to_vec();
-    mac.extend([mac::HMAC_SHA1_ETM, mac::HMAC_SHA1]);
+    // A switch locked to the truncated SHA-1 tag; the weakest, so offered last.
+    mac.extend([mac::HMAC_SHA1_ETM, mac::HMAC_SHA1, mac::HMAC_SHA1_96]);
 
     Preferred {
         kex: kex.into(),

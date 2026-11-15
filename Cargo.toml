@@ -41,3 +41,4 @@ strip = true
 # and why. Removed when a release carries them.
 [patch.crates-io]
 textfsm-rs = { path = "vendor/textfsm-rs" }
+russh = { path = "vendor/russh" }
