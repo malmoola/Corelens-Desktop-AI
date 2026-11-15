@@ -463,9 +463,13 @@ mod tests {
             let mut other = db::load_project(&conn, "p1").unwrap().unwrap();
             other.meta.id = "p2".into();
             db::upsert_project(&conn, &other).unwrap();
+            // The other customer's own login, the one that must not be sent.
+            let mut theirs = db::credential(&conn, "p1", "cred-1").unwrap().unwrap();
+            theirs.id = "cred-2".into();
+            db::save_credential(&conn, "p2", &theirs, 1).unwrap();
         }
         *state.open_project.lock().unwrap() = Some("p2".into());
-        let err = login_for(&state, "p1", "SW1").err().expect("no login for a project that is not open");
+        let Err(err) = login_for(&state, "p1", "SW1") else { panic!("no login for a project that is not open") };
         assert!(err.contains("other than the one that is open"), "{err}");
     }
 
