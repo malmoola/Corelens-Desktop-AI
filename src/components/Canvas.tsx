@@ -1,5 +1,5 @@
 import { nodeForDrop } from '../lib/paletteDrop';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   applyNodeChanges,
   MiniMap,
@@ -14,7 +14,6 @@ import {
   type NodeChange,
   type OnConnect,
   getNodesBounds,
-  useViewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -43,7 +42,9 @@ import { Page } from './Page';
 import { PageTabs } from './PageTabs';
 import { effectivePage, pageForContent } from '../lib/pageRect';
 import { collapseView, crumbLabel, foldKeyOf, groupIdOf, isCollapsed } from '../lib/collapse';
-import { routeForView } from '../lib/routeLinks';
+import { canvasShapeOf, layoutLinks, newRouteCache } from '../lib/linkLayout';
+import { obstaclesFor } from '../lib/avoidRoute';
+import { notifyLinkLayout, setLinkLayout } from '../state/linkLayoutStore';
 import { alignmentFor, spacingHint, type Box, type Guide } from '../lib/alignment';
 import { allPrinted, isEditable, isPrinted, isVisible, layersOf } from '../lib/layers';
 import { resetToDefault, styleOf } from '../lib/linkDefaults';
@@ -65,6 +66,7 @@ import { snapStep } from '../lib/gridScale';
 import { PRINT_ACTUAL_ZOOM } from '../lib/pageSize';
 import { Rulers } from './Rulers';
 import { TraceFade } from './edges/traced';
+import { LinkDots } from './edges/LinkDots';
 import type { DeviceNodeData, DeviceType, LinkData, NoteNodeData, HealthStatus } from '../types/domain';
 
 const nodeTypes = { device: DeviceNode, note: NoteNode };
@@ -129,19 +131,22 @@ function HealthMiniMap({ health, ground }: { health: boolean; ground: Ground }) 
   // While the whole diagram is in view the overview says nothing the page
   // does not, so it fades back and returns on hover — or the moment
   // something is off the edge.
-  const viewport = useViewport();
+  // Read from the flow's own store as one yes-or-no, so a pan re-renders the
+  // overview only when the answer changes — it used to re-render on every
+  // step of one, measuring every device and the pane again each time.
   const nodes = useStore((s) => activePage(s.doc).nodes);
-  const quiet = useMemo(() => {
-    if (nodes.length === 0) return true;
-    const pane = document.querySelector('.react-flow__pane')?.getBoundingClientRect();
-    if (!pane) return false;
-    const b = getNodesBounds(nodes);
-    const left = b.x * viewport.zoom + viewport.x;
-    const top = b.y * viewport.zoom + viewport.y;
-    const right = (b.x + b.width) * viewport.zoom + viewport.x;
-    const bottom = (b.y + b.height) * viewport.zoom + viewport.y;
-    return left >= -8 && top >= -8 && right <= pane.width + 8 && bottom <= pane.height + 8;
-  }, [nodes, viewport.x, viewport.y, viewport.zoom]);
+  const bounds = useMemo(() => (nodes.length ? getNodesBounds(nodes) : null), [nodes]);
+  const quiet = useFlowStore((s) => {
+    if (!bounds) return true;
+    if (!s.width || !s.height) return false;
+    const [x, y, zoom] = s.transform;
+    return (
+      bounds.x * zoom + x >= -8 &&
+      bounds.y * zoom + y >= -8 &&
+      (bounds.x + bounds.width) * zoom + x <= s.width + 8 &&
+      (bounds.y + bounds.height) * zoom + y <= s.height + 8
+    );
+  });
   return (
     <MiniMap
       pannable
@@ -1341,11 +1346,30 @@ export function Canvas() {
         )
       : pg.edges;
 
-    const folded_ = collapseView(nodes, edges, folded);
-    // Routed after folding, so a link redrawn to a folded box leaves the side
-    // of the box that faces where it is going.
-    return { nodes: folded_.nodes, edges: routeForView(folded_.nodes, folded_.edges) };
+    // Which side a link leaves by, and where on it, is `layoutLinks`' answer
+    // below — worked out for the page as drawn, folded boxes included — so
+    // the links themselves pass through untouched and none is handed a new
+    // object because a device somewhere else moved.
+    return collapseView(nodes, edges, folded);
   }, [liveNodes, pg.edges, pg.canvas.layers, folded, printing]);
+
+  // Where every link meets its devices and the track its middle run takes:
+  // one pass over the page, as it is being drawn. Set while rendering, so a
+  // link mounting in this same pass finds its entry; the links already on the
+  // page are told once this render has committed, and only those whose entry
+  // changed re-render.
+  const nodeStyle = pg.canvas.nodeStyle ?? 'glyph';
+  const routeCache = useRef(newRouteCache());
+  const linkLayout = useMemo(
+    () => layoutLinks(view.nodes, view.edges, { shapeOf: canvasShapeOf(nodeStyle), obstacles: () => obstaclesFor(view.nodes), routes: routeCache.current }),
+    [view.nodes, view.edges, nodeStyle],
+  );
+  const publishedLayout = useRef<typeof linkLayout | null>(null);
+  if (publishedLayout.current !== linkLayout) {
+    publishedLayout.current = linkLayout;
+    setLinkLayout(linkLayout);
+  }
+  useLayoutEffect(() => notifyLinkLayout(), [linkLayout]);
 
   // What each node was turned into last time, keyed on the node itself.
   // A new object for every node on every change told React Flow that all of
@@ -1829,6 +1853,10 @@ export function Canvas() {
         edges={shownEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        // A selected object keeps its place in the stack. Raised to the top
+        // for as long as it was selected, it showed nothing when it was sent
+        // backward or to the back — the very moment it is selected.
+        elevateNodesOnSelect={false}
         onNodesChange={onNodesChange}
         onEdgesChange={useStore.getState().onEdgesChange}
         onConnect={onConnect}
@@ -1841,6 +1869,13 @@ export function Canvas() {
            side faces where it is going. Loose mode is what lets one of those
            sources also be the end of a link. */
         connectionMode={ConnectionMode.Loose}
+        /* A new link dropped anywhere on a device lands on it. The connection
+           dots are on the ring, outside the device's box, and React Flow only
+           joins a link to a dot within this distance of where it was let go;
+           at its default (20) a drop on the middle of a device — where
+           everyone aims — missed all four. Which dot it finds does not
+           matter: the link leaves by whichever side faces its other end. */
+        connectionRadius={48}
         minZoom={0.01}
         maxZoom={100}
         onNodeClick={(_, n) => useStore.getState().select(n.id, null)}
@@ -1940,6 +1975,8 @@ export function Canvas() {
             is what made the desk and the page look like one surface. */}
         <Page />
         <InkStrokes />
+        {/* Every live link's travelling dots, on one canvas. */}
+        {!printing && <LinkDots />}
         {chips.length > 0 && <ClusterChips chips={chips} onOpen={openChip} />}
         {!presenting && !printing && (trail.length > 0 || collapsed.length > 0 || folded.size > 0) && (
           <CanvasCrumbs

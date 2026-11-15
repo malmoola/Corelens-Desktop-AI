@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 
 import { guideProgress, newlyDone } from '../lib/guide';
 import { activePage } from '../lib/pages';
-import { useStore } from '../state/store';
+import { useRuntimeSlowly, useStore } from '../state/store';
 import { t } from '../i18n';
 import { ChromeIcon } from './chromeIcons';
 
@@ -15,7 +15,9 @@ export function GuidePanel() {
   const selectedDevice = useStore((s) => activePage(s.doc).nodes.some((n) => n.selected && n.type === 'device'));
   const selectedLink = useStore((s) => activePage(s.doc).edges.some((e) => e.selected));
   const sessionRunning = useStore((s) => s.session.state === 'running');
-  const runtime = useStore((s) => s.runtime);
+  // A step is ticked as its answer arrives, not a second later: the tour is
+  // watched while it is followed.
+  const runtime = useRuntimeSlowly(250);
 
   const state = { selectedDevice, selectedLink, sessionRunning, runtime, done: guide?.done ?? [] };
   const fresh = guide ? newlyDone(state) : [];

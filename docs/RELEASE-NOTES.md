@@ -2,6 +2,44 @@
 
 Newest first.
 
+## Unreleased
+
+**Links meet a device on its ring**
+- A link ends on the ring round a device, where the four connection dots
+  also sit, instead of inside it under the drawing. Several links on one
+  side of a device spread along it in the order of where they go.
+- Dragging a link's end slides it round the ring; dropped on another
+  device, it lands on that device's ring. A new link can be let go
+  anywhere on a device.
+- Step, smooth-step and auto links run in right angles only, each on a
+  track of its own between tiers. Devices on different tiers are joined
+  top to bottom. An auto link goes round a note or device close to its end.
+- The export draws links from the same layout as the canvas.
+
+**Faster, most of all while monitoring**
+- Probe results are applied in batches and a device or link listens only to
+  its own probe; panels read the results at a steady pace instead of on
+  every result. The dots travelling along live links are drawn on one
+  canvas.
+- Panning no longer redraws the overview map and the toolbar at every step,
+  and the drawing slides as one layer while it is dragged about.
+- On a 154-device, 210-link diagram, production build, CPU slowed four
+  times, 50 steps: dragging a device 19.7 s → 9.1 s, panning 3.9 s →
+  2.9 s, zooming 6.0 s → 4.5 s. With every probe answering: dragging
+  57.2 s → 15.7 s, panning 14.0 s → 5.2 s, an idle frame 196 ms → 41 ms.
+
+**Fixed**
+- *Send to back* and *Send backward* showed nothing until the object was
+  deselected. A selected object now keeps its place in the stack.
+- *Project package* and *Project as a folder* failed on a project last
+  saved before pages existed. The stored project is brought up to date
+  before it is exported.
+
+**Security updates in the backend**
+- The SSH library moves to `russh` 0.65 for an advisory in its agent
+  server, a part Corelens does not use, and the QUIC library under the
+  HTTP client to its fixed releases.
+
 ## 2.13.0 — 2026-10-22
 
 **Projects shared through a company folder**

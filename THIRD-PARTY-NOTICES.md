@@ -349,7 +349,6 @@ MIT OR Apache-2.0 (353), MIT (141), Apache-2.0 OR MIT (98), MIT/Apache-2.0 (29),
 | infer | 0.22.0 | MIT |
 | inout | 0.1.4 | MIT OR Apache-2.0 |
 | inout | 0.2.2 | MIT OR Apache-2.0 |
-| internal-russh-num-bigint | 0.5.0 | MIT OR Apache-2.0 |
 | ipnet | 2.12.1 | MIT OR Apache-2.0 |
 | is-docker | 0.2.0 | MIT |
 | is-wsl | 0.4.0 | MIT |
@@ -418,6 +417,7 @@ MIT OR Apache-2.0 (353), MIT (141), Apache-2.0 OR MIT (98), MIT/Apache-2.0 (29),
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | num-bigint | 0.4.8 | MIT OR Apache-2.0 |
+| num-bigint | 0.5.1 | MIT OR Apache-2.0 |
 | num-complex | 0.4.6 | MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
 | num-integer | 0.1.47 | MIT OR Apache-2.0 |
@@ -512,8 +512,8 @@ MIT OR Apache-2.0 (353), MIT (141), Apache-2.0 OR MIT (98), MIT/Apache-2.0 (29),
 | quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.41.0 | MIT |
 | quinn | 0.11.12 | MIT OR Apache-2.0 |
-| quinn-proto | 0.11.18 | MIT OR Apache-2.0 |
-| quinn-udp | 0.5.15 | MIT OR Apache-2.0 |
+| quinn-proto | 0.11.19 | MIT OR Apache-2.0 |
+| quinn-udp | 0.5.16 | MIT OR Apache-2.0 |
 | quote | 1.0.47 | MIT OR Apache-2.0 |
 | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
@@ -545,7 +545,7 @@ MIT OR Apache-2.0 (353), MIT (141), Apache-2.0 OR MIT (98), MIT/Apache-2.0 (29),
 | rsa | 0.10.0-rc.18 | MIT OR Apache-2.0 |
 | rsqlite-vfs | 0.2.0 | MIT |
 | rusqlite | 0.41.1 | MIT |
-| russh | 0.63.1 | Apache-2.0 |
+| russh | 0.65.1 | Apache-2.0 |
 | russh-cryptovec | 0.62.0 | Apache-2.0 |
 | russh-sftp | 3.0.1 | Apache-2.0 |
 | russh-util | 0.52.0 | Apache-2.0 |
@@ -911,7 +911,7 @@ one published by SPDX at `https://spdx.org/licenses/`.
 - r-efi 5.3.0 — MIT OR Apache-2.0 OR LGPL-2.1-or-later
 - r-efi 6.0.0 — MIT OR Apache-2.0 OR LGPL-2.1-or-later
 - rsqlite-vfs 0.2.0 — MIT
-- russh 0.63.1 — Apache-2.0
+- russh 0.65.1 — Apache-2.0
 - russh-cryptovec 0.62.0 — Apache-2.0
 - russh-util 0.52.0 — Apache-2.0
 - rustls-platform-verifier-android 0.2.0 — MIT OR Apache-2.0
@@ -1731,7 +1731,6 @@ SOFTWARE.
 - indexmap 2.14.0
 - inout 0.1.4
 - inout 0.2.2
-- internal-russh-num-bigint 0.5.0
 - jni 0.21.1
 - js-sys 0.3.106
 - keccak 0.2.2
@@ -1753,6 +1752,7 @@ SOFTWARE.
 - muda 0.20.0
 - num 0.4.3
 - num-bigint 0.4.8
+- num-bigint 0.5.1
 - num-complex 0.4.6
 - num-integer 0.1.47
 - num-iter 0.1.46
@@ -1795,8 +1795,8 @@ SOFTWARE.
 - psl-types 2.0.11
 - publicsuffix 2.3.0
 - quinn 0.11.12
-- quinn-proto 0.11.18
-- quinn-udp 0.5.15
+- quinn-proto 0.11.19
+- quinn-udp 0.5.16
 - regex 1.13.1
 - regex-automata 0.4.18
 - regex-syntax 0.8.11
@@ -3118,10 +3118,10 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 - bitflags 1.3.2
 - bitflags 2.13.1
 - glob 0.3.4
-- internal-russh-num-bigint 0.5.0
 - log 0.4.34
 - num 0.4.3
 - num-bigint 0.4.8
+- num-bigint 0.5.1
 - num-complex 0.4.6
 - num-integer 0.1.47
 - num-iter 0.1.46
@@ -6399,8 +6399,8 @@ SOFTWARE.
 ### 3 components
 
 - quinn 0.11.12
-- quinn-proto 0.11.18
-- quinn-udp 0.5.15
+- quinn-proto 0.11.19
+- quinn-udp 0.5.16
 
 ```
 Copyright (c) 2018 The quinn Developers
