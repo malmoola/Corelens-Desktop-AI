@@ -853,6 +853,34 @@ pub async fn ping_from_device(
         .ok_or_else(|| format!("{} did not report a result: {}", device.trim(), output.lines().last().unwrap_or("").trim()))
 }
 
+/// One device asked what it is — model, serials, software, stack members —
+/// and nothing else. Not a crawl: one login to the one address given, the
+/// identity questions `corelens_discover::deviceinfo` lists, no question
+/// about a neighbour, and no other address contacted. Nothing is kept but
+/// what is returned.
+#[tauri::command]
+pub async fn get_device_info(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    device: String,
+    credential_id: String,
+    port: Option<u16>,
+) -> CmdResult<corelens_discover::deviceinfo::DeviceInfo> {
+    state.limiter.allow(crate::ratelimit::Job::DeviceInfo)?;
+    let device = device.trim();
+    if device.is_empty() {
+        return Err("That device has no address to connect to.".into());
+    }
+    let store = load_host_keys(&state)?;
+    let options = SshOptions { port: port.unwrap_or(22), ..SshOptions::default() };
+    let mut session =
+        connect_with_project_logins(&state, device, &credential_id, options, Arc::clone(&store), "Get device info").await?;
+    let info = corelens_discover::deviceinfo::read(&mut session, device).await;
+    session.close().await;
+    persist_host_keys(&app, &store);
+    Ok(info)
+}
+
 /// What a device saw, hop by hop, running its own traceroute.
 ///
 /// The platform is read off the device's version banner first, the way a
@@ -1034,6 +1062,10 @@ pub struct BackupInput {
     /// credential — is read over SSH as usual.
     #[serde(default)]
     pub snmp_copy: Option<SnmpCopyInput>,
+    /// File each device's interface, ARP, MAC and routing tables with its
+    /// backup. Absent means no.
+    #[serde(default)]
+    pub tables: bool,
 }
 
 #[derive(Deserialize)]
@@ -1136,7 +1168,7 @@ pub async fn start_backup(
         return Err(format!("Nothing was run. Only commands that read are allowed: {list}"));
     }
     let wants_show = every_command.iter().any(|c| !c.trim().is_empty());
-    if kinds.is_empty() && !wants_show {
+    if kinds.is_empty() && !wants_show && !input.tables {
         return Err("Choose a configuration to capture, or give at least one show command.".into());
     }
     let paging = match input.paging.as_deref() {
@@ -1174,10 +1206,11 @@ pub async fn start_backup(
             ..SshOptions::default()
         },
         second_factor: input.second_factor,
-        show: wants_show.then(|| corelens_discover::capture::ShowPlan {
+        show: (wants_show || input.tables).then(|| corelens_discover::capture::ShowPlan {
             commands: input.show_commands.clone(),
             paging,
         }),
+        tables: input.tables,
         file_pattern,
         // Every other SSH login the project keeps, for a device that
         // refuses the run's own. One that has gone is one fewer to try.

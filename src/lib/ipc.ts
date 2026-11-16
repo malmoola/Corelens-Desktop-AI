@@ -629,6 +629,24 @@ export type StackInfo = {
   unverified: boolean;
 };
 
+/** What one device said about itself when asked, and what it was asked. */
+export type DeviceInfo = {
+  hostname: string;
+  family: string;
+  model: string | null;
+  serials: string[];
+  software: string | null;
+  mac: string | null;
+  uptimeSeconds: number | null;
+  /** The addresses on its own interfaces that are up. */
+  addresses: DeviceAddress[];
+  stack: StackInfo | null;
+  /** Every command sent, in order. */
+  commands: string[];
+  /** A reader behind some of this has met no real hardware. */
+  unverified: boolean;
+};
+
 export type CrawledDevice = {
   hostname: string;
   address: string;
@@ -1358,6 +1376,8 @@ export type StoredSettings = Partial<{
    *  paging choice. The user's own — nothing ships pre-filled. */
   backupShowCommands: string;
   backupPaging: string;
+  /** 'off' when the device tables are left out of a backup; on otherwise. */
+  backupTables: string;
   /** Named command sets applied by role or tag, as JSON. */
   backupCommandSets: string;
   /** How capture files are named, e.g. `{site}_{device}_{stamp}_{kind}`. */
@@ -1677,6 +1697,13 @@ export const ipc = {
   async pingFromDevice(device: string, credentialId: string, target: string, count = 3): Promise<{ sent: number; received: number; minMs: number | null; avgMs: number | null; maxMs: number | null; output: string }> {
     if (!isDesktop) throw new BackendUnavailable('Pinging from a device');
     return invoke('ping_from_device', { device, credentialId, target, count });
+  },
+
+  /** One device asked what it is, over SSH with a saved login by id. Not a
+   *  crawl: the one address, identity questions only. */
+  async getDeviceInfo(device: string, credentialId: string, port?: number): Promise<DeviceInfo> {
+    if (!isDesktop) throw new BackendUnavailable('Reading a device');
+    return invoke('get_device_info', { device, credentialId, port });
   },
 
   /** A saved snmpwalk of one device, read into what an SNMP crawl
@@ -2171,6 +2198,8 @@ export const ipc = {
       /** Ask Cisco devices to send their configuration over SNMP to the
        *  project's SFTP server, with this saved read-write credential. */
       snmpCopy?: { credentialId: string; port?: number };
+      /** Also file each device's interface, ARP, MAC and routing tables. */
+      tables?: boolean;
     },
     credentials: CredentialInput,
     stamp: string,
