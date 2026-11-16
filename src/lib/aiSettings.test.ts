@@ -28,6 +28,11 @@ describe('readAiSettings', () => {
     }
   });
 
+  it('reads Snowflake Cortex as the chosen provider', () => {
+    const sf = { ...full, provider: 'snowflake', models: { ...full.models, snowflake: 'claude-sonnet-5-5' }, snowflakeAccount: 'myorg-myaccount' };
+    expect(readAiSettings(sf)).toEqual(sf);
+  });
+
   it('leaves the browser preview, which has no backend, as no settings', () => {
     expect(readAiSettings(null)).toBeNull();
   });

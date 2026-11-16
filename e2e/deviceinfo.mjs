@@ -53,7 +53,17 @@ const project = {
           addresses: [{ id: "y", label: "Mgmt", address: "192.0.2.11", isPrimary: true }] }),
         node("c", "NO-LOGIN", { addresses: [{ id: "z", label: "Mgmt", address: "192.0.2.12", isPrimary: true }] }),
         node("d", "NO-ADDRESS", { sshCredentialId: "cred-1", addresses: [] }),
-      ] }],
+        node("s", "SLOW-SW", { sshCredentialId: "cred-1",
+          addresses: [{ id: "w", label: "Mgmt", address: "192.0.2.13", isPrimary: true }] }),
+      ] },
+      // The same switch drawn again on a second page, under another id.
+      { id: "p2", name: "Rack",
+        canvas: { gridEnabled: true, snapEnabled: true, minimap: false, nodeStyle: "glyph" },
+        edges: [],
+        nodes: [
+          node("s2", "SLOW-SW again", { sshCredentialId: "cred-1",
+            addresses: [{ id: "w2", label: "Mgmt", address: "192.0.2.13", isPrimary: true }] }),
+        ] }],
   },
 };
 
@@ -80,6 +90,11 @@ await page.addInitScript(({ p }) => {
       if (cmd === "get_device_info") {
         window.__asked.push(args);
         if (args.device === "192.0.2.11") return Promise.reject("192.0.2.11 refused the login");
+        if (args.device === "192.0.2.13") return new Promise((ok) => setTimeout(() => ok({
+          hostname: "SLOW-SW", family: "Cisco IOS", model: "C9200-24T", serials: ["JAE0000TEST"],
+          software: "Cisco IOS Software, Version 17.9.4", mac: null, uptimeSeconds: 60, stack: null,
+          addresses: [], commands: ["show version"], unverified: false,
+        }), 1500));
         return Promise.resolve({
           hostname: "CORE-SW1", family: "Cisco IOS", model: "C9300-48P",
           serials: ["FOC0000TEST", "FOC0001TEST"], software: "Cisco IOS Software, Version 16.12.4",
@@ -172,6 +187,31 @@ await menuItem(ITEM).click();
 await page.waitForTimeout(700);
 check("a refusal is reported as itself, by name", /Could not read ACCESS-SW7: 192\.0\.2\.11 refused the login/.test(await message()), await message());
 check("still nothing but the three requests", (await st(() => window.__asked)).length === 3 && (await st(() => window.__calls)).length === 0);
+
+// ------------------------------------- the page switched while it was asked
+
+await rightClick("SLOW-SW");
+await menuItem(ITEM).click();
+await page.waitForTimeout(200);
+await page.locator(".cv-page-tab").nth(1).click();
+await page.waitForTimeout(2000);
+const late = await message();
+check("an answer that arrives after a page switch is not reported as a device gone",
+  /SLOW-SW: filled in .*model/.test(late) && !/no longer/.test(late), late);
+await page.locator(".react-flow__node", { hasText: "SLOW-SW again" }).first().click();
+await page.waitForTimeout(300);
+await page.locator("[role=tab]", { hasText: "Identity" }).first().click().catch(() => {});
+await page.waitForTimeout(300);
+check("the drawing of it on the page now in front has the model",
+  (await page.locator(".cv-inspector input, .cv-inspector textarea").evaluateAll((els) => els.map((e) => e.value))).includes("C9200-24T"));
+await page.locator(".cv-page-tab").nth(0).click();
+await page.waitForTimeout(500);
+await page.locator(".react-flow__node", { hasText: "SLOW-SW" }).first().click();
+await page.waitForTimeout(300);
+await page.locator("[role=tab]", { hasText: "Identity" }).first().click().catch(() => {});
+await page.waitForTimeout(300);
+check("and so has the one it was asked from, on the page left behind",
+  (await page.locator(".cv-inspector input, .cv-inspector textarea").evaluateAll((els) => els.map((e) => e.value))).includes("C9200-24T"));
 
 await browser.close();
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);

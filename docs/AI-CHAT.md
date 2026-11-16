@@ -6,7 +6,8 @@ with the same tools Claude Code and Claude Desktop use through MCP
 (`docs/MCP.md`), under the same checks: only this project's devices,
 read-only commands only, every result redacted, and a change only ever
 proposed, for you to approve in the Corelens window. It runs on the provider
-you choose: Anthropic, OpenAI (or an OpenAI-compatible server), or Ollama.
+you choose: Anthropic, OpenAI (or an OpenAI-compatible server), Ollama, or
+Snowflake Cortex.
 
 It is **off until you turn it on**. Until then Corelens makes no request to
 any provider at all.
@@ -33,6 +34,23 @@ any provider at all.
      *Refresh models* lists the models pulled there and says which cannot
      call tools — the chat needs one that can (for example `qwen3`,
      `llama3.1`, `mistral-small3.1` or `gpt-oss`).
+   - **Snowflake Cortex.** Type the account identifier
+     (`orgname-accountname`, from Snowsight → your name → Account → View
+     account details). Create a programmatic access token in Snowsight
+     (your name → Settings → Authentication), copy it and press *Paste key
+     from the clipboard*; it is kept in the keychain like a key. The token's
+     user needs a default role granted `SNOWFLAKE.CORTEX_USER`. Corelens
+     uses Cortex's OpenAI-compatible Chat Completions
+     (`https://<account>.snowflakecomputing.com/api/v2/cortex/v1`); tools
+     work on Cortex's Claude and OpenAI models, so choose one of those
+     (default `claude-sonnet-5-5`). A model your region does not serve may
+     still be reached through Snowflake's cross-region inference, which the
+     account administrator turns on.
+
+   The model is a list: the models a provider is known to offer, and after
+   *Refresh models* the ones it lists, with *Another model ID…* for one
+   typed by hand. Choosing a model under the chat or under its provider is
+   the same choice.
 3. **Test connection** (under the chat) asks the provider for its models
    and says whether the chosen one is among them.
 

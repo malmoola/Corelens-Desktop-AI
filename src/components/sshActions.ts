@@ -4,7 +4,7 @@
  * questions in the same order and report the same refusals.
  */
 import { ipc } from '../lib/ipc';
-import { deviceInfoPatch } from '../lib/deviceInfo';
+import { deviceInfoPatch, drawingsOf } from '../lib/deviceInfo';
 import { planSsh, sshAddress } from '../lib/sshLaunch';
 import { t } from '../i18n';
 import { useStore } from '../state/store';
@@ -108,16 +108,23 @@ export async function getDeviceInfo(nodeId: string, data: DeviceNodeData) {
   store.setStatusMessage(t('deviceInfo.asking', { name: plan.label }));
   try {
     const info = await ipc.getDeviceInfo(plan.address, plan.credentialId);
-    // The device as it is now: it may have been edited while this ran.
+    // The device as it is now, on every page it is drawn on: it may have been
+    // edited, or the page switched, while this ran.
     const state = useStore.getState();
-    // On the page in front, which is the one an edit lands on.
-    const node = state.doc.pages.find((p) => p.id === state.doc.activePageId)?.nodes.find((n) => n.id === nodeId);
-    if (!node) {
+    const drawings = drawingsOf(state.doc.pages, nodeId, plan.address);
+    if (drawings.length === 0) {
       state.setStatusMessage(t('deviceInfo.gone', { name: plan.label }));
       return;
     }
-    const { patch, changed } = deviceInfoPatch(info, node.data as DeviceNodeData, Date.now(), plan.address);
-    state.updateNodeData(nodeId, patch);
+    const now = Date.now();
+    const changedAll = new Set<string>();
+    const patches = drawings.map(({ pageId, node }) => {
+      const { patch, changed } = deviceInfoPatch(info, node.data as DeviceNodeData, now, plan.address);
+      changed.forEach((c) => changedAll.add(c));
+      return { pageId, nodeId: node.id, patch };
+    });
+    state.patchNodesOnAnyPage(patches, 'Get device info');
+    const changed = [...changedAll];
     const asked = info.commands.join(', ');
     state.setStatusMessage(
       changed.length

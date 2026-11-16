@@ -46,4 +46,21 @@ describe("a device's own interface addresses, under its checks", () => {
   it('with no interface table, still has the address that answered', () => {
     expect(withInterfaceAddresses([], '192.0.2.1', [], id).map((a) => [a.label, a.address, a.isPrimary])).toEqual([['Discovered', '192.0.2.1', true]]);
   });
+
+  it('never lists a link-local address, which no one off that segment can reach', () => {
+    const local = [
+      { ip: '192.0.2.1', interface: 'Vlan10' },
+      { ip: '169.254.10.1/16', interface: 'Gi0/0' },
+      { ip: 'fe80::1%Vlan10', interface: 'Vlan10' },
+      { ip: 'FE80::a00:27ff:fe4e:66a1/64', interface: 'Vlan20' },
+      { ip: 'febf::1', interface: 'Vlan30' },
+      { ip: '2001:db8::1/64', interface: 'Vlan40' },
+    ];
+    expect(withInterfaceAddresses([], '192.0.2.1', local, id).map((a) => a.address)).toEqual(['192.0.2.1', '2001:db8::1']);
+  });
+
+  it('keeps a link-local address somebody typed', () => {
+    const had = [{ id: 'mine', label: 'Console', address: '169.254.1.1', isPrimary: false }];
+    expect(withInterfaceAddresses(had, '192.0.2.1', [], id).map((a) => a.address)).toEqual(['192.0.2.1', '169.254.1.1']);
+  });
 });

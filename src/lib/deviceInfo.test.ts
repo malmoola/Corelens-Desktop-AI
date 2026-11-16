@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceInfoPatch } from './deviceInfo';
+import { deviceInfoPatch, drawingsOf } from './deviceInfo';
 import type { DeviceInfo } from './ipc';
 import type { DeviceNodeData } from '../types/domain';
 
@@ -68,5 +68,31 @@ describe('what a device said, onto its fields', () => {
     expect(patch.stackKind).toBe('StackWise');
     expect(patch.stackMembers).toBe('1 active FOC0000TEST\n2 standby FOC0001TEST');
     expect(patch.stackUnverified).toBe(true);
+  });
+});
+
+describe('what a device said, onto every drawing of it', () => {
+  const at = (address: string) => [{ id: address, label: '', address, isPrimary: true }];
+  const node = (id: string, data: Partial<DeviceNodeData>, type = 'device') => ({ id, type, data: drawn(data) });
+  const pages = [
+    { id: 'p1', nodes: [node('a', { addresses: at('192.0.2.10') }), node('b', { addresses: at('192.0.2.20') })] },
+    { id: 'p2', nodes: [node('a2', { label: 'Core again', addresses: at('192.0.2.10') }), node('n', { addresses: at('192.0.2.10') }, 'note')] },
+    { id: 'p3', nodes: [] },
+  ];
+
+  it('reaches the device on whichever page it is drawn, the page in front or not', () => {
+    expect(drawingsOf(pages, 'a', '192.0.2.10').map((d) => [d.pageId, d.node.id])).toEqual([
+      ['p1', 'a'],
+      ['p2', 'a2'],
+    ]);
+  });
+
+  it('still finds it by its id when its address was edited while the device answered', () => {
+    const moved = [{ id: 'p1', nodes: [node('a', { addresses: at('192.0.2.99') })] }];
+    expect(drawingsOf(moved, 'a', '192.0.2.10').map((d) => d.node.id)).toEqual(['a']);
+  });
+
+  it('finds nothing only when no page has it', () => {
+    expect(drawingsOf(pages, 'gone', '192.0.2.77')).toEqual([]);
   });
 });

@@ -18,8 +18,11 @@ export interface InterfaceAddress {
 }
 
 /** An address without the prefix length some tables print after it. */
-const bare = (address: string) => address.trim().split('/')[0]!.trim();
-const usable = (ip: string) => ip !== '' && !ip.startsWith('127.') && ip !== '0.0.0.0' && ip !== '::1' && /[.:]/.test(ip);
+const bare = (address: string) => address.trim().split('/')[0]!.split('%')[0]!.trim();
+/** fe80::/10 and 169.254/16 answer only on their own segment, so a check
+ *  made from anywhere else always fails. */
+const linkLocal = (ip: string) => ip.startsWith('169.254.') || /^fe[89ab][0-9a-f]?:/i.test(ip);
+const usable = (ip: string) => ip !== '' && !ip.startsWith('127.') && ip !== '0.0.0.0' && ip !== '::1' && !linkLocal(ip) && /[.:]/.test(ip);
 
 export function withInterfaceAddresses(
   had: readonly NodeAddress[] | undefined,

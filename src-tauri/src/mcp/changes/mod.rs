@@ -782,7 +782,7 @@ pub fn summary(c: &Change) -> String {
         out.push_str(&format!(" {}", c.note));
     }
     for t in &c.targets {
-        out.push_str(&format!("\n- {} ({}): {:?}. {}", t.device, t.platform_name, t.status, t.message));
+        out.push_str(&format!("\n- {} ({}): {}. {}", t.device, t.platform_name, describe_target(t.status), t.message));
         for v in &t.verification {
             out.push_str(&format!("\n  verify `{}`: {}\n{}", v.command, if v.ok { "ok" } else { "FAILED" }, indent(&v.output)));
         }
@@ -795,6 +795,25 @@ pub fn summary(c: &Change) -> String {
 
 fn indent(text: &str) -> String {
     text.lines().take(60).map(|l| format!("    {l}")).collect::<Vec<_>>().join("\n")
+}
+
+/// One device's outcome in words, for the assistant and the Markdown record.
+pub fn describe_target(s: TargetStatus) -> &'static str {
+    match s {
+        TargetStatus::Pending => "waiting for the engineer's decision",
+        TargetStatus::Denied => "denied; nothing was sent",
+        TargetStatus::NotRun => "approved, not reached: the batch stopped before it",
+        TargetStatus::Running => "running",
+        TargetStatus::PushFailed => "a line was refused; what was entered was rolled back",
+        TargetStatus::Verified => "pushed and verified",
+        TargetStatus::VerifyFailed => "pushed, and a check failed; rollback is offered",
+        TargetStatus::DeviceRollingBack => "waiting for the device to roll itself back",
+        TargetStatus::RolledBack => "rolled back",
+        TargetStatus::RollbackFailed => "the rollback failed",
+        TargetStatus::Saved => "saved",
+        TargetStatus::SaveFailed => "the save failed",
+        TargetStatus::Interrupted => "interrupted when Corelens closed",
+    }
 }
 
 fn describe_status(s: ChangeStatus) -> &'static str {
@@ -1142,7 +1161,7 @@ pub fn export_md(project: &str, changes: &[Change]) -> String {
         }
         out.push('\n');
         for t in &c.targets {
-            out.push_str(&format!("### {} ({}, {})\n\n- Risk: {:?} — {}\n- Outcome: {:?} — {}\n", t.device, t.address, t.platform_name, t.assessment.class, t.assessment.summary, t.status, t.message));
+            out.push_str(&format!("### {} ({}, {})\n\n- Risk: {:?} — {}\n- Outcome: {} — {}\n", t.device, t.address, t.platform_name, t.assessment.class, t.assessment.summary, describe_target(t.status), t.message));
             for h in &t.assessment.hard_blocks {
                 out.push_str(&format!("- Hard block: `{}` — {}\n", h.command.replace('`', "'"), h.risk));
             }

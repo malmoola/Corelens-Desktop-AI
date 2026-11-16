@@ -106,7 +106,7 @@ async fn an_approved_change_is_snapshotted_pushed_verified_and_not_saved() {
     assert!(t.verification.iter().all(|v| v.ok) && t.verification.len() == 2, "{:?}", t.verification);
     assert!(t.actual.iter().any(|d| d.mark == "+" && d.text.contains("LAB-PORT")));
     assert!(!t.snapshot.contains(crate::mcp::fake_device::PASSWORD), "the stored snapshot is redacted");
-    assert!(outcome.text.contains("Verified") && outcome.text.contains("Not saved"), "{}", outcome.text);
+    assert!(outcome.text.contains("pushed and verified") && outcome.text.contains("Not saved"), "{}", outcome.text);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -184,7 +184,7 @@ async fn a_refused_line_stops_the_push_rolls_back_what_was_entered_and_the_batch
     assert_eq!(c.targets[1].status, TargetStatus::NotRun);
     assert_eq!(lab.dev.running(), before, "what was entered before the refusal came out again");
     assert!(!lab.dev.asked().iter().any(|a| a.contains("SECOND")), "the batch stopped");
-    assert!(outcome.text.contains("NotRun"), "{}", outcome.text);
+    assert!(outcome.text.contains("approved, not reached"), "{}", outcome.text);
 }
 
 #[tokio::test(flavor = "multi_thread")]

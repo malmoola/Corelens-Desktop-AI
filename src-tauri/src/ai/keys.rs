@@ -15,6 +15,7 @@ fn account(provider: &str) -> Result<&'static str, String> {
     match provider {
         "anthropic" => Ok("anthropic-api-key"),
         "openai" => Ok("openai-api-key"),
+        "snowflake" => Ok("snowflake-access-token"),
         _ => Err(format!("{provider} takes no key.")),
     }
 }
@@ -58,7 +59,7 @@ pub fn check(provider: &str, text: &str) -> Result<Zeroizing<String>, String> {
     }
     match provider {
         "anthropic" if !key.starts_with("sk-ant-") => Err("That is not an Anthropic API key (they start sk-ant-). Copy it from the Claude Console.".into()),
-        "openai" | "anthropic" => Ok(Zeroizing::new(key.to_string())),
+        "openai" | "anthropic" | "snowflake" => Ok(Zeroizing::new(key.to_string())),
         _ => Err(format!("{provider} takes no key.")),
     }
 }
@@ -86,6 +87,7 @@ mod tests {
         assert!(check("anthropic", "sk-proj-FIXTUREfixtureFIXTURE").unwrap_err().contains("sk-ant-"));
         assert!(check("openai", "sk-proj-FIXTUREfixtureFIXTURE").is_ok());
         assert!(check("openai", "").unwrap_err().contains("empty"));
+        assert!(check("snowflake", "FIXTURE-pat-not-a-real-token-0000").is_ok());
         assert!(check("openai", "a whole paragraph of text that is not a key").is_err());
         assert!(check("ollama", "sk-proj-FIXTUREfixtureFIXTURE").is_err());
     }

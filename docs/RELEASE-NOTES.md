@@ -2,6 +2,37 @@
 
 Newest first.
 
+## 2.17.2 — 2026-11-16
+
+**Snowflake Cortex for the AI chat**
+- **Settings → AI → AI providers** has **Snowflake Cortex**: type the
+  account identifier (orgname-accountname), copy a programmatic access
+  token and press **Paste key from the clipboard**. The token is kept in the
+  system keychain like any other key. The chat then runs on Cortex's Claude
+  and OpenAI models, which are the ones that call tools there; the token's
+  user needs a default role granted `SNOWFLAKE.CORTEX_USER`. The same
+  redaction applies before anything is sent.
+
+**Fixed**
+- The model in **Settings → AI** offered no list while a model was set: the
+  others appeared only after the field was cleared. It is a list now, of the
+  models the provider is known to offer and, after **Refresh models**, the
+  ones it lists, with **Another model ID…** for one typed by hand. The model
+  under the chat and under its provider are the same choice.
+- **Get device info** answered after a switch of page said the device was
+  no longer there and changed nothing. The answer now lands on the device on
+  every page it is drawn on, whichever page is in front.
+- A device's link-local addresses (`fe80::`, `169.254.`) were listed under
+  its checks. Nothing off that segment can reach them, so they are left out;
+  one typed by hand stays.
+- A proposed change's outcome per device is said in words to the AI
+  assistant and in the Markdown record ("rolled back", not `RolledBack`).
+
+**Faster**
+- Every link's click band now shares one drawing layer instead of one each:
+  about 200 fewer page elements on a diagram of 200 links, with no change to
+  where a link can be clicked.
+
 ## 2.17.1 — 2026-11-15
 
 **Fixed**

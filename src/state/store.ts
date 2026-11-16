@@ -911,6 +911,9 @@ interface Store {
   rerouteAll: () => number;
   /** A device's or link's comments, as one undo step. */
   setComments: (objectId: string, threads: CommentThread[], label: string) => void;
+  /** Changes to devices on any page, not only the one in front, as one undo
+   *  step — for an answer that arrives after the page was switched. */
+  patchNodesOnAnyPage: (patches: { pageId: string; nodeId: string; patch: Partial<DeviceNodeData> }[], label: string) => void;
   updateManyNodeData: (
     ids: string[],
     patch: Partial<DeviceNodeData & NoteNodeData>,
@@ -3975,6 +3978,31 @@ export const useStore = create<Store>((set, get) => ({
       }),
       dirty: true,
     }));
+  },
+
+  patchNodesOnAnyPage(patches, label) {
+    if (patches.length === 0) return;
+    get().commit(label);
+    const key = (pageId: string, nodeId: string) => `${pageId}\u0000${nodeId}`;
+    const byKey = new Map(patches.map((x) => [key(x.pageId, x.nodeId), x.patch]));
+    set((s) => ({
+      doc: {
+        ...s.doc,
+        pages: s.doc.pages.map((p) =>
+          p.nodes.some((n) => byKey.has(key(p.id, n.id)))
+            ? {
+                ...p,
+                nodes: p.nodes.map((n) => {
+                  const patch = byKey.get(key(p.id, n.id));
+                  return patch ? ({ ...n, data: { ...n.data, ...patch } } as TopoNode) : n;
+                }),
+              }
+            : p,
+        ),
+      },
+      dirty: true,
+    }));
+    for (const x of patches) if ('addresses' in x.patch) get().ensureNodeCheck(x.nodeId);
   },
 
   updateManyNodeData(ids, patch, label) {

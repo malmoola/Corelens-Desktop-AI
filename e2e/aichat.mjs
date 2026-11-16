@@ -83,6 +83,8 @@ await page.addInitScript(({ p, s0 }) => {
       if (cmd === "ai_settings") return Promise.resolve(window.__settings);
       if (cmd === "ai_setting_set") {
         if (args.key === "aiChatEnabled") window.__settings = { ...window.__settings, chatEnabled: args.value === "1" };
+        if (args.key.startsWith("aiModel.")) window.__settings = { ...window.__settings, models: { ...window.__settings.models, [args.key.slice(8)]: args.value } };
+        if (args.key === "aiSnowflakeAccount") window.__settings = { ...window.__settings, snowflakeAccount: args.value };
         return Promise.resolve(window.__settings);
       }
       if (cmd === "ai_key_import") { window.__settings = { ...window.__settings, keys: { ...window.__settings.keys, [args.provider]: true } }; return Promise.resolve(window.__settings); }
@@ -234,6 +236,39 @@ await ai.locator('[data-action="ai-key-import-anthropic"]').click();
 await page.waitForTimeout(200);
 check("Paste key asks Rust to read the clipboard, and no key crosses the page", JSON.stringify((await sent("ai_key_import")).map((c) => c.args)) === '[{"provider":"anthropic"}]' && /A key is kept/.test(await ai.locator('[data-hint="ai-key-anthropic"]').innerText()));
 check("no model list was asked for while the chat is off", (await sent("ai_models")).length === 0);
+// The model is a list that offers every model while one is chosen.
+const offered = async (field) => ai.locator(`[data-field="${field}"] option`).evaluateAll((os) => os.map((o) => o.value));
+const chatModels = await offered("ai-chat-model");
+check("with a model chosen, the chat's model list still offers the others",
+  chatModels.includes("claude-opus-5-5") && chatModels.includes("claude-sonnet-5-5") && chatModels.includes("claude-haiku-5-5"), JSON.stringify(chatModels));
+await ai.locator('[data-field="ai-chat-model"]').selectOption("claude-sonnet-5-5");
+await page.waitForTimeout(200);
+check("choosing one keeps it, and the provider's own list shows the same choice",
+  (await sent("ai_setting_set")).some((c) => c.args.key === "aiModel.anthropic" && c.args.value === "claude-sonnet-5-5")
+  && (await ai.locator('[data-field="ai-model-anthropic"]').inputValue()) === "claude-sonnet-5-5"
+  && (await offered("ai-model-anthropic")).includes("claude-opus-5-5"));
+await ai.locator('[data-field="ai-model-anthropic"]').selectOption({ label: "Another model ID…" });
+await page.waitForTimeout(100);
+await ai.locator('[data-field="ai-model-anthropic"]').fill("claude-custom-fixture");
+await ai.locator('[data-field="ai-model-anthropic"]').press("Enter");
+await page.waitForTimeout(200);
+check("a model ID can still be typed by hand, and is then in the list",
+  (await sent("ai_setting_set")).some((c) => c.args.key === "aiModel.anthropic" && c.args.value === "claude-custom-fixture")
+  && (await offered("ai-model-anthropic")).includes("claude-custom-fixture"));
+check("still no model list asked of a provider", (await sent("ai_models")).length === 0);
+
+// Snowflake Cortex: an account, a token through the clipboard, its models.
+const sf = ai.locator('[data-provider="snowflake"]');
+check("Snowflake Cortex is a provider, with its own card", (await sf.count()) === 1 && (await ai.locator('[data-field="ai-provider"] option[value="snowflake"]').count()) === 1);
+await sf.locator('[data-field="ai-snowflake-account"]').fill("myorg-myaccount");
+await sf.locator('[data-field="ai-snowflake-account"]').blur();
+await page.waitForTimeout(200);
+check("the account is kept", (await sent("ai_setting_set")).some((c) => c.args.key === "aiSnowflakeAccount" && c.args.value === "myorg-myaccount"));
+await sf.locator('[data-action="ai-key-import-snowflake"]').click();
+await page.waitForTimeout(200);
+check("its access token comes from the clipboard through Rust, never the page", (await sent("ai_key_import")).some((c) => c.args.provider === "snowflake") && /A key is kept/.test(await ai.locator('[data-hint="ai-key-snowflake"]').innerText()));
+check("its model list offers Cortex's Claude models", (await offered("ai-model-snowflake")).includes("claude-sonnet-5-5"));
+
 await ai.locator('[data-field="ai-verbose-logging"]').check();
 await page.waitForTimeout(200);
 check("verbose logging is a toggle that says when it ends", (await sent("app_log_verbose")).at(-1)?.args.on === true && /On until/.test(await ai.locator('[data-region="ai-retention"]').innerText()));

@@ -435,3 +435,74 @@ async fn a_locked_vault_is_said_plainly_and_never_as_missing_arguments() {
     }
     assert!(dev.asked().is_empty(), "a locked vault still reached the switch: {:?}", dev.asked());
 }
+
+/// A whole troubleshooting session as Claude Code or Claude Desktop runs it,
+/// through the shipped binary and the bridge to the window, against the fake
+/// switch: what is open, the devices, one device, its configuration (with no
+/// secret in it), a diagnosis and its report, then a change proposed,
+/// approved in the window, pushed and verified — and rolled back by the
+/// engineer, which the next session reads back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_whole_session_reads_diagnoses_changes_and_rolls_back_over_the_bridge() {
+    let _turn = BRIDGE.lock().await;
+    let home = tempfile::tempdir().unwrap();
+    let dir = data_dir(home.path());
+    std::fs::create_dir_all(&dir).unwrap();
+    let dev = FakeDevice::start().await;
+    let mut window = Window::new(app_state(), dev.port);
+    window.approve_all = true;
+    let window = Arc::new(window);
+    let listening = bridge::listen(bridge::endpoint(&dir), Arc::clone(&window) as Arc<dyn Backend>).await.unwrap();
+
+    let h = home.path().to_path_buf();
+    let first = tokio::task::spawn_blocking(move || {
+        let calls = [
+            (1, "corelens_status", json!({})),
+            (2, "list_devices", json!({})),
+            (3, "get_device", json!({ "target": "SW1" })),
+            (4, "run_show_command", json!({ "target": "SW1", "command": "show running-config" })),
+            (5, "run_diagnostic", json!({ "scope": "devices", "targets": ["SW1"], "depth": "quick", "symptom": "a port on SW1 is unlabelled" })),
+        ];
+        let mut replies = session(&h, &legacy(&calls));
+        // The diagnosis is kept; the next call reads it back, and then the fix.
+        let later = [
+            (6, "get_diagnosis", json!({})),
+            (7, "propose_config_change", json!({ "target": "SW1", "commands": ["interface Gi1/0/24", " description E2E-FIXTURE"], "reason": "label the spare port", "verify_commands": ["show interfaces status"] })),
+        ];
+        replies.extend(session(&h, &legacy(&later)));
+        replies
+    })
+    .await
+    .unwrap();
+
+    for id in 1..=7 {
+        let r = reply(&first, id);
+        assert_eq!(r["result"]["isError"], false, "call {id}: {r}");
+    }
+    assert!(text(reply(&first, 2)).contains("SW1"), "{}", text(reply(&first, 2)));
+    let config = text(reply(&first, 4));
+    assert!(config.contains("hostname"), "the configuration itself comes back: {config}");
+    assert!(!config.contains(PASSWORD), "no secret of the device's leaves Corelens");
+    let report = text(reply(&first, 5));
+    assert!(!report.trim().is_empty() && !report.contains(PASSWORD), "{report}");
+    assert!(!text(reply(&first, 6)).trim().is_empty());
+    assert!(dev.running().iter().any(|l| l.contains("description E2E-FIXTURE")), "approved in the window, the change is on the switch: {:?}", dev.running());
+
+    // The change the window was shown, now done; the engineer rolls it back.
+    let change = window.shown.lock().unwrap().iter().rev().find(|c| c.status != ChangeStatus::Pending).cloned().expect("the change was shown");
+    let stored = super::changes::store::get(&window.state.db.lock().unwrap(), &change.id).unwrap().unwrap();
+    assert_eq!(stored.status, ChangeStatus::Done, "{stored:?}");
+    let emit = |_: &Activity| {};
+    let emit_change = |_: &Change| {};
+    let operator = Host { state: &window.state, templates: None, ssh_port: dev.port, emit: &emit, changes: Some(&window.hub), emit_change: &emit_change, source: Source::Operator, app: None };
+    let rolled = super::changes::rollback_with(&operator, &change.id, stored.targets[0].seq, false).await.unwrap();
+    assert!(!dev.running().iter().any(|l| l.contains("description E2E-FIXTURE")), "rolled back, the switch is as it was: {:?}", dev.running());
+
+    let h = home.path().to_path_buf();
+    let id = change.id.clone();
+    let second = tokio::task::spawn_blocking(move || session(&h, &legacy(&[(8, "get_change_status", json!({ "change_id": id }))]))).await.unwrap();
+    let status = text(reply(&second, 8)).to_ascii_lowercase();
+    assert!(status.contains("sw1 (cisco ios / ios-xe): rolled back."), "the assistant reads, in words, that it was rolled back: {status} ({:?})", rolled.status);
+
+    listening.stop().await;
+}

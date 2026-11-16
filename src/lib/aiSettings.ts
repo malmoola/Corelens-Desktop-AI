@@ -7,7 +7,9 @@
 import { t } from '../i18n';
 import type { AiProviderId, AiSettingsDto } from './ipc';
 
-const PROVIDERS: readonly AiProviderId[] = ['anthropic', 'openai', 'ollama'];
+const PROVIDERS: readonly AiProviderId[] = ['anthropic', 'openai', 'ollama', 'snowflake'];
+/** Every backend since the chat began sends these; Snowflake came later. */
+const ALWAYS: readonly AiProviderId[] = ['anthropic', 'openai', 'ollama'];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -17,7 +19,7 @@ export function readAiSettings(v: unknown): AiSettingsDto | null {
     !isRecord(v) ||
     !PROVIDERS.includes(v.provider as AiProviderId) ||
     !isRecord(v.models) ||
-    !PROVIDERS.every((p) => typeof (v.models as Record<string, unknown>)[p] === 'string') ||
+    !ALWAYS.every((p) => typeof (v.models as Record<string, unknown>)[p] === 'string') ||
     !isRecord(v.keys)
   ) {
     throw new Error(t('aiSettings.unreadable'));

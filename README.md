@@ -38,8 +38,8 @@ same without either.
   turned off; with the switch off there is no pipe at all.
 - **The chat inside Corelens** — the *Ask AI* button. It runs on the
   provider you choose: **Anthropic**, **OpenAI** (or an OpenAI-compatible
-  server at a base URL you give), or **Ollama** on this machine or your
-  network. Until it is switched on and a provider is set up, Corelens makes
+  server at a base URL you give), **Snowflake Cortex** in your Snowflake
+  account, or **Ollama** on this machine or your network. Until it is switched on and a provider is set up, Corelens makes
   no request to any provider at all — no model list, no test, no question.
 
 Both use the same tools, the same checks and the same redaction; there is
@@ -95,8 +95,8 @@ exactly as the terminal would. The model sees only what Corelens hands back.
 Anthropic: what it returns to the Claude app reaches Anthropic through that
 app, under its terms. With the in-app chat on, what you ask and what the
 tools return is sent from this computer to the provider you chose —
-Anthropic or OpenAI under their terms, or your Ollama, which keeps it where
-it runs. Either way, before anything leaves, passwords, enable secrets, SNMP
+Anthropic or OpenAI under their terms, Snowflake within your account under
+its terms, or your Ollama, which keeps it where it runs. Either way, before anything leaves, passwords, enable secrets, SNMP
 communities, pre-shared keys, private keys and password hashes are removed,
 and so is every secret saved in the vault wherever it appears; a result that
 still looks as if it holds one is withheld instead. A secret that is neither

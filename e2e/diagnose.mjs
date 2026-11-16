@@ -209,7 +209,7 @@ check("a device's menu diagnoses it", JSON.stringify((await sent("diagnose_start
 check("and the panel opens on its progress", (await panel.locator('[data-region="diagnose-progress"]').count()) === 1);
 await panel.locator('[data-region="diagnose-close"]').click();
 await page.waitForTimeout(200);
-await page.locator(`.cv-edge-hit[data-id="e1"] path`).first().click({ button: "right", force: true });
+await page.locator(`.cv-edge-hit path[data-id="e1"]`).first().click({ button: "right", force: true });
 await page.waitForTimeout(200);
 const linkItem = page.locator(".cv-menu button", { hasText: "Diagnose this link" });
 if (await linkItem.count()) {

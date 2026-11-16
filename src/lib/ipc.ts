@@ -414,7 +414,7 @@ export interface Change {
 
 /** The in-app chat (`src-tauri/src/ai`). The page never sees a key or a
  *  request; only text, settings and whether a key is kept. */
-export type AiProviderId = 'anthropic' | 'openai' | 'ollama';
+export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'snowflake';
 export interface AiSettingsDto {
   chatEnabled: boolean;
   provider: AiProviderId;
@@ -422,6 +422,8 @@ export interface AiSettingsDto {
   openaiBaseUrl: string;
   openaiStyle: 'responses' | 'chat';
   ollamaBaseUrl: string;
+  /** The Snowflake account identifier as typed; empty until one is. */
+  snowflakeAccount?: string;
   maxToolCalls: number;
   toolOutputChars: number;
   chatRetentionDays: number;

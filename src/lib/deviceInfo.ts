@@ -10,6 +10,7 @@
  * Pure, so what lands where is tested without a device.
  */
 import { sameAddresses, withInterfaceAddresses } from './deviceAddresses';
+import { sshAddress } from './sshLaunch';
 import { stackFields } from './topology';
 import type { DeviceInfo } from './ipc';
 import type { DeviceNodeData } from '../types/domain';
@@ -55,4 +56,23 @@ export function deviceInfoPatch(
   if (said.model) evidence.platform = { ...source, detail: said.model };
   if (said.serial) evidence.serial = { ...source, detail: said.serial };
   return { patch: { ...said, evidence, discoveredVia: had.discoveredVia ?? 'SSH' }, changed };
+}
+
+/** Every drawing of the device that was asked, on every page: the node it was
+ *  asked from, wherever that now is, and any other device drawn with the same
+ *  management address. The page in front does not matter — the answer is the
+ *  device's, and a page switched while it ran must not lose it. */
+export function drawingsOf<N extends { id: string; type?: string; data: unknown }>(
+  pages: readonly { id: string; nodes: readonly N[] }[],
+  nodeId: string,
+  address: string,
+): { pageId: string; node: N }[] {
+  const out: { pageId: string; node: N }[] = [];
+  for (const page of pages) {
+    for (const node of page.nodes) {
+      if (node.type !== 'device') continue;
+      if (node.id === nodeId || (address && sshAddress(node.data as DeviceNodeData) === address)) out.push({ pageId: page.id, node });
+    }
+  }
+  return out;
 }

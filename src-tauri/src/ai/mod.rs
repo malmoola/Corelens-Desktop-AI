@@ -16,6 +16,7 @@ pub mod keys;
 pub mod ollama;
 pub mod openai;
 pub mod provider;
+pub mod snowflake;
 pub mod transcript;
 #[cfg(test)]
 mod tests;
@@ -36,7 +37,10 @@ type CmdResult<T> = Result<T, String>;
 
 pub const EVENT: &str = "corelens://ai-chat";
 
-pub const PROVIDERS: &[&str] = &["anthropic", "openai", "ollama"];
+pub const PROVIDERS: &[&str] = &["anthropic", "openai", "ollama", "snowflake"];
+
+/// The providers that take a key (Snowflake's is a programmatic access token).
+pub const KEYED: &[&str] = &["anthropic", "openai", "snowflake"];
 
 /// The settings the page may change, and only these.
 const KEYS: &[&str] = &[
@@ -45,6 +49,8 @@ const KEYS: &[&str] = &[
     "aiModel.anthropic",
     "aiModel.openai",
     "aiModel.ollama",
+    "aiModel.snowflake",
+    "aiSnowflakeAccount",
     "aiOpenAiBaseUrl",
     "aiOpenAiStyle",
     "aiOllamaBaseUrl",
@@ -87,6 +93,8 @@ pub struct AiSettings {
     pub openai_base_url: String,
     pub openai_style: String,
     pub ollama_base_url: String,
+    /// The Snowflake account identifier as typed; empty until one is.
+    pub snowflake_account: String,
     pub max_tool_calls: usize,
     pub tool_output_chars: usize,
     pub chat_retention_days: i64,
@@ -113,6 +121,7 @@ fn settings_from(s: &HashMap<String, String>, keys_present: HashMap<String, bool
                 let default = match *p {
                     "anthropic" => "claude-opus-5-5",
                     "openai" => "gpt-6-astra",
+                    "snowflake" => snowflake::DEFAULT_MODEL,
                     _ => "qwen3",
                 };
                 (p.to_string(), s.get(&format!("aiModel.{p}")).cloned().filter(|m| !m.trim().is_empty()).unwrap_or_else(|| default.into()))
@@ -121,6 +130,7 @@ fn settings_from(s: &HashMap<String, String>, keys_present: HashMap<String, bool
         openai_base_url: s.get("aiOpenAiBaseUrl").cloned().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| openai::API.into()),
         openai_style: s.get("aiOpenAiStyle").cloned().filter(|v| v == "chat").unwrap_or_else(|| "responses".into()),
         ollama_base_url: s.get("aiOllamaBaseUrl").cloned().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| ollama::DEFAULT_BASE.into()),
+        snowflake_account: s.get("aiSnowflakeAccount").cloned().unwrap_or_default(),
         max_tool_calls: num("aiMaxToolCalls", chat::DEFAULT_MAX_TOOL_CALLS, 1, 50),
         tool_output_chars: num("aiToolOutputChars", chat::DEFAULT_TOOL_OUTPUT_CHARS, 2_000, 24_000),
         chat_retention_days: days(transcript::RETENTION_SETTING, transcript::DEFAULT_RETENTION_DAYS),
@@ -131,7 +141,7 @@ fn settings_from(s: &HashMap<String, String>, keys_present: HashMap<String, bool
 }
 
 fn current(state: &AppState) -> AiSettings {
-    let present = ["anthropic", "openai"].iter().map(|p| (p.to_string(), keys::present(p))).collect();
+    let present = KEYED.iter().map(|p| (p.to_string(), keys::present(p))).collect();
     settings_from(&settings_map(state), present)
 }
 
@@ -165,6 +175,14 @@ pub fn build(settings: &AiSettings, which: &str) -> Result<Box<dyn Provider>, St
             Ok(Box::new(openai::OpenAi { key, model, base: settings.openai_base_url.clone(), style }))
         }
         "ollama" => Ok(Box::new(ollama::Ollama { model, base: settings.ollama_base_url.clone() })),
+        "snowflake" => {
+            if settings.snowflake_account.trim().is_empty() {
+                return Err("No Snowflake account is set yet: type it in Settings → AI → AI providers → Snowflake Cortex.".into());
+            }
+            let host = snowflake::host_for(&settings.snowflake_account)?;
+            let token = keys::read("snowflake")?.ok_or("No Snowflake access token is kept yet: copy a programmatic access token and press Paste key in Settings → AI → AI providers.")?;
+            Ok(Box::new(snowflake::Snowflake::new(token, model, &host)))
+        }
         _ => Err(format!("{which} is not a provider Corelens knows.")),
     }
 }
@@ -184,6 +202,11 @@ pub fn ai_setting_set(state: State<'_, AppState>, key: String, value: Option<Str
         (_, None) => None,
         ("aiOpenAiBaseUrl" | "aiOllamaBaseUrl", Some(v)) if v.trim().is_empty() => None,
         ("aiOpenAiBaseUrl" | "aiOllamaBaseUrl", Some(v)) => Some(check_url(&v)?),
+        ("aiSnowflakeAccount", Some(v)) if v.trim().is_empty() => None,
+        ("aiSnowflakeAccount", Some(v)) => {
+            snowflake::host_for(&v)?;
+            Some(v.trim().to_string())
+        }
         ("aiProvider", Some(v)) if PROVIDERS.contains(&v.as_str()) => Some(v),
         ("aiProvider", Some(v)) => return Err(format!("{v} is not a provider Corelens knows.")),
         ("aiChatEnabled", Some(v)) => (v == "1").then(|| "1".to_string()),
@@ -232,6 +255,15 @@ async fn list_models(settings: &AiSettings, which: &str) -> Result<Vec<ModelInfo
             let v = provider::get(p.as_ref(), &format!("{}/models", settings.openai_base_url.trim_end_matches('/')), &o.headers()).await.map_err(|e| e.to_string())?;
             Ok(openai::models_from(&v).into_iter().map(|(id, label)| ModelInfo { id, label, tools: None }).collect())
         }
+        "snowflake" => {
+            let host = snowflake::host_for(&settings.snowflake_account)?;
+            let sf = snowflake::Snowflake::new(keys::read("snowflake")?.unwrap_or_default(), String::new(), &host);
+            let v = provider::get(p.as_ref(), &snowflake::models_url(&host), &sf.headers()).await.map_err(|e| e.to_string())?;
+            let listed = snowflake::models_from(&v);
+            // Nothing read from the list: the models Snowflake documents.
+            let ids = if listed.is_empty() { snowflake::TOOL_MODELS.iter().map(|s| s.to_string()).collect() } else { listed };
+            Ok(ids.into_iter().map(|id| ModelInfo { tools: Some(snowflake::calls_tools(&id)), label: String::new(), id }).collect())
+        }
         _ => {
             let o = ollama::Ollama { model: String::new(), base: settings.ollama_base_url.clone() };
             let v = provider::get(p.as_ref(), &o.tags_url(), &[]).await.map_err(|e| e.to_string())?;
@@ -261,7 +293,9 @@ pub async fn ai_test_connection(state: State<'_, AppState>, provider: String) ->
     let found = models.iter().find(|m| m.id == model);
     Ok(match (provider.as_str(), found) {
         ("ollama", Some(m)) if m.tools == Some(false) => ProviderError::NoTools(format!("Connected, but the Ollama model {model} cannot call tools, which the chat needs. Pull a model that can — {} — and choose it.", ollama::TOOL_MODELS)).to_string(),
+        ("snowflake", Some(m)) if m.tools == Some(false) => ProviderError::NoTools(format!("Connected, but Snowflake does not offer tool calls on {model}, which the chat needs. Choose a Claude or OpenAI model.")).to_string(),
         (_, Some(_)) => format!("Connected: {} models available, {model} among them.", models.len()),
+        ("snowflake", None) => format!("Connected: {} models listed; {model} is not among them. Cross-region inference may still serve it, and the first question will say if not.", models.len()),
         ("openai", None) if settings.openai_base_url != openai::API => format!("Connected: {} models listed; {model} is not among them, which an OpenAI-compatible server may still accept.", models.len()),
         (_, None) => format!("Connected, but {model} is not among the {} models this account can use. Choose one of them.", models.len()),
     })

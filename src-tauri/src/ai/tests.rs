@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::chat::{self, ChatConfig, ChatEvent};
 use super::provider::*;
-use super::{anthropic, ollama, openai};
+use super::{anthropic, ollama, openai, snowflake};
 use crate::mcp::changes::{store, ChangeHub, ChangeStatus};
 use crate::mcp::fake_device::{FakeDevice, COMMUNITY, ENABLE_SECRET, PASSWORD};
 use crate::mcp::{redact, Activity, Host, Source};
@@ -170,6 +170,7 @@ fn no_provider_request_builder_sends_a_secret_from_a_config_or_a_question() {
         Box::new(openai::OpenAi { key: key(), model: "gpt-6-astra".into(), base: openai::API.into(), style: openai::Style::Responses }),
         Box::new(openai::OpenAi { key: key(), model: "a-compatible-model".into(), base: "http://127.0.0.1:8000/v1".into(), style: openai::Style::Chat }),
         Box::new(ollama::Ollama { model: "qwen3".into(), base: ollama::DEFAULT_BASE.into() }),
+        Box::new(snowflake::Snowflake::new(zeroize::Zeroizing::new("sk-proj-FIXTUREfixtureFIXTUREfixture0000".into()), "claude-sonnet-5-5".into(), "https://myorg-myaccount.snowflakecomputing.com")),
     ];
     for p in &providers {
         let body = outbound_request(p.as_ref(), &turn, &secrets).body.to_string();
@@ -231,6 +232,16 @@ async fn a_turn_on_an_openai_compatible_server_reads_a_config_and_sends_back_not
     let fake = fake_provider("text/event-stream", chat_completions_replies("run_show_command", json!({ "target": "SW1", "command": "show running-config" }))).await;
     let p = openai::OpenAi { key: zeroize::Zeroizing::new("sk-local-FIXTUREfixtureFIXTUREfixture".into()), model: "local".into(), base: format!("{}/v1", fake.base), style: openai::Style::Chat };
     whole_turn(&p, &fake, &desk).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_on_snowflake_cortex_reads_a_config_and_sends_back_nothing_secret() {
+    let desk = desk().await;
+    let fake = fake_provider("text/event-stream", chat_completions_replies("run_show_command", json!({ "target": "SW1", "command": "show running-config" }))).await;
+    let p = snowflake::Snowflake::new(zeroize::Zeroizing::new("FIXTURE-pat-not-a-real-token-0000".into()), "claude-sonnet-5-5".into(), &fake.base);
+    whole_turn(&p, &fake, &desk).await;
+    let first = fake.bodies.lock().unwrap()[0].clone();
+    assert!(first.contains("max_completion_tokens") && !first.contains("FIXTURE-pat"), "{first}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

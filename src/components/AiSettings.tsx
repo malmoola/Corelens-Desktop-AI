@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type McpActivity, type McpStatus } from '../lib/ipc';
 import { saveExport, slug } from '../lib/exports';
 import { canRollBack } from '../lib/changes';
+import { modelChoices } from '../lib/aiModels';
 import { useStore } from '../state/store';
 
 /**
@@ -12,11 +13,16 @@ import { useStore } from '../state/store';
  * what was asked and changed is kept. Then the change record.
  */
 export function AiSettings() {
+  // One copy of the settings and of the models each provider listed, so the
+  // chat's model and the provider's model are the same choice wherever it
+  // is made.
+  const shared = useAiSettings();
+  const [listed, setListed] = useState<Partial<Record<AiProviderId, AiModel[]>>>({});
   return (
     <section id="settings-ai" data-settings-section="ai" className="cv-settings-block" data-region="ai">
       <h2>{t('settings.ai')}</h2>
-      <ChatSection />
-      <ProvidersSection />
+      <ChatSection ai={shared} listed={listed} />
+      <ProvidersSection ai={shared} listed={listed} setListed={setListed} />
       <McpSection />
       <RetentionSection />
       <ChangeHistory />
@@ -24,7 +30,64 @@ export function AiSettings() {
   );
 }
 
-const PROVIDER_NAMES: Record<AiProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', ollama: 'Ollama' };
+const PROVIDER_NAMES: Record<AiProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', ollama: 'Ollama', snowflake: 'Snowflake Cortex' };
+
+/** Models offered before a list is fetched — fetching is a call to the
+ *  provider, made only when Refresh models is pressed. */
+const SUGGESTED: Record<AiProviderId, string[]> = {
+  anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'],
+  openai: [],
+  ollama: ['qwen3', 'llama3.1', 'mistral-small3.1', 'gpt-oss'],
+  snowflake: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-sonnet-4-5', 'openai-gpt-5.4', 'openai-gpt-5'],
+};
+
+type Ai = ReturnType<typeof useAiSettings>;
+
+const OTHER = '\u0000other';
+
+function ModelPicker({ provider, chosen, listed, onChoose, field }: { provider: AiProviderId; chosen: string; listed: readonly AiModel[]; onChoose: (id: string) => void; field: string }) {
+  const [typing, setTyping] = useState(false);
+  const choices = modelChoices(chosen, listed, SUGGESTED[provider]);
+  if (typing) {
+    return (
+      <input
+        className="cv-input"
+        data-field={field}
+        autoFocus
+        defaultValue={chosen}
+        placeholder={t('aiSettings.modelTyped')}
+        onBlur={(e) => {
+          setTyping(false);
+          if (e.target.value.trim() && e.target.value.trim() !== chosen) onChoose(e.target.value.trim());
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setTyping(false);
+        }}
+      />
+    );
+  }
+  return (
+    <select
+      className="cv-input"
+      data-field={field}
+      value={chosen}
+      onChange={(e) => {
+        if (e.target.value === OTHER) setTyping(true);
+        else onChoose(e.target.value);
+      }}
+    >
+      {choices.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.id}
+          {m.label ? ` (${m.label})` : ''}
+          {m.tools === false ? ` — ${t('aiSettings.noTools')}` : ''}
+        </option>
+      ))}
+      <option value={OTHER}>{t('aiSettings.modelOther')}</option>
+    </select>
+  );
+}
 
 function useAiSettings() {
   const [settings, setSettings] = useState<AiSettingsDto | null>(null);
@@ -44,8 +107,8 @@ function useAiSettings() {
 }
 
 /** 1. The chat inside Corelens: on or off, which provider, which model. */
-function ChatSection() {
-  const { settings, set, problem, setProblem } = useAiSettings();
+function ChatSection({ ai, listed }: { ai: Ai; listed: Partial<Record<AiProviderId, AiModel[]>> }) {
+  const { settings, set, problem, setProblem } = ai;
   const [result, setResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   if (!settings) return <div data-region="ai-chat-settings">{!isDesktop && <p className="cv-help">{t('ai.desktopOnly')}</p>}</div>;
@@ -81,7 +144,7 @@ function ChatSection() {
         </label>
         <label className="cv-field">
           <span>{t('aiSettings.model')}</span>
-          <input className="cv-input" data-field="ai-chat-model" value={settings.models[p]} readOnly />
+          <ModelPicker provider={p} chosen={settings.models[p] ?? ''} listed={listed[p] ?? []} field="ai-chat-model" onChoose={(id) => void set(`aiModel.${p}`, id)} />
         </label>
         <button type="button" className="cv-btn" data-action="ai-test-connection" disabled={!settings.chatEnabled || testing} onClick={() => void test()}>
           {testing ? t('aiSettings.testing') : t('aiSettings.test')}
@@ -97,9 +160,8 @@ function ChatSection() {
 
 /** 2. Each provider: its key (kept in the system keychain), its address,
  *  its models. */
-function ProvidersSection() {
-  const { settings, setSettings, set, problem, setProblem } = useAiSettings();
-  const [models, setModels] = useState<Partial<Record<AiProviderId, AiModel[]>>>({});
+function ProvidersSection({ ai, listed: models, setListed: setModels }: { ai: Ai; listed: Partial<Record<AiProviderId, AiModel[]>>; setListed: (m: Partial<Record<AiProviderId, AiModel[]>>) => void }) {
+  const { settings, setSettings, set, problem, setProblem } = ai;
   const [lastRequest, setLastRequest] = useState<{ provider: AiProviderId; body: string } | null>(null);
   if (!settings) return null;
   const run = async (f: () => Promise<void>) => {
@@ -113,7 +175,7 @@ function ProvidersSection() {
   const refresh = (p: AiProviderId) => run(async () => setModels({ ...models, [p]: await ipc.aiModels(p) }));
   const card = (p: AiProviderId) => {
     const list = models[p] ?? [];
-    const chosen = settings.models[p];
+    const chosen = settings.models[p] ?? '';
     const known = list.find((m) => m.id === chosen);
     return (
       <div className="cv-ai-provider" key={p} data-provider={p}>
@@ -131,7 +193,14 @@ function ProvidersSection() {
             )}
           </div>
         )}
-        {p !== 'ollama' && <p className="cv-help">{t('aiSettings.keyHint')}</p>}
+        {p !== 'ollama' && <p className="cv-help">{t(p === 'snowflake' ? 'aiSettings.snowflakeKeyHint' : 'aiSettings.keyHint')}</p>}
+        {p === 'snowflake' && (
+          <label className="cv-field">
+            <span>{t('aiSettings.snowflakeAccount')}</span>
+            <input className="cv-input" data-field="ai-snowflake-account" placeholder="orgname-accountname" defaultValue={settings.snowflakeAccount ?? ''} onBlur={(e) => void set('aiSnowflakeAccount', e.target.value)} />
+          </label>
+        )}
+        {p === 'snowflake' && <p className="cv-help">{t('aiSettings.snowflakeHint')}</p>}
         {p === 'openai' && (
           <div className="cv-row">
             <label className="cv-field">
@@ -156,12 +225,7 @@ function ProvidersSection() {
         <div className="cv-row">
           <label className="cv-field">
             <span>{t('aiSettings.model')}</span>
-            <input className="cv-input" data-field={`ai-model-${p}`} list={`ai-models-${p}`} defaultValue={chosen} key={chosen} onBlur={(e) => void set(`aiModel.${p}`, e.target.value)} />
-            <datalist id={`ai-models-${p}`}>
-              {list.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}{m.tools === false ? ` — ${t('aiSettings.noTools')}` : ''}</option>
-              ))}
-            </datalist>
+            <ModelPicker provider={p} chosen={chosen} listed={list} field={`ai-model-${p}`} onChoose={(id) => void set(`aiModel.${p}`, id)} />
           </label>
           <button type="button" className="cv-btn cv-btn-small" data-action={`ai-models-${p}`} disabled={!settings.chatEnabled} onClick={() => void refresh(p)}>
             {t('aiSettings.refreshModels')}
