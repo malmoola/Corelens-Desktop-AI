@@ -1,6 +1,6 @@
 [package]
 name = "corelens-desktop-ai"
-version = "2.17.3"
+version = "2.17.4"
 description = "Corelens Desktop AI — local-first network diagram designer with live connectivity validation"
 authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
 edition = "2021"

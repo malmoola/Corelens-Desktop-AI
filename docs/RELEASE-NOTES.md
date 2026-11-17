@@ -2,6 +2,48 @@
 
 Newest first.
 
+## 2.17.4 — 2026-11-17
+
+**Fixed**
+- **Snowflake Cortex refused every call with 415 "Invalid input value.
+  null".** No Snowflake request said what it accepts, so the generic
+  `*/*` went out, and Snowflake's `/api/v2` rejects that. The model list
+  now asks for `application/json`, and a question asks for
+  `application/json, text/event-stream`, as Snowflake documents.
+- **Tool calls on Cortex broke after the first one.** Tool names came out
+  doubled (`run_show_commandrun_show_command`), and the model kept retrying
+  a tool that didn't exist. Each streamed tool call is now kept apart by
+  its id: the name is taken once, and only the arguments are joined. Two
+  calls in one answer, or the same tool twice, no longer run together.
+  Streams from Claude and OpenAI models are both read.
+- **The chat stops a model that keeps asking for something it can't use.**
+  "There is no tool called …" now lists the tools there are. After three
+  rounds in a row of calls to a tool that doesn't exist, or of unreadable
+  arguments, the chat stops and says why.
+- **The AI couldn't find a device by its discovered hostname.**
+  `get_device`, `run_show_command` and the other tools now find a device
+  by any of:
+  - the hostname a crawl or a collection run found at its address
+    (`access-switch`, not only the label `access`);
+  - the hostname its prompt showed;
+  - its hostname with or without the domain.
+- **Lines and bright dots stuck on the canvas after moving devices.** Two
+  causes:
+  - An alignment guide could be drawn again after a drag ended, and then
+    nothing cleared it. Guides now show only while a device is held, and go
+    when it is let go, when the gesture is cancelled, or when the window
+    loses focus. A guide too short to align to is no longer drawn as a dot.
+  - Dragging a link's end, a bend, a label or the lasso ended only on a
+    button release. When Windows, a touchpad, a pen or a touch screen
+    cancelled the gesture instead, the end, its port dots and its snap ring
+    kept following the pointer until restart. These drags now end on a
+    cancel as well, and put back what they showed.
+
+**Settings → AI → Show last request** now shows the last call of any kind,
+including **Refresh models** and **Test connection**. It lists the address,
+the headers with the key as `<redacted>`, the body, the status and what came
+back.
+
 ## 2.17.3 — 2026-11-17
 
 **OpenWrt for the AI's read-only commands**
