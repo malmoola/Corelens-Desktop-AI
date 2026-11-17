@@ -2,6 +2,29 @@
 
 Newest first.
 
+## 2.17.3 — 2026-11-17
+
+**OpenWrt for the AI's read-only commands**
+- `run_show_command` reads OpenWrt routers, GL.iNet's among them. Before,
+  they were refused as an unsupported platform. A router is recognised after
+  login because its BusyBox shell refuses `show version` and
+  `/etc/openwrt_release` names OpenWrt. Nothing else is typed into its shell
+  to find out.
+- Only a fixed list of reads is allowed: `uci show`, `uci get`,
+  `ubus call system board`, `ip -4 addr`, `ip -4 route`, `wg show`,
+  `iptables -S`, `iptables -t nat -S`, `nft list ruleset`, `netstat -lntup`,
+  `opkg list-installed`, `logread`, `cat /etc/config/<name>`, `df -h`, `free`
+  and `ps`. They can be piped only into `grep`, `head` or `tail`. Anything
+  that would change the router, such as `uci set`, `uci commit`,
+  `opkg install`, `reboot` or `sysupgrade`, is refused before it is sent.
+  So is any `;`, `&&`, redirect or substitution.
+- WireGuard private and preshared keys, Wi-Fi keys, PSKs, passwords and
+  secrets are removed from uci and `/etc/config` output, as they are for the
+  other platforms.
+- Configuration changes are not offered for OpenWrt.
+- The commands and the redaction are built from OpenWrt 21.02's
+  documentation and haven't yet been run against a real router.
+
 ## 2.17.2 — 2026-11-16
 
 **Snowflake Cortex for the AI chat**
