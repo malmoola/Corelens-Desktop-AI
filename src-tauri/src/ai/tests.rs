@@ -341,3 +341,20 @@ async fn every_turn_is_ended_when_the_project_changes() {
     assert!(tokio::time::timeout(std::time::Duration::from_secs(5), rx).await.expect("the turn ends").is_err());
     assert!(ai.stop_all().is_empty(), "and nothing is left to stop");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_model_that_keeps_calling_a_tool_that_does_not_exist_is_stopped() {
+    let desk = desk().await;
+    // Every answer asks for the same name that is no tool.
+    let fake = fake_provider("text/event-stream", vec![chat_completions_replies("run_show_commandrun_show_command", json!({ "target": "SW1", "command": "show clock" })).remove(0)]).await;
+    let p = openai::OpenAi { key: zeroize::Zeroizing::new("sk-local-FIXTUREfixtureFIXTUREfixture".into()), model: "local".into(), base: format!("{}/v1", fake.base), style: openai::Style::Chat };
+    let ended = tokio::time::timeout(std::time::Duration::from_secs(20), desk.turn(&p, "What is the time on SW1?", 1000)).await;
+    assert!(matches!(ended, Ok(Ok(()))), "the turn did not end on its own: {ended:?}");
+    let asked = fake.bodies.lock().unwrap().len();
+    assert_eq!(asked, 3, "three rounds of nothing but failed calls, then stopped");
+    let events = desk.events.lock().unwrap().clone();
+    let told: Vec<&str> = events.iter().filter_map(|e| if let ChatEvent::ToolResult { text, .. } = e { Some(text.as_str()) } else { None }).collect();
+    assert!(told.iter().all(|t| t.starts_with("There is no tool called run_show_commandrun_show_command.") && t.contains("run_show_command,")), "{told:?}");
+    assert!(events.iter().any(|e| matches!(e, ChatEvent::Notice { message } if message.contains("Stopped"))), "{events:?}");
+    assert!(desk.dev.asked().iter().all(|c| c != "show clock"), "nothing was run");
+}

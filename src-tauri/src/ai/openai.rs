@@ -238,14 +238,72 @@ impl StreamParser for ResponsesParser {
     }
 }
 
+/// One tool call as its fragments arrive.
+#[derive(Default)]
+struct PendingCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
 #[derive(Default)]
 struct ChatParser {
     sse: Sse,
     text: String,
-    /// Tool calls by index: id, name, arguments so far.
-    calls: Vec<(String, String, String)>,
+    /// Tool calls in the order they began.
+    calls: Vec<PendingCall>,
+    /// Which call an id, or a stream's call number, belongs to. An id wins:
+    /// Cortex numbers every one of Claude's calls 0 and tells them apart
+    /// only by id.
+    by_id: std::collections::HashMap<String, usize>,
+    by_index: std::collections::HashMap<u64, usize>,
     finish: Option<String>,
     usage: Usage,
+}
+
+impl ChatParser {
+    /// The call a fragment belongs to, begun if it is new.
+    fn call_for(&mut self, id: Option<&str>, index: Option<u64>) -> usize {
+        let id = id.map(str::trim).filter(|i| !i.is_empty());
+        let found = match (id, index) {
+            (Some(id), _) => self.by_id.get(id).copied(),
+            (None, Some(i)) => self.by_index.get(&i).copied(),
+            (None, None) => self.calls.len().checked_sub(1),
+        };
+        let slot = found.unwrap_or_else(|| {
+            self.calls.push(PendingCall { id: id.unwrap_or("").to_string(), ..Default::default() });
+            self.calls.len() - 1
+        });
+        if let Some(id) = id {
+            self.by_id.insert(id.to_string(), slot);
+        }
+        if let Some(i) = index {
+            self.by_index.insert(i, slot);
+        }
+        slot
+    }
+
+    /// A fragment of one call: the name is taken once, when the call first
+    /// names itself, and never added to; only the arguments are joined.
+    fn fragment(&mut self, slot: usize, name: Option<&str>, arguments: Option<&str>, out: &mut Vec<Delta>) {
+        let call = &mut self.calls[slot];
+        if let Some(n) = name.map(str::trim).filter(|n| !n.is_empty()) {
+            if call.name.is_empty() {
+                call.name = n.to_string();
+                out.push(Delta::CallStarted(n.to_string()));
+            }
+        }
+        if let Some(a) = arguments.filter(|a| !a.is_empty()) {
+            // A stream that resends the whole input rather than the next
+            // piece of it: the input is replaced, not doubled.
+            let whole = |t: &str| serde_json::from_str::<Value>(t).is_ok_and(|v| v.is_object());
+            if whole(&call.arguments) && whole(a) {
+                call.arguments = a.to_string();
+            } else {
+                call.arguments.push_str(a);
+            }
+        }
+    }
 }
 
 impl StreamParser for ChatParser {
@@ -256,36 +314,63 @@ impl StreamParser for ChatParser {
                 continue;
             }
             let Ok(ev) = serde_json::from_str::<Value>(&data) else { continue };
-            if let Some(err) = ev.get("error") {
-                return Err(ProviderError::Other(redact::shapes_only(err["message"].as_str().unwrap_or("the stream ended with an error"))));
+            if let Some(err) = ev.get("error").filter(|e| !e.is_null()) {
+                return Err(ProviderError::Other(redact::shapes_only(err["message"].as_str().or_else(|| err.as_str()).unwrap_or("the stream ended with an error"))));
             }
             if let Some(u) = ev.get("usage").filter(|u| u.is_object()) {
-                self.usage = Usage { input_tokens: u["prompt_tokens"].as_u64().unwrap_or(0), output_tokens: u["completion_tokens"].as_u64().unwrap_or(0) };
+                self.usage = Usage { input_tokens: u["prompt_tokens"].as_u64().or_else(|| u["input_tokens"].as_u64()).unwrap_or(self.usage.input_tokens), output_tokens: u["completion_tokens"].as_u64().or_else(|| u["output_tokens"].as_u64()).unwrap_or(self.usage.output_tokens) };
+            }
+            // Anthropic's events, which Cortex can pass through for Claude.
+            match ev["type"].as_str().unwrap_or("") {
+                "content_block_start" if ev["content_block"]["type"] == "tool_use" => {
+                    let b = &ev["content_block"];
+                    let slot = self.call_for(b["id"].as_str(), ev["index"].as_u64());
+                    let input = b["input"].as_object().filter(|o| !o.is_empty()).map(|o| Value::Object(o.clone()).to_string());
+                    self.fragment(slot, b["name"].as_str(), input.as_deref(), &mut out);
+                    continue;
+                }
+                "content_block_delta" => {
+                    let d = &ev["delta"];
+                    match d["type"].as_str().unwrap_or("") {
+                        "input_json_delta" => {
+                            let slot = self.call_for(None, ev["index"].as_u64());
+                            self.fragment(slot, None, d["partial_json"].as_str(), &mut out);
+                        }
+                        "text_delta" => {
+                            if let Some(t) = d["text"].as_str() {
+                                self.text.push_str(t);
+                                out.push(Delta::Text(t.to_string()));
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+                "message_delta" => {
+                    match ev["delta"]["stop_reason"].as_str() {
+                        Some("tool_use") => self.finish = Some("tool_calls".into()),
+                        Some("max_tokens") => self.finish = Some("length".into()),
+                        Some(other) => self.finish = Some(other.into()),
+                        None => {}
+                    }
+                    continue;
+                }
+                _ => {}
             }
             for choice in ev["choices"].as_array().into_iter().flatten() {
                 let d = &choice["delta"];
-                if let Some(t) = d["content"].as_str() {
+                if d["type"] == "tool_use" {
+                    // Cortex's own `inference:complete` delta: the id and
+                    // name on every fragment, the input in pieces.
+                    let slot = self.call_for(d["tool_use_id"].as_str(), None);
+                    self.fragment(slot, d["name"].as_str(), d["input"].as_str(), &mut out);
+                } else if let Some(t) = d["content"].as_str().or_else(|| if d["type"] == "text" { d["text"].as_str() } else { None }) {
                     self.text.push_str(t);
                     out.push(Delta::Text(t.to_string()));
                 }
                 for tc in d["tool_calls"].as_array().into_iter().flatten() {
-                    let i = tc["index"].as_u64().unwrap_or(0) as usize;
-                    while self.calls.len() <= i {
-                        self.calls.push(Default::default());
-                    }
-                    let slot = &mut self.calls[i];
-                    if let Some(id) = tc["id"].as_str() {
-                        slot.0 = id.to_string();
-                    }
-                    if let Some(name) = tc["function"]["name"].as_str() {
-                        if slot.1.is_empty() {
-                            out.push(Delta::CallStarted(name.to_string()));
-                        }
-                        slot.1.push_str(name);
-                    }
-                    if let Some(a) = tc["function"]["arguments"].as_str() {
-                        slot.2.push_str(a);
-                    }
+                    let slot = self.call_for(tc["id"].as_str(), tc["index"].as_u64());
+                    self.fragment(slot, tc["function"]["name"].as_str(), tc["function"]["arguments"].as_str(), &mut out);
                 }
                 if let Some(f) = choice["finish_reason"].as_str() {
                     self.finish = Some(f.to_string());
@@ -300,10 +385,11 @@ impl StreamParser for ChatParser {
             .calls
             .into_iter()
             .enumerate()
-            .map(|(i, (id, name, args))| ToolCall {
-                id: if id.is_empty() { format!("call_{i}") } else { id },
-                name,
-                arguments: if args.trim().is_empty() { json!({}) } else { serde_json::from_str(&args).unwrap_or_else(|_| json!({ "__invalid_json": true })) },
+            // The arguments are read once, whole.
+            .map(|(i, c)| ToolCall {
+                id: if c.id.is_empty() { format!("call_{i}") } else { c.id },
+                name: c.name,
+                arguments: if c.arguments.trim().is_empty() { json!({}) } else { serde_json::from_str(&c.arguments).unwrap_or_else(|_| json!({ "__invalid_json": true })) },
             })
             .collect();
         let stop = match self.finish.as_deref() {

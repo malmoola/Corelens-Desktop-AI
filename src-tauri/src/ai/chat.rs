@@ -94,6 +94,9 @@ fn describe(call: &ToolCall) -> (String, String) {
     (target, command)
 }
 
+/// How many rounds in a row of nothing but unusable calls end a turn.
+const WASTED_ROUNDS: usize = 3;
+
 /// Runs one turn to its end, a turn's worth of tool calls included.
 pub async fn run_turn(host: &Host<'_>, project_id: &str, cfg: &ChatConfig<'_>, user_text: &str, emit: &(dyn Fn(ChatEvent) + Send + Sync), last_body: &(dyn Fn(&Value) + Send + Sync)) -> Result<(), String> {
     let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
@@ -130,6 +133,9 @@ pub async fn run_turn(host: &Host<'_>, project_id: &str, cfg: &ChatConfig<'_>, u
     // Rounds in which the model asked for a tool past the limit: the first
     // is told so and may answer; a second ends the turn.
     let mut over_limit = 0;
+    // Rounds in a row in which every call named no tool or carried broken
+    // arguments: a model that keeps doing that is not going to stop on its own.
+    let mut wasted_rounds = 0;
     let mut turn_usage = Usage::default();
     loop {
         let turn = Turn { system: SYSTEM_PROMPT.into(), messages: messages.clone(), tools: tools.clone(), max_tokens: MAX_TOKENS };
@@ -154,6 +160,7 @@ pub async fn run_turn(host: &Host<'_>, project_id: &str, cfg: &ChatConfig<'_>, u
         }
         let mut results = Vec::new();
         let mut refused_for_limit = false;
+        let mut wasted = 0usize;
         for call in &result.calls {
             let (target, command) = describe(call);
             emit(ChatEvent::ToolCall { id: call.id.clone(), name: call.name.clone(), target, command });
@@ -161,8 +168,11 @@ pub async fn run_turn(host: &Host<'_>, project_id: &str, cfg: &ChatConfig<'_>, u
                 refused_for_limit = true;
                 (format!("Not run: this turn reached its limit of {} tool calls. Answer with what you have, or say what you would look at next.", cfg.max_tool_calls), true)
             } else if corelens_mcp::tools::find(&call.name).is_none() {
-                (format!("There is no tool called {}.", call.name), true)
+                wasted += 1;
+                let names: Vec<&str> = corelens_mcp::tools::TOOLS.iter().map(|t| t.name).collect();
+                (format!("There is no tool called {}. The tools are: {}.", call.name, names.join(", ")), true)
             } else if call.arguments.get("__invalid_json").is_some() || !call.arguments.is_object() {
+                wasted += 1;
                 (format!("{}: the arguments were not valid JSON (cut off?); call it again.", call.name), true)
             } else {
                 calls_made += 1;
@@ -175,6 +185,11 @@ pub async fn run_turn(host: &Host<'_>, project_id: &str, cfg: &ChatConfig<'_>, u
         let back = Message::Tools { results };
         store(&back, Usage::default());
         messages.push(back);
+        wasted_rounds = if wasted == result.calls.len() { wasted_rounds + 1 } else { 0 };
+        if wasted_rounds >= WASTED_ROUNDS {
+            emit(ChatEvent::Notice { message: format!("Stopped: {WASTED_ROUNDS} times in a row the model asked for a tool that does not exist or sent arguments that could not be read. Ask again, or choose another model.") });
+            break;
+        }
         if refused_for_limit {
             over_limit += 1;
             if over_limit >= 2 {

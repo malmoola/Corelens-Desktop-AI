@@ -14,6 +14,10 @@ pub struct Device {
     pub id: String,
     pub page: String,
     pub data: Value,
+    /// Hostnames a crawl or a collection run found at one of its
+    /// addresses, which the drawing may not carry (see
+    /// [`with_discovered_names`]).
+    pub aliases: Vec<String>,
 }
 
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -107,7 +111,7 @@ pub fn devices(document: &Value) -> Vec<Device> {
                 continue;
             }
             let Some(data) = node.get("data") else { continue };
-            out.push(Device { id: s(node, "id").to_string(), page: page_name.clone(), data: data.clone() });
+            out.push(Device { id: s(node, "id").to_string(), page: page_name.clone(), data: data.clone(), aliases: Vec::new() });
         }
     }
     out
@@ -128,6 +132,53 @@ pub fn links(document: &Value) -> Vec<Link> {
     out
 }
 
+/// The hostname a CLI prompt shows: `access-switch#`, `sw(config)#`,
+/// `admin@fw-01:~$`, `FGT-01 (root) #`. Empty when it shows none.
+pub fn hostname_from_prompt(prompt: &str) -> String {
+    let mut t = prompt.trim().trim_end_matches(['#', '>', '$', '%']).trim();
+    if let Some((_, host)) = t.split_once('@') {
+        t = host;
+    }
+    let t = t.split([':', '(']).next().unwrap_or("").trim();
+    t.to_string()
+}
+
+/// Gives each device the hostnames discovery found at its addresses:
+/// `(address, hostname)` pairs, from crawls and collection runs. A name
+/// found at an address no device has names nothing.
+pub fn with_discovered_names(devices: &mut [Device], names: &[(String, String)]) {
+    for (address, name) in names {
+        let (address, name) = (address.trim(), name.trim());
+        if address.is_empty() || name.is_empty() {
+            continue;
+        }
+        for d in devices.iter_mut() {
+            let here = d.addresses().iter().any(|(_, a)| a.eq_ignore_ascii_case(address)) || d.target().is_some_and(|t| t.eq_ignore_ascii_case(address));
+            if here && !d.aliases.iter().any(|a| a.eq_ignore_ascii_case(name)) {
+                d.aliases.push(name.to_string());
+            }
+        }
+    }
+}
+
+impl Device {
+    /// Every name the device goes by: its label, hostname, DNS name, the
+    /// hostname its prompt showed, and what discovery found at its address.
+    fn names(&self) -> Vec<&str> {
+        let mut n = vec![self.label(), self.field("hostname"), self.field("dnsName")];
+        if let Some(h) = self.data.pointer("/evidence/hostname/detail").and_then(Value::as_str) {
+            n.push(h);
+        }
+        n.extend(self.aliases.iter().map(String::as_str));
+        n.into_iter().map(str::trim).filter(|x| !x.is_empty()).collect()
+    }
+}
+
+/// A name without its domain: `access-switch.corp.example` → `access-switch`.
+fn short_name(name: &str) -> &str {
+    name.split('.').next().unwrap_or(name)
+}
+
 /// The device a person meant, or why there is not exactly one.
 pub fn resolve<'a>(devices: &'a [Device], name: &str) -> Result<&'a Device, String> {
     let wanted = name.trim();
@@ -135,16 +186,23 @@ pub fn resolve<'a>(devices: &'a [Device], name: &str) -> Result<&'a Device, Stri
         return Err("Name a device: its name, hostname, management address or id, as list_devices shows it.".into());
     }
     let lower = wanted.to_lowercase();
-    let exact: Vec<&Device> = devices
+    let mut exact: Vec<&Device> = devices
         .iter()
         .filter(|d| {
             d.id == wanted
-                || d.label().to_lowercase() == lower
-                || d.field("hostname").to_lowercase() == lower
-                || d.field("dnsName").to_lowercase() == lower
+                || d.names().iter().any(|n| n.to_lowercase() == lower)
                 || d.addresses().iter().any(|(_, a)| a.eq_ignore_ascii_case(wanted))
         })
         .collect();
+    // Then a hostname with its domain or without, when no name was exact.
+    // An address is never shortened.
+    if exact.is_empty() && wanted.parse::<std::net::IpAddr>().is_err() {
+        let short = short_name(&lower).to_string();
+        exact = devices
+            .iter()
+            .filter(|d| d.names().iter().any(|n| (n.contains('.') || wanted.contains('.')) && n.parse::<std::net::IpAddr>().is_err() && short_name(&n.to_lowercase()) == short))
+            .collect();
+    }
     match exact.as_slice() {
         [one] => Ok(one),
         [] => Err(format!(
@@ -220,6 +278,32 @@ mod tests {
         let err = resolve(&d, "203.0.113.9").unwrap_err();
         assert!(err.contains("not a device of the project open in Corelens"), "{err}");
         assert!(resolve(&d, "").is_err());
+    }
+
+    #[test]
+    fn a_device_is_found_by_the_hostname_discovery_found_at_its_address() {
+        let mut d = devices(&fixture::document());
+        // A crawl or collection run met "access-switch" at SW1's address,
+        // and "elsewhere-sw" at an address no device of the project has.
+        with_discovered_names(&mut d, &[("192.0.2.10".into(), "access-switch".into()), ("203.0.113.9".into(), "elsewhere-sw".into())]);
+        for name in ["access-switch", "ACCESS-SWITCH", "access-switch.corp.example", " access-switch "] {
+            assert_eq!(resolve(&d, name).map(|x| x.id.as_str()), Ok("n1"), "{name}");
+        }
+        assert!(resolve(&d, "elsewhere-sw").is_err(), "a name found at no address of this project stays refused");
+        // The stored hostname with its domain or without.
+        assert_eq!(resolve(&d, "sw1.example.test").map(|x| x.id.as_str()), Ok("n1"));
+        assert_eq!(resolve(&d, "sw1.other.example").map(|x| x.id.as_str()), Ok("n1"));
+        // What the prompt said, kept as evidence.
+        let mut doc = fixture::document();
+        doc["pages"][0]["nodes"][0]["data"]["evidence"] = serde_json::json!({ "hostname": { "source": "prompt", "seenAtMs": 1, "detail": "core-sw-01" } });
+        assert_eq!(resolve(&devices(&doc), "core-sw-01").map(|x| x.id.as_str()), Ok("n1"));
+    }
+
+    #[test]
+    fn a_hostname_is_read_off_a_prompt() {
+        for (prompt, name) in [("access-switch#", "access-switch"), ("access-switch>", "access-switch"), ("access-switch(config)#", "access-switch"), ("admin@fw-01:~$", "fw-01"), ("FGT-01 (root) #", "FGT-01"), ("#", "")] {
+            assert_eq!(hostname_from_prompt(prompt), name, "{prompt}");
+        }
     }
 
     #[test]

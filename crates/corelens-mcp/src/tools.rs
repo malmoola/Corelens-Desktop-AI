@@ -44,7 +44,7 @@ pub struct Tool {
 }
 
 fn target_arg() -> Value {
-    json!({ "type": "string", "description": "The device: its name or management IP as list_devices shows it (a hostname or id also works). It must be a device of the open project." })
+    json!({ "type": "string", "description": "The device: its name or management IP as list_devices shows it. Its hostname also works, with or without the domain, including one a crawl or collection found at its address, as does its id. It must be a device of the open project." })
 }
 
 fn none() -> Value {

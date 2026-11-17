@@ -61,13 +61,12 @@ const KEYS: &[&str] = &[
     crate::mcp::changes::TIMEOUT_SETTING,
 ];
 
-/// What the window holds for the chat: the turn running per project (so
-/// Stop can end it) and the last request body sent to each provider, for
-/// the redaction check in Settings.
+/// What the window holds for the chat: the turn running per project, so
+/// Stop can end it. The last call to each provider is kept by
+/// `provider::record`.
 #[derive(Default)]
 pub struct AiState {
     running: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
-    last_body: Mutex<HashMap<String, Value>>,
 }
 
 impl AiState {
@@ -378,11 +377,8 @@ pub async fn ai_chat_send(app: AppHandle, text: String, context: Option<String>)
         let emit = |e: chat::ChatEvent| {
             let _ = app2.emit(EVENT, chat::event_json(&pid, &e));
         };
-        let keep_body = |b: &Value| {
-            if let Ok(mut l) = app2.state::<AiState>().last_body.lock() {
-                l.insert(which.clone(), b.clone());
-            }
-        };
+        // Every call is recorded in `provider::record`, this one too.
+        let keep_body = |_: &Value| {};
         let cfg = chat::ChatConfig { provider: provider.as_ref(), max_tool_calls: settings.max_tool_calls, tool_output_chars: settings.tool_output_chars };
         if let Err(e) = chat::run_turn(&host, &pid, &cfg, &message, &emit, &keep_body).await {
             crate::applog::warn("chat", &format!("a turn on {which} ended with an error: {}", e.chars().take(200).collect::<String>()));
@@ -408,11 +404,12 @@ pub async fn ai_chat_stop(app: AppHandle) -> CmdResult<bool> {
     Ok(true)
 }
 
-/// The last request body sent to a provider (after redaction; the key is
-/// a header and is not in it), for the engineer to check in Settings.
+/// The last call to a provider — a turn, the model list or a connection
+/// test: method, URL, headers with the key redacted, the body (after the
+/// redaction gate), the status and what came back.
 #[tauri::command(async)]
-pub fn ai_last_request(ai: State<'_, AiState>, provider: String) -> CmdResult<String> {
-    let body = ai.last_body.lock().ok().and_then(|l| l.get(&provider).cloned());
+pub fn ai_last_request(provider: String) -> CmdResult<String> {
+    let body = provider::last_exchange(&provider);
     Ok(match body {
         Some(b) => {
             let text = serde_json::to_string_pretty(&b).unwrap_or_default();

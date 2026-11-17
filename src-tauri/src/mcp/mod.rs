@@ -152,6 +152,33 @@ pub struct Host<'a> {
     pub app: Option<AppHandle>,
 }
 
+/// The hostnames discovery found per address in a project, newest first:
+/// what a collection run's prompts showed, and what a crawl named each
+/// device it reached. A drawing may never have been given them.
+pub(crate) fn discovered_names(conn: &rusqlite::Connection, project_id: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Ok(mut st) = conn.prepare(
+        "SELECT d.host, d.prompt FROM collection_devices d JOIN collection_runs r ON r.id = d.run_id WHERE r.project_id = ?1 ORDER BY d.collected_at DESC LIMIT 5000",
+    ) {
+        if let Ok(rows) = st.query_map([project_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
+            out.extend(rows.flatten().map(|(host, prompt)| (host, project::hostname_from_prompt(&prompt))));
+        }
+    }
+    if let Ok(mut st) = conn.prepare(
+        "SELECT c.device FROM crawl_run_devices c JOIN crawl_runs r ON r.id = c.run_id WHERE r.project_id = ?1 ORDER BY r.taken_at DESC LIMIT 5000",
+    ) {
+        if let Ok(rows) = st.query_map([project_id], |r| r.get::<_, String>(0)) {
+            for json in rows.flatten() {
+                let v: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+                let (host, name) = (v["address"].as_str().unwrap_or(""), v["hostname"].as_str().unwrap_or(""));
+                out.push((host.to_string(), name.to_string()));
+            }
+        }
+    }
+    out.retain(|(h, n)| !h.trim().is_empty() && !n.trim().is_empty());
+    out
+}
+
 /// The device a call names, the address to dial, and the logins to try:
 /// the device's own first, then the project's.
 pub(crate) fn login_for(state: &AppState, project_id: &str, target: &str) -> Result<Prepared, String> {
@@ -160,11 +187,13 @@ pub(crate) fn login_for(state: &AppState, project_id: &str, target: &str) -> Res
     if open_project(state).as_deref() != Some(project_id) {
         return Err("That belongs to a project other than the one that is open.".into());
     }
-    let package = {
+    let (package, names) = {
         let conn = state.db.lock().map_err(db_err)?;
-        db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?
+        let package = db::load_project(&conn, project_id).map_err(db_err)?.ok_or("The project open in Corelens could not be read.")?;
+        (package, discovered_names(&conn, project_id))
     };
-    let all = project::devices(&package.document);
+    let mut all = project::devices(&package.document);
+    project::with_discovered_names(&mut all, &names);
     let device = project::resolve(&all, target)?.clone();
     let address = device.target().ok_or_else(|| format!("{} has no address in the project, so Corelens cannot reach it.", device.label()))?;
     if state.vault_key.lock().map(|k| k.is_none()).unwrap_or(true) {

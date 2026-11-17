@@ -1409,7 +1409,7 @@ export const en = {
   'aiSettings.modelsListed': '{n} models listed.',
   'aiSettings.lastRequest': 'Show last request',
   'aiSettings.lastRequestTitle': 'The last request sent',
-  'aiSettings.lastRequestHint': 'Exactly the body Corelens sent, after redaction. The key travels in a header and is not shown.',
+  'aiSettings.lastRequestHint': 'The last call Corelens made to this provider (a question, the model list or a connection test): the address, the headers with the key shown as <redacted>, the body after redaction, the status and what came back.',
   'aiSettings.mcpTitle': 'Use with Claude Code / Claude Desktop (MCP)',
   'aiSettings.retentionTitle': 'Retention and logging',
   'aiSettings.auditRetention': 'Keep what AI was given and changed',

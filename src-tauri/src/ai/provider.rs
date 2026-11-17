@@ -9,6 +9,8 @@
 //! redaction gate first ([`outbound`]). The page never sees a key, a
 //! request or a provider's raw reply.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -197,6 +199,70 @@ fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     headers.get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<f64>().ok()).map(|s| s.ceil().max(1.0) as u64)
 }
 
+/// The last exchange with each provider, whatever the call — a turn, the
+/// model list, a connection test — for Settings → AI → Show last request.
+/// The key is replaced before anything is kept: header values that carry
+/// it are shown as `<redacted>`, and the key's own text is cut out of
+/// whatever came back.
+fn exchanges() -> &'static Mutex<HashMap<String, Value>> {
+    static L: OnceLock<Mutex<HashMap<String, Value>>> = OnceLock::new();
+    L.get_or_init(Default::default)
+}
+
+/// How much of an answer is kept.
+const KEPT: usize = 20_000;
+
+fn is_secret_header(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "authorization" | "api-key" | "x-api-key" | "proxy-authorization")
+}
+
+/// One call, as Show last request lists it. `status` is `None` while no
+/// answer has come.
+pub fn record(provider: &str, method: &str, url: &str, headers: &[(String, String)], body: Option<&Value>, status: Option<u16>, response: &str) {
+    let secrets: Vec<&str> = headers
+        .iter()
+        .filter(|(k, _)| is_secret_header(k))
+        .map(|(_, v)| v.strip_prefix("Bearer ").unwrap_or(v).trim())
+        .filter(|v| v.len() >= 4)
+        .collect();
+    let mut shown: Vec<Value> = headers
+        .iter()
+        .map(|(k, v)| {
+            let v = if is_secret_header(k) {
+                if v.starts_with("Bearer ") { "Bearer <redacted>".to_string() } else { "<redacted>".to_string() }
+            } else {
+                v.clone()
+            };
+            serde_json::json!([k.to_ascii_lowercase(), v])
+        })
+        .collect();
+    if body.is_some() {
+        shown.insert(0, serde_json::json!(["content-type", "application/json"]));
+    }
+    let mut answer: String = response.chars().take(KEPT).collect();
+    for s in &secrets {
+        answer = answer.replace(s, "<redacted>");
+    }
+    let answer = redact::shapes_only(&answer);
+    let cut = response.chars().count() > KEPT;
+    let entry = serde_json::json!({
+        "method": method,
+        "url": url,
+        "headers": shown,
+        "body": body.cloned().unwrap_or(Value::Null),
+        "status": status,
+        "response": if cut { format!("{answer}\n… (cut at {KEPT} characters)") } else { answer },
+    });
+    if let Ok(mut l) = exchanges().lock() {
+        l.insert(provider.to_string(), entry);
+    }
+}
+
+/// The last call recorded for `provider`.
+pub fn last_exchange(provider: &str) -> Option<Value> {
+    exchanges().lock().ok().and_then(|l| l.get(provider).cloned())
+}
+
 /// How long one chunk of a stream may take to arrive.
 const IDLE: Duration = Duration::from_secs(180);
 
@@ -206,6 +272,7 @@ const IDLE: Duration = Duration::from_secs(180);
 pub async fn send(provider: &dyn Provider, turn: &Turn, secrets: &redact::Secrets, on_delta: &(dyn Fn(Delta) + Send + Sync), last_body: &(dyn Fn(&Value) + Send + Sync)) -> Result<TurnResult, ProviderError> {
     let req = outbound_request(provider, turn, secrets);
     last_body(&req.body);
+    record(provider.id(), "POST", &req.url, &req.headers, Some(&req.body), None, "(no answer yet)");
     let http = client()?;
     let body = serde_json::to_vec(&req.body).map_err(|e| ProviderError::Other(e.to_string()))?;
     let started = std::time::Instant::now();
@@ -215,13 +282,21 @@ pub async fn send(provider: &dyn Provider, turn: &Turn, secrets: &redact::Secret
         for (k, v) in &req.headers {
             rb = rb.header(k.as_str(), v.as_str());
         }
-        let r = rb.body(body.clone()).send().await.map_err(|e| provider.unreachable(&clean_error(&e)))?;
+        let r = match rb.body(body.clone()).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let why = clean_error(&e);
+                record(provider.id(), "POST", &req.url, &req.headers, Some(&req.body), None, &format!("(no answer: {why})"));
+                return Err(provider.unreachable(&why));
+            }
+        };
         let status = r.status().as_u16();
         if (200..300).contains(&status) {
             break r;
         }
         let wait = retry_after(r.headers());
         let text = r.text().await.unwrap_or_default();
+        record(provider.id(), "POST", &req.url, &req.headers, Some(&req.body), Some(status), &text);
         let err = provider.error(status, wait, &text);
         let retryable = matches!(err, ProviderError::RateLimited { .. } | ProviderError::Overloaded(_));
         if retryable && attempt < 2 {
@@ -232,15 +307,31 @@ pub async fn send(provider: &dyn Provider, turn: &Turn, secrets: &redact::Secret
         crate::applog::warn("ai", &format!("{} answered HTTP {status}", provider.id()));
         return Err(err);
     };
+    let status = response.status().as_u16();
     let mut parser = provider.parser();
     let mut response = response;
     let mut bytes = 0usize;
+    // The start of the stream, for Show last request.
+    let mut head: Vec<u8> = Vec::new();
+    let keep = |head: &[u8], note: &str| record(provider.id(), "POST", &req.url, &req.headers, Some(&req.body), Some(status), &format!("{}{note}", String::from_utf8_lossy(head)));
     loop {
         match tokio::time::timeout(IDLE, response.chunk()).await {
-            Err(_) => return Err(ProviderError::Network(format!("{} stopped sending for {} seconds.", provider.id(), IDLE.as_secs()))),
-            Ok(Err(e)) => return Err(ProviderError::Network(clean_error(&e))),
-            Ok(Ok(None)) => break,
+            Err(_) => {
+                keep(&head, "\n(the stream stopped)");
+                return Err(ProviderError::Network(format!("{} stopped sending for {} seconds.", provider.id(), IDLE.as_secs())));
+            }
+            Ok(Err(e)) => {
+                keep(&head, "\n(the stream broke)");
+                return Err(ProviderError::Network(clean_error(&e)));
+            }
+            Ok(Ok(None)) => {
+                keep(&head, "");
+                break;
+            }
             Ok(Ok(Some(chunk))) => {
+                if head.len() < KEPT {
+                    head.extend_from_slice(&chunk[..chunk.len().min(KEPT - head.len())]);
+                }
                 bytes += chunk.len();
                 for d in parser.feed(&chunk)? {
                     on_delta(d);
@@ -268,11 +359,19 @@ pub async fn get(provider: &dyn Provider, url: &str, headers: &[(String, String)
     }
     let r = tokio::time::timeout(Duration::from_secs(20), rb.send())
         .await
-        .map_err(|_| ProviderError::Network("no answer within 20 seconds".into()))?
-        .map_err(|e| provider.unreachable(&clean_error(&e)))?;
+        .map_err(|_| {
+            record(provider.id(), "GET", url, headers, None, None, "(no answer within 20 seconds)");
+            ProviderError::Network("no answer within 20 seconds".into())
+        })?
+        .map_err(|e| {
+            let why = clean_error(&e);
+            record(provider.id(), "GET", url, headers, None, None, &format!("(no answer: {why})"));
+            provider.unreachable(&why)
+        })?;
     let status = r.status().as_u16();
     let wait = retry_after(r.headers());
     let text = r.text().await.unwrap_or_default();
+    record(provider.id(), "GET", url, headers, None, Some(status), &text);
     if !(200..300).contains(&status) {
         return Err(provider.error(status, wait, &text));
     }
@@ -288,6 +387,7 @@ pub async fn post_json(provider: &dyn Provider, url: &str, body: &Value) -> Resu
         .map_err(|e| provider.unreachable(&clean_error(&e)))?;
     let status = r.status().as_u16();
     let text = r.text().await.unwrap_or_default();
+    record(provider.id(), "POST", url, &[], Some(body), Some(status), &text);
     if !(200..300).contains(&status) {
         return Err(provider.error(status, None, &text));
     }
@@ -361,6 +461,30 @@ pub fn error_message(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recorded_call_shows_everything_but_the_key() {
+        let token = "FIXTURE-pat-not-a-real-token-0000";
+        let headers = vec![
+            ("authorization".to_string(), format!("Bearer {token}")),
+            ("x-snowflake-authorization-token-type".to_string(), "PROGRAMMATIC_ACCESS_TOKEN".to_string()),
+            ("accept".to_string(), "application/json".to_string()),
+        ];
+        record("recorder-test-get", "GET", "https://a.snowflakecomputing.com/api/v2/cortex/models", &headers, None, Some(415), &format!("{{\"message\":\"Invalid input value. null\",\"echo\":\"{token}\"}}"));
+        let got = last_exchange("recorder-test-get").unwrap();
+        let text = got.to_string();
+        assert!(!text.contains(token), "the token was kept: {text}");
+        assert_eq!(got["method"], "GET");
+        assert_eq!(got["status"], 415);
+        assert!(got["body"].is_null(), "a GET has no body");
+        assert!(!text.contains("content-type"), "a GET has no content type: {text}");
+        assert!(text.contains("Bearer <redacted>") && text.contains("PROGRAMMATIC_ACCESS_TOKEN") && text.contains("Invalid input value. null"), "{text}");
+
+        record("recorder-test-post", "POST", "https://a.snowflakecomputing.com/api/v2/cortex/v1/chat/completions", &headers, Some(&serde_json::json!({ "model": "m" })), None, "(no answer yet)");
+        let got = last_exchange("recorder-test-post").unwrap();
+        assert!(got["status"].is_null() && got["body"]["model"] == "m");
+        assert_eq!(got["headers"][0], serde_json::json!(["content-type", "application/json"]));
+    }
 
     #[test]
     fn events_split_anywhere_come_back_whole() {

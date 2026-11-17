@@ -135,7 +135,9 @@ pub fn run(ctx: &Ctx, tool: &str, arguments: &Value) -> Result<String, String> {
 }
 
 fn devices(ctx: &Ctx) -> Vec<Device> {
-    project::devices(&ctx.project.document)
+    let mut all = project::devices(&ctx.project.document);
+    project::with_discovered_names(&mut all, &super::discovered_names(ctx.conn, &ctx.project.meta.id));
+    all
 }
 
 fn status(ctx: &Ctx) -> Result<String, String> {
@@ -688,6 +690,27 @@ mod tests {
 
     fn ctx<'a>(c: &'a Connection, p: &'a ProjectPackage, root: Option<PathBuf>) -> Ctx<'a> {
         Ctx { conn: c, project: p, backup_root: root, vault_unlocked: false }
+    }
+
+    #[test]
+    fn get_device_takes_the_hostname_a_crawl_or_a_collection_found() {
+        let c = conn();
+        let p = package();
+        assert!(run(&ctx(&c, &p, None), "get_device", &json!({ "target": "access-switch" })).is_err(), "nothing found it yet");
+        crate::db::upsert_project(&c, &p).unwrap();
+        // A collection run met SW1's address with the prompt `access-switch#`;
+        // a crawl named it `core-crawled`; neither changed the drawing.
+        c.execute_batch(
+            "INSERT INTO collection_runs (id, project_id, seed, started_ms, status) VALUES ('r1', 'p1', '192.0.2.10', 1, 'complete');
+             INSERT INTO collection_devices (run_id, device_id, host, prompt, collected_at) VALUES ('r1', 'd1', '192.0.2.10', 'access-switch#', 1);
+             INSERT INTO crawl_runs (id, project_id, taken_at, result) VALUES ('c1', 'p1', 1, '{}');
+             INSERT INTO crawl_run_devices (run_id, seq, device) VALUES ('c1', 0, '{\"hostname\":\"core-crawled\",\"address\":\"192.0.2.10\"}');",
+        )
+        .unwrap();
+        for name in ["access-switch", "Access-Switch", "core-crawled"] {
+            let out = run(&ctx(&c, &p, None), "get_device", &json!({ "target": name })).unwrap();
+            assert!(out.starts_with("SW1 [n1]"), "{name}: {out}");
+        }
     }
 
     #[test]

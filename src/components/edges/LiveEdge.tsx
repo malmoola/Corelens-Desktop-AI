@@ -10,6 +10,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react';
 
+import { followPointer } from '../../lib/pointerDrag';
 import type { DeviceNodeData, HealthStatus, LinkData } from '../../types/domain';
 import type { TopoNode } from '../../state/store';
 import { STATUS_LABEL } from '../../types/domain';
@@ -468,8 +469,6 @@ function LiveEdgeInner(props: EdgeProps) {
         }
       };
       const up = () => {
-        el.removeEventListener('pointermove', move);
-        el.removeEventListener('pointerup', up);
         const final = dragRef.current;
         dragRef.current = null;
         setDragAt(null);
@@ -490,8 +489,10 @@ function LiveEdgeInner(props: EdgeProps) {
           });
         }
       };
-      el.addEventListener('pointermove', move);
-      el.addEventListener('pointerup', up);
+      followPointer(el, move, up, () => {
+        dragRef.current = null;
+        setDragAt(null);
+      });
     },
     [edgePath, id, rf, data.texts],
   );
@@ -515,15 +516,12 @@ function LiveEdgeInner(props: EdgeProps) {
         setWpDrag({ points });
       };
       const up = () => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
         setWpDrag(null);
         const store = useStore.getState();
         store.commit();
         store.updateEdgeData(id, { waypoints: points });
       };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+      followPointer(window, move, up, () => setWpDrag(null));
     };
 
   // Dragging either end of the link off its device's own bounding
@@ -604,8 +602,6 @@ function LiveEdgeInner(props: EdgeProps) {
       );
     };
     const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
       const final = anchorDragRef.current;
       setAnchorDrag(null);
       if (!final) return;
@@ -657,8 +653,7 @@ function LiveEdgeInner(props: EdgeProps) {
           : { targetAnchor: a, pinnedSides: true, ...(named ? { targetPortLabel: named } : {}) },
       );
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    followPointer(window, move, up, () => setAnchorDrag(null));
   };
 
   // A step link's segment grip. Dragging slides the run orthogonally
@@ -687,8 +682,6 @@ function LiveEdgeInner(props: EdgeProps) {
       setCurveDrag(latest);
     };
     const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
       setCurveDrag(null);
       if (latest !== null) {
         const store = useStore.getState();
@@ -696,8 +689,7 @@ function LiveEdgeInner(props: EdgeProps) {
         store.updateEdgeData(id, { curvature: Math.round(latest * 100) / 100 });
       }
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    followPointer(window, move, up, () => setCurveDrag(null));
   };
   const dragElbow = (vertices: { x: number; y: number }[], index: number) =>
     (e: React.PointerEvent) => {
@@ -706,10 +698,10 @@ function LiveEdgeInner(props: EdgeProps) {
       const startX = e.clientX;
       const startY = e.clientY;
       let moved = false;
+      let stop = () => {};
       const hold = window.setTimeout(() => {
         if (moved) return;
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
+        stop();
         const store = useStore.getState();
         store.commit();
         store.updateEdgeData(id, { waypoints: [] }); // press-and-hold resets
@@ -723,8 +715,6 @@ function LiveEdgeInner(props: EdgeProps) {
       };
       const up = () => {
         window.clearTimeout(hold);
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
         const final = wpDragRef.current;
         setWpDrag(null);
         if (moved && final) {
@@ -733,8 +723,10 @@ function LiveEdgeInner(props: EdgeProps) {
           store.updateEdgeData(id, { waypoints: final.points });
         }
       };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+      stop = followPointer(window, move, up, () => {
+        window.clearTimeout(hold);
+        setWpDrag(null);
+      });
     };
 
   const commitText = useCallback(

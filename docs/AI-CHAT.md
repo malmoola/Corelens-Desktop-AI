@@ -91,8 +91,10 @@ Markdown or CSV. Saving the configuration is always a separate proposal.
   conversation, as the provider counted them.
 - Everything sent passes the redaction first: passwords, secrets, SNMP
   communities, keys and hashes removed, every vault secret removed wherever
-  it appears. *AI providers → Show last request* shows exactly the last body
-  sent to that provider (the key travels in a header and is not in it).
+  it appears. *AI providers → Show last request* shows the last call made
+  to that provider, whether a question, **Refresh models** or **Test
+  connection**. It lists the method and address, the headers with the key
+  shown as `<redacted>`, the body as sent, the status and what came back.
 
 ## 5. When it does not answer
 
