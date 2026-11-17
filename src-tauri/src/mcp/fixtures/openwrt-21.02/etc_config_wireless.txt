@@ -1,0 +1,21 @@
+
+config wifi-device 'mt7628'
+	option type 'mac80211'
+	option band '2g'
+	option channel 'auto'
+
+config wifi-iface 'default_radio0'
+	option device 'mt7628'
+	option network 'lan'
+	option mode 'ap'
+	option ssid 'FIXTURE-SSID'
+	option encryption 'psk2'
+	option key 'FIXTURE-wifi-key-0002'
+
+config wifi-iface 'guest'
+	option device 'mt7628'
+	option mode 'ap'
+	option ssid 'FIXTURE-GUEST'
+	option encryption 'sae'
+	option sae_password "FIXTURE-sae-0003"
+	option auth_secret FIXTURE-radius-0004

@@ -1,0 +1,11 @@
+interface: wgclient
+  public key: FIXTUREpublickeyFIXTUREpublickeyFIXTURE11=
+  private key: (hidden)
+  listening port: 41234
+
+peer: FIXTUREpublickeyFIXTUREpublickeyFIXTURE00=
+  preshared key: (hidden)
+  endpoint: 203.0.113.10:51820
+  allowed ips: 0.0.0.0/0
+  latest handshake: 1 minute, 2 seconds ago
+  transfer: 1.20 MiB received, 340.11 KiB sent

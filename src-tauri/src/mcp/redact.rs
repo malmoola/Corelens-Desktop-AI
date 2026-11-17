@@ -7,7 +7,8 @@
 //! not sent.
 //!
 //! 1. The backup scrub (`corelens_collect::scrub`): every vendor's
-//!    password, secret, community, key and PSK lines.
+//!    password, secret, community, key and PSK lines; and OpenWrt's
+//!    (`super::openwrt::scrub`), whose uci syntax none of those reads.
 //! 2. Every secret the unlocked vault holds, by value, wherever it occurs —
 //!    in a banner, a description, a hostname somebody typed it into.
 //! 3. Shapes no keyword announces: private-key blocks, crypt hashes,
@@ -70,7 +71,7 @@ pub fn shapes_only(text: &str) -> String {
 
 /// The text with every secret removed, or [`Withheld`].
 pub fn gate(text: &str, secrets: &Secrets) -> Result<String, Withheld> {
-    let mut out = corelens_collect::scrub::scrub(text);
+    let mut out = corelens_collect::scrub::scrub(&super::openwrt::scrub(text));
     for secret in &secrets.0 {
         let s = secret.as_str();
         out = if s.chars().count() >= 4 { out.replace(s, MARK) } else { word_bounded(&out, s) };

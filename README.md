@@ -61,7 +61,16 @@ exactly as the terminal would. The model sees only what Corelens hands back.
   that saves) *and* the platform's own list — `show …` on Cisco IOS,
   IOS-XE and NX-OS, Aruba, PAN-OS and Junos; `get …`, `show …` and a short
   list of read-only `diagnose …` on FortiOS. Anything else is refused before
-  a connection is opened.
+  a connection is opened. An OpenWrt router (GL.iNet and the like) is a
+  root shell, so it gets a fixed list in place of the collector's: `uci
+  show`, `uci get`, `ubus call system board`, `ip -4 addr`, `ip -4 route`,
+  `wg show`, `iptables -S`, `iptables -t nat -S`, `nft list ruleset`,
+  `netstat -lntup`, `opkg list-installed`, `logread`,
+  `cat /etc/config/<name>`, `df -h`, `free` and `ps`, piped only into
+  `grep`, `head` or `tail`. No `;`, `&&`, redirect or substitution is
+  accepted, so `uci set`, `uci commit`, `opkg install`, `reboot` and
+  `sysupgrade` never reach it. Its WireGuard keys, Wi-Fi keys and passwords
+  are removed from what comes back.
 - **Propose a configuration change — which waits for you.** Corelens reads
   the device's running configuration and opens a dialog with the exact
   commands, a diff against what is running, the risk and the rollback the

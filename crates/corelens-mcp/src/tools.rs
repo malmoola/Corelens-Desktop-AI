@@ -277,7 +277,7 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: "run_show_command",
         title: "Run a read-only command on a device",
-        description: "Logs in to a device of the open project with its own saved login, over this computer's connection (the engineer's VPN), identifies the platform, and runs one read-only command if that platform's list allows it. Returns the parsed rows when a template reads the output, and the output itself, with secrets removed and long output cut. Supported: Cisco IOS, IOS-XE, NX-OS, Aruba AOS-CX and ArubaOS-Switch, FortiOS, PAN-OS, Junos.",
+        description: "Logs in to a device of the open project with its own saved login, over this computer's connection (the engineer's VPN), identifies the platform, and runs one read-only command if that platform's list allows it. Returns the parsed rows when a template reads the output, and the output itself, with secrets removed and long output cut. Supported: Cisco IOS, IOS-XE, NX-OS, Aruba AOS-CX and ArubaOS-Switch, FortiOS, PAN-OS, Junos, and OpenWrt (uci, ubus, ip, wg, iptables/nft, logread and other fixed reads only).",
         open_world: true,
         changes: false,
         long_running: false,

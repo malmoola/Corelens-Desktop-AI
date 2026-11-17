@@ -1,0 +1,14 @@
+{
+	"kernel": "5.4.0",
+	"hostname": "GL-MT300N-V2",
+	"system": "MediaTek MT7628AN ver:1 eco:2",
+	"model": "GL.iNet GL-MT300N-V2",
+	"board_name": "glinet,gl-mt300n-v2",
+	"release": {
+		"distribution": "OpenWrt",
+		"version": "21.02-SNAPSHOT",
+		"revision": "r0000+0000-fixture",
+		"target": "ramips/mt76x8",
+		"description": "OpenWrt 21.02-SNAPSHOT r0000+0000-fixture"
+	}
+}

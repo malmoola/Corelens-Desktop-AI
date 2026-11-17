@@ -2,8 +2,9 @@
 //! one gives, its answers, a configuration that changes when told to,
 //! and a record of every line it was asked to run.
 //!
-//! Five kinds: Cisco IOS (with or without `archive`, so with or without
-//! the revert timer), NX-OS, AOS-CX and Junos. The Cisco-style ones keep
+//! Six kinds: Cisco IOS (with or without `archive`, so with or without
+//! the revert timer), NX-OS, AOS-CX, Junos, and an OpenWrt root shell that
+//! answers only what a test gives it. The Cisco-style ones keep
 //! a running and a startup configuration, a flash filesystem, checkpoints
 //! and the configuration-mode prompts (`SW1(config-if)#`); Junos keeps a
 //! candidate, `commit confirmed` and its rollback history. A test can make
@@ -41,6 +42,9 @@ pub enum FakeKind {
     NxOs,
     AosCx,
     Junos,
+    /// An OpenWrt router's root ash: anything it has not been given an
+    /// answer for is `not found`, as BusyBox says it.
+    OpenWrt,
 }
 
 fn ios_running(archive: bool) -> Vec<String> {
@@ -158,6 +162,7 @@ fn has_archive(lines: &[String]) -> bool {
 impl Handler {
     fn prompt(&self, kind: FakeKind) -> String {
         match (&self.mode, kind) {
+            (_, FakeKind::OpenWrt) => "root@GL-FIXTURE:~# ".into(),
             (Mode::Exec, FakeKind::Junos) => "reader@SW1> ".into(),
             (Mode::Config { .. }, FakeKind::Junos) => "reader@SW1# ".into(),
             (Mode::Exec, _) => "SW1#".into(),
@@ -189,6 +194,15 @@ impl Handler {
         }
         if kind == FakeKind::Junos {
             return (self.junos(&mut s, command), true);
+        }
+        if kind == FakeKind::OpenWrt {
+            let lower = command.trim().to_ascii_lowercase();
+            if let Some(f) = s.shows.get(&lower).cloned() {
+                let running = s.running.clone();
+                return (f(&running).replace('\n', "\r\n"), true);
+            }
+            let first = lower.split_whitespace().next().unwrap_or("");
+            return (if first.is_empty() { String::new() } else { format!("-ash: {first}: not found\r\n") }, true);
         }
         let c = command.trim();
         let lower = c.to_ascii_lowercase();

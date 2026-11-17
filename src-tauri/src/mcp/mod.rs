@@ -11,6 +11,7 @@ pub mod audit;
 pub mod changes;
 #[cfg(test)]
 pub mod fake_device;
+pub mod openwrt;
 pub mod project;
 pub mod redact;
 #[cfg(test)]

@@ -6,7 +6,9 @@
 //! platform from its version banner, and sends the command only if both
 //! lists allow it: the collector's read-only allowlist (no config, write,
 //! clear or reload verb anywhere, no shell operator, no pipe that saves),
-//! and this platform's own list of read verbs. The output is parsed with
+//! and this platform's own list of read verbs. OpenWrt, a root shell
+//! rather than a network CLI, has a stricter list of its own
+//! (`super::openwrt`) in place of the collector's. The output is parsed with
 //! the ntc template for that platform and command when there is one. The
 //! client never touches the device; it gets the redacted text.
 //!
@@ -41,6 +43,8 @@ fn platform(f: Family) -> Option<(&'static str, &'static str)> {
         _ => return None,
     })
 }
+
+pub const SUPPORTED: &str = "Supported: Cisco IOS/IOS-XE, NX-OS, Aruba AOS-CX, ArubaOS-Switch, FortiOS, PAN-OS, Junos, OpenWrt.";
 
 /// FortiOS `diagnose` commands that only read.
 const FORTI_DIAGNOSE: &[&str] = &[
@@ -78,6 +82,11 @@ fn refused_everywhere(lower: &str) -> Option<&'static str> {
 
 /// Whether the command may be sent at all, before anything is dialled.
 pub fn precheck(command: &str) -> Result<(), String> {
+    // Only ever sent to a device recognised as OpenWrt; any other platform's
+    // own list refuses it after login, before it is sent.
+    if super::openwrt::allows(command).is_ok() {
+        return Ok(());
+    }
     let verdict = corelens_catalog::allowlist::verdict(command);
     if !verdict.is_ok() {
         return Err(format!("`{}` was refused: {}. Only read-only show commands can be run.", command.trim(), verdict.reason()));
@@ -126,7 +135,7 @@ fn templates(dir: &Path) -> Option<&'static Templates> {
 /// Rows from the template for this platform and command, when one reads it.
 pub fn parse(templates_dir: Option<&Path>, ntc_platform: &str, command: &str, output: &str) -> Option<(String, Vec<corelens_catalog::textfsm::Row>)> {
     // A filtered reply is not what the template was written for.
-    if command.contains('|') {
+    if command.contains('|') || ntc_platform.is_empty() {
         return None;
     }
     let t = templates(templates_dir?)?;
@@ -199,20 +208,33 @@ pub async fn run(
             if version.is_empty() {
                 version = out.clone();
             }
+            // A root shell: no more guesses are typed into it.
+            if super::openwrt::is_ash(&out) {
+                version = out;
+                break;
+            }
             if corelens_discover::dialect::identifies(&out) {
                 version = out;
                 break;
             }
         }
         let family = family_of(&version);
-        let Some((name, ntc)) = platform(family) else {
-            session.close().await;
-            return Err(format!(
-                "{label} ({address}) is not a platform run_show_command supports, so `{}` was not sent. Supported: Cisco IOS/IOS-XE, NX-OS, Aruba AOS-CX, ArubaOS-Switch, FortiOS, PAN-OS, Junos.",
-                command.trim()
-            ));
+        let openwrt = platform(family).is_none()
+            && super::openwrt::is_ash(&version)
+            && super::openwrt::is_release(&session.run(super::openwrt::RELEASE).await.unwrap_or_default());
+        let (name, ntc) = match platform(family) {
+            Some(p) => p,
+            None if openwrt => (super::openwrt::NAME, ""),
+            None => {
+                session.close().await;
+                return Err(format!(
+                    "{label} ({address}) is not a platform run_show_command supports, so `{}` was not sent. {SUPPORTED}",
+                    command.trim()
+                ));
+            }
         };
-        if let Err(why) = platform_allows(family, command) {
+        let allowed = if openwrt { super::openwrt::allows(command) } else { platform_allows(family, command) };
+        if let Err(why) = allowed {
             session.close().await;
             return Err(why);
         }
@@ -374,6 +396,67 @@ mod tests {
         let err = run("SW9", "127.0.0.1", port, &logins(), "show ip arp", store(), None).await.unwrap_err();
         assert!(err.contains("refused the connection on port"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    fn openwrt() -> &'static str {
+        include_str!("fixtures/openwrt-21.02/openwrt_release.txt")
+    }
+
+    #[test]
+    fn openwrt_reads_pass_the_first_check_and_its_writes_do_not() {
+        for ok in ["uci show network", "logread | grep -i wireguard", "cat /etc/config/wireless", "ip -4 route"] {
+            assert!(precheck(ok).is_ok(), "{ok}");
+        }
+        for bad in ["uci commit", "uci set network.lan.proto=dhcp", "opkg install tcpdump", "reboot", "sysupgrade /tmp/x.bin", "uci show; reboot", "logread > /tmp/x"] {
+            assert!(precheck(bad).is_err(), "{bad:?} got through");
+        }
+        // The other platforms' own lists still refuse OpenWrt's commands.
+        assert!(platform_allows(Family::CiscoIos, "uci show").is_err());
+        assert!(platform_allows(Family::FortiOs, "cat /etc/config/network").is_err());
+    }
+
+    #[tokio::test]
+    async fn an_openwrt_router_is_read_and_its_keys_never_leave() {
+        use crate::mcp::redact::{gate, Secrets};
+        let dev = FakeDevice::start_as(crate::mcp::fake_device::FakeKind::OpenWrt).await;
+        dev.answer("cat /etc/openwrt_release", openwrt());
+        dev.answer("uci show network", include_str!("fixtures/openwrt-21.02/uci_show_network.txt"));
+        let ran = run("GL1", "127.0.0.1", dev.port, &logins(), "uci show network", store(), Some(&ntc())).await.unwrap();
+        assert!(ran.text.starts_with("GL1 (127.0.0.1) · OpenWrt · `uci show network`"), "{}", ran.text);
+        assert!(ran.text.contains("network.lan.ipaddr='192.0.2.1'"), "{}", ran.text);
+        let clean = gate(&ran.text, &Secrets::new(vec![PASSWORD.into()])).unwrap();
+        for secret in ["FIXTURE-pppoe-password-0001", "FIXTUREprivatekey", "FIXTUREpreshared"] {
+            assert!(!clean.contains(secret), "{secret} reached the client:\n{clean}");
+        }
+        // One version guess, the release file, the command: nothing else typed into a root shell.
+        let asked: Vec<String> = dev.asked().into_iter().filter(|c| !c.trim().is_empty()).collect();
+        assert_eq!(asked, ["show version", "cat /etc/openwrt_release", "uci show network"], "{asked:?}");
+    }
+
+    #[tokio::test]
+    async fn on_openwrt_anything_off_its_list_is_refused_after_login_and_never_sent() {
+        let dev = FakeDevice::start_as(crate::mcp::fake_device::FakeKind::OpenWrt).await;
+        dev.answer("cat /etc/openwrt_release", openwrt());
+        let err = run("GL1", "127.0.0.1", dev.port, &logins(), "show ip route", store(), None).await.unwrap_err();
+        assert!(err.contains("On OpenWrt only these can be run"), "{err}");
+        assert!(!dev.asked().iter().any(|c| c == "show ip route"), "{:?}", dev.asked());
+    }
+
+    #[tokio::test]
+    async fn a_shell_that_is_not_openwrt_is_still_refused_by_name() {
+        let dev = FakeDevice::start_as(crate::mcp::fake_device::FakeKind::OpenWrt).await;
+        dev.answer("cat /etc/openwrt_release", "cat: can't open '/etc/openwrt_release': No such file or directory");
+        let err = run("BOX", "127.0.0.1", dev.port, &logins(), "uci show", store(), None).await.unwrap_err();
+        assert!(err.contains("is not a platform run_show_command supports") && err.contains("OpenWrt."), "{err}");
+        assert!(!dev.asked().iter().any(|c| c == "uci show"), "{:?}", dev.asked());
+    }
+
+    #[tokio::test]
+    async fn an_openwrt_command_sent_to_a_cisco_switch_is_never_sent() {
+        let dev = FakeDevice::start().await;
+        let err = run("SW1", "127.0.0.1", dev.port, &logins(), "uci show", store(), None).await.unwrap_err();
+        assert!(err.contains("only `show …` commands"), "{err}");
+        assert!(!dev.asked().iter().any(|c| c.starts_with("uci") || c.starts_with("cat")), "{:?}", dev.asked());
     }
 
     #[test]
