@@ -1,6 +1,6 @@
 [package]
 name = "corelens-desktop-ai"
-version = "2.17.4"
+version = "2.17.5"
 description = "Corelens Desktop AI — local-first network diagram designer with live connectivity validation"
 authors = ["Mohammed Almoola <https://www.linkedin.com/in/malmoola>"]
 edition = "2021"
@@ -61,6 +61,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 # A provider's API key is read from the clipboard here, in Rust, and the
 # clipboard cleared — so the key never passes through the page. Text only.
 arboard = { version = "3", default-features = false }
+serialport = { version = "4.10.1", default-features = false }
 
 [features]
 default = ["custom-protocol"]

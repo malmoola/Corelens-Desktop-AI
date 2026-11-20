@@ -2,6 +2,43 @@
 
 Newest first.
 
+## 2.17.5 — 2026-11-20
+
+**New**
+- **Serial console, with the port found for you.** Right-click a device
+  and choose **Console to this device…**, or press **Console…** in the
+  terminal panel. Corelens lists the machine's serial ports and picks the
+  console cable:
+  - Known console adapters come first: Cisco's USB console, FTDI,
+    Prolific, Silicon Labs, WCH and ATEN. Then any other USB port.
+  - Plug the cable in while the form is open, and the port that just
+    appeared is chosen.
+  - Bluetooth serial links are marked, because opening one with nothing
+    paired can hang.
+
+  The line starts at 9600 8N1 with no flow control. You can change the
+  speed, the framing and the flow control, and the next console opens the
+  same way. A console opens as a terminal tab like an SSH one, with the
+  same log, Find and Send to several. **Send break** is there for ROMMON
+  and password recovery. If the cable is pulled, the tab stays and says
+  why; press Enter to open the same port again.
+- **Drag terminal tabs to reorder them.** Drop a tab on another tab's
+  near half to put it there. Ctrl+Shift+Left and Right move the focused
+  tab. Each session's screen and scrollback stay as they were.
+- **Your own cutover plans on Snowflake.** Settings → AI → Snowflake
+  Cortex has a new **Plan library** field. Enter a Cortex Search service
+  over your plan documents, as `DATABASE.SCHEMA.SERVICE`.
+  - When you ask for a plan, MOP or runbook, the chat searches your
+    library first. It writes the new plan in the same sections and step
+    numbering as yours, uses this project's devices, and says which of
+    your plans each part follows.
+  - The search is offered only when Snowflake is the provider, so your
+    plans stay in your Snowflake account. Corelens only reads from it.
+  - Sections go through the same password removal as any other tool
+    result.
+  - Test connection also checks the library.
+  - `docs/AI-CHAT.md` shows how to set up the search service.
+
 ## 2.17.4 — 2026-11-17
 
 **Fixed**
