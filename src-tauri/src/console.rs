@@ -383,7 +383,6 @@ pub async fn console_open(
 mod tests {
     use super::*;
     use serialport::UsbPortInfo;
-    use std::io::Write as _;
 
     /// `9600 8N1`, to compare a line with in one string.
     fn short(line: &LineSettings) -> String {
@@ -478,6 +477,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn a_console_carries_both_ways_and_says_when_the_far_end_goes() {
+        use std::io::Write as _;
         let (mut device, near) = serialport::TTYPort::pair().expect("a pty pair");
         let near_name = near.name().expect("the pty has a name");
         drop(near);

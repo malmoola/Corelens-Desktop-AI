@@ -61,6 +61,10 @@ jobs:
     # Linux runs on a push, so only Linux saves one) the Windows leg compiles
     # everything from cold and was cancelled at 30 minutes in Clippy.
     timeout-minutes: 60
+    # A release commit is pushed to main and tagged together, and the tag's
+    # run tests the same commit on Linux and Windows. The branch push of
+    # that commit would only repeat the Linux half, so it is skipped.
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Corelens Desktop - version ')) }}
     strategy:
       fail-fast: false
       matrix:
