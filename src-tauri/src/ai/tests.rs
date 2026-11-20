@@ -139,7 +139,16 @@ impl Desk {
         let host = Host { state: &self.state, templates: None, ssh_port: self.dev.port, emit: &activity, changes: Some(&self.hub), emit_change: &emit_change, source: Source::Chat { provider: p.id().into(), model: p.model().into() }, app: None };
         let events = Arc::clone(&self.events);
         let emit = move |e: ChatEvent| events.lock().unwrap().push(e);
-        chat::run_turn(&host, "p1", &ChatConfig { provider: p, max_tool_calls, tool_output_chars: 12_000 }, text, &emit, &|_| {}).await
+        chat::run_turn(&host, "p1", &ChatConfig { provider: p, max_tool_calls, tool_output_chars: 12_000, library: None }, text, &emit, &|_| {}).await
+    }
+
+    async fn turn_with_library(&self, p: &dyn Provider, text: &str, library: snowflake::Library) -> Result<(), String> {
+        let activity = |_: &Activity| {};
+        let emit_change = |_: &crate::mcp::changes::Change| {};
+        let host = Host { state: &self.state, templates: None, ssh_port: self.dev.port, emit: &activity, changes: Some(&self.hub), emit_change: &emit_change, source: Source::Chat { provider: p.id().into(), model: p.model().into() }, app: None };
+        let events = Arc::clone(&self.events);
+        let emit = move |e: ChatEvent| events.lock().unwrap().push(e);
+        chat::run_turn(&host, "p1", &ChatConfig { provider: p, max_tool_calls: 15, tool_output_chars: 12_000, library: Some(library) }, text, &emit, &|_| {}).await
     }
 }
 
@@ -357,4 +366,42 @@ async fn a_model_that_keeps_calling_a_tool_that_does_not_exist_is_stopped() {
     assert!(told.iter().all(|t| t.starts_with("There is no tool called run_show_commandrun_show_command.") && t.contains("run_show_command,")), "{told:?}");
     assert!(events.iter().any(|e| matches!(e, ChatEvent::Notice { message } if message.contains("Stopped"))), "{events:?}");
     assert!(desk.dev.asked().iter().all(|c| c != "show clock"), "nothing was run");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_snowflake_turn_searches_the_plan_library_and_sends_back_nothing_secret() {
+    let desk = desk().await;
+    // A section of an invented plan, with a device password pasted into it.
+    let found = json!({ "results": [
+        { "@scores": { "cosine_similarity": 0.5 }, "chunk": format!("# A5. Verify\n| Check | Expected |\n| ping core | replies |\nlogin with {PASSWORD}"), "plan": "EXAMPLE_Firewall_Runbook.docx" }
+    ] });
+    let mut replies = chat_completions_replies(chat::LIBRARY_TOOL, json!({ "query": "rollback steps" }));
+    replies.insert(1, found.to_string());
+    let fake = fake_provider("text/event-stream", replies).await;
+    let p = snowflake::Snowflake::new(zeroize::Zeroizing::new("FIXTURE-pat-not-a-real-token-0000".into()), "claude-sonnet-5-5".into(), &fake.base);
+    let lib = snowflake::Library { host: fake.base.clone(), service: "EXAMPLE_DB.LIBRARY.PLAN_SEARCH".into(), token: zeroize::Zeroizing::new("FIXTURE-pat-not-a-real-token-0000".into()) };
+    desk.turn_with_library(&p, "write a cutover plan for SW1", lib).await.unwrap();
+    let bodies = fake.bodies.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 3, "turn, search, turn: {bodies:#?}");
+    assert!(bodies[0].contains(chat::LIBRARY_TOOL) && bodies[0].contains("shape their plans use"), "the tool and the prompt are offered");
+    let search: Value = serde_json::from_str(&bodies[1]).unwrap();
+    assert_eq!(search, json!({ "query": "rollback steps", "limit": 5, "columns": ["chunk", "plan"] }));
+    assert!(bodies[2].contains("A5. Verify") && bodies[2].contains("EXAMPLE_Firewall_Runbook.docx"), "the section goes back with its document");
+    assert!(!bodies[2].contains(PASSWORD), "a secret in a plan is removed before it goes back");
+    for b in &bodies {
+        assert!(!b.contains("FIXTURE-pat"), "no token in a body");
+    }
+    let events = desk.events.lock().unwrap();
+    assert!(events.iter().any(|e| matches!(e, ChatEvent::ToolResult { name, is_error: false, .. } if name == chat::LIBRARY_TOOL)), "{events:#?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_plan_library_is_not_offered_without_one() {
+    let desk = desk().await;
+    let fake = fake_provider("text/event-stream", chat_completions_replies(chat::LIBRARY_TOOL, json!({ "query": "x" }))).await;
+    let p = snowflake::Snowflake::new(zeroize::Zeroizing::new("FIXTURE-pat-not-a-real-token-0000".into()), "claude-sonnet-5-5".into(), &fake.base);
+    desk.turn(&p, "write a plan", 15).await.unwrap();
+    let bodies = fake.bodies.lock().unwrap().clone();
+    assert!(!bodies[0].contains(chat::LIBRARY_TOOL), "not offered");
+    assert!(bodies[1].contains("There is no tool called search_plan_library"), "and refused if asked for anyway");
 }

@@ -2117,7 +2117,16 @@ tr[data-picked="yes"] td { background: var(--hover); }
 .cv-ssh { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .cv-ssh-empty { padding: 0.92307692rem; }
 .cv-ssh-tabs { flex: 0 0 auto; padding: 0.30769231rem 0.61538462rem 0; gap: 0.15384615rem; flex-wrap: wrap; }
-.cv-ssh-tab { display: inline-flex; align-items: stretch; }
+.cv-console-fields { display: flex; flex-wrap: wrap; gap: 0.46153846rem 0.92307692rem; align-items: flex-end; }
+.cv-console-fields .cv-field:first-child { min-width: 22rem; flex: 1 1 22rem; }
+.cv-ssh-foot-line { color: var(--text-dim); }
+.cv-ssh-tab { display: inline-flex; align-items: stretch; position: relative; }
+.cv-ssh-tab.is-dragging { opacity: 0.5; }
+/* Where a dragged tab will land: a bar in the gap. */
+.cv-ssh-tab.is-landing-before::before,
+.cv-ssh-tab.is-landing-after::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+.cv-ssh-tab.is-landing-before::before { left: -2px; }
+.cv-ssh-tab.is-landing-after::after { right: -2px; }
 .cv-ssh-tab > button:first-child { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-ssh-close {
   background: none; border: 0; color: var(--text-faint); cursor: pointer;

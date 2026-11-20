@@ -52,7 +52,7 @@ import { resetToDefault, styleOf } from '../lib/linkDefaults';
 import { useStore, type TopoEdge, type TopoNode, moveGroups } from '../state/store';
 import { activePage, withPage, pageNodeById } from '../lib/pages';
 import { getDeviceInfo, openSsh, openSshElsewhere } from './sshActions';
-import { jumpCandidates } from '../lib/sshLaunch';
+import { jumpCandidates, sshLabel } from '../lib/sshLaunch';
 import { isDesktop } from '../lib/ipc';
 import { t } from '../i18n';
 import { diagnoseArgs } from '../lib/diagnose';
@@ -512,6 +512,15 @@ export function Canvas() {
                 { label: t('ssh.connect'), onSelect: () => void openSsh(nodeId, node.data as DeviceNodeData) },
                 { label: t('ssh.external'), onSelect: () => void openSshElsewhere(node.data as DeviceNodeData) },
               ])
+        : []),
+      // Its console, over a cable plugged into this machine: the port is
+      // found in the panel's form, the tab is named after the device.
+      ...(node?.type === 'device' && isDesktop
+        ? [{ label: t('console.connect'), onSelect: () => {
+            const data = node.data as DeviceNodeData;
+            useStore.getState().requestPanelTab('ssh');
+            useStore.getState().askConsole({ label: sshLabel(data), nodeId });
+          } }]
         : []),
       // What this one device says it is — model, serial, software — asked
       // of it alone. Not a crawl, and nothing else is contacted.

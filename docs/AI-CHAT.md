@@ -71,6 +71,58 @@ The conversation belongs to the project and is still there when the project
 is opened again; *Settings → AI → Retention and logging* keeps it 90 days
 unless you choose 30 or 365, and clears it.
 
+## 2a. Your own plans, on Snowflake
+
+With Snowflake Cortex as the provider, the chat can search a library of
+your own cutover plans, runbooks and MOPs and write new ones in the same
+shape — the same sections, tables and step numbering — filled from the
+project's devices. It is searched only on Snowflake, so the documents stay
+in that account, and Corelens never writes to it. Nothing is trained: the
+plans are searched each time, so a new one counts as soon as it is added.
+
+Set it up once in Snowsight (*Workspaces → + Add new → SQL File*; the role
+needs to create a schema, a stage, a table and a Cortex Search service):
+
+```sql
+CREATE SCHEMA IF NOT EXISTS MY_DB.PLANS;
+CREATE STAGE IF NOT EXISTS MY_DB.PLANS.DOCS
+  DIRECTORY = (ENABLE = TRUE) ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE');
+```
+
+Upload the plans (PDF, DOCX or PPTX) to the stage (*Databases → MY_DB →
+PLANS → Stages → DOCS → + Files*), then read them into sections and make
+the service:
+
+```sql
+ALTER STAGE MY_DB.PLANS.DOCS REFRESH;
+
+CREATE OR REPLACE TABLE MY_DB.PLANS.CHUNKS AS
+SELECT d.relative_path AS plan, c.value::string AS chunk
+FROM DIRECTORY(@MY_DB.PLANS.DOCS) d,
+LATERAL FLATTEN(SNOWFLAKE.CORTEX.SPLIT_TEXT_RECURSIVE_CHARACTER(
+  AI_PARSE_DOCUMENT(TO_FILE('@MY_DB.PLANS.DOCS', d.relative_path),
+                    {'mode': 'LAYOUT'}):content::string,
+  'markdown', 1500, 200)) c;
+
+CREATE OR REPLACE CORTEX SEARCH SERVICE MY_DB.PLANS.PLAN_SEARCH
+  ON chunk ATTRIBUTES plan
+  WAREHOUSE = MY_WH TARGET_LAG = '1 hour'
+  AS SELECT chunk, plan FROM MY_DB.PLANS.CHUNKS;
+```
+
+After adding plans, run the `REFRESH` and the `CHUNKS` statement again.
+The token's role needs `USAGE` on the database, the schema and the service.
+
+In Corelens, type `MY_DB.PLANS.PLAN_SEARCH` under *AI providers →
+Snowflake Cortex → Plan library*, and press **Test connection**, which
+also tries the library. Then ask, for example, *write a cutover plan for
+replacing this firewall, in the shape of our runbooks*: the chat searches
+the library (the call is shown as `search_plan_library`), reads the
+project's devices, and says which plan each part follows. What it finds
+passes the same redaction as any tool result before it is sent. A service
+built with other column names still works; the document names are then
+not shown.
+
 ## 3. Changes
 
 When the model wants to change a device it calls `propose_config_change`,

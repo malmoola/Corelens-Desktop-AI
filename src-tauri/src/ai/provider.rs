@@ -378,18 +378,31 @@ pub async fn get(provider: &dyn Provider, url: &str, headers: &[(String, String)
     serde_json::from_str(&text).map_err(|e| ProviderError::Other(format!("The provider's answer was not JSON: {e}")))
 }
 
-/// A POST that is not a turn (Ollama's `/api/show`).
-pub async fn post_json(provider: &dyn Provider, url: &str, body: &Value) -> Result<Value, ProviderError> {
+/// A POST that is not a turn: Ollama's `/api/show`, a Snowflake plan
+/// library search.
+pub async fn post_json(provider: &dyn Provider, url: &str, headers: &[(String, String)], body: &Value) -> Result<Value, ProviderError> {
     let http = client()?;
-    let r = tokio::time::timeout(Duration::from_secs(20), http.post(url).header("content-type", "application/json").body(body.to_string()).send())
+    let mut rb = http.post(url).header("content-type", "application/json");
+    for (k, v) in headers {
+        rb = rb.header(k.as_str(), v.as_str());
+    }
+    let r = tokio::time::timeout(Duration::from_secs(20), rb.body(body.to_string()).send())
         .await
-        .map_err(|_| ProviderError::Network("no answer within 20 seconds".into()))?
-        .map_err(|e| provider.unreachable(&clean_error(&e)))?;
+        .map_err(|_| {
+            record(provider.id(), "POST", url, headers, Some(body), None, "(no answer within 20 seconds)");
+            ProviderError::Network("no answer within 20 seconds".into())
+        })?
+        .map_err(|e| {
+            let why = clean_error(&e);
+            record(provider.id(), "POST", url, headers, Some(body), None, &format!("(no answer: {why})"));
+            provider.unreachable(&why)
+        })?;
     let status = r.status().as_u16();
+    let wait = retry_after(r.headers());
     let text = r.text().await.unwrap_or_default();
-    record(provider.id(), "POST", url, &[], Some(body), Some(status), &text);
+    record(provider.id(), "POST", url, headers, Some(body), Some(status), &text);
     if !(200..300).contains(&status) {
-        return Err(provider.error(status, None, &text));
+        return Err(provider.error(status, wait, &text));
     }
     serde_json::from_str(&text).map_err(|e| ProviderError::Other(format!("The provider's answer was not JSON: {e}")))
 }

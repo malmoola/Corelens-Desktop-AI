@@ -201,6 +201,13 @@ function ProvidersSection({ ai, listed: models, setListed: setModels }: { ai: Ai
           </label>
         )}
         {p === 'snowflake' && <p className="cv-help">{t('aiSettings.snowflakeHint')}</p>}
+        {p === 'snowflake' && (
+          <label className="cv-field">
+            <span>{t('aiSettings.snowflakeLibrary')}</span>
+            <input className="cv-input" data-field="ai-snowflake-library" placeholder="DATABASE.SCHEMA.SERVICE" defaultValue={settings.snowflakeLibrary ?? ''} onBlur={(e) => void set('aiSnowflakeLibrary', e.target.value)} />
+          </label>
+        )}
+        {p === 'snowflake' && <p className="cv-help">{t('aiSettings.snowflakeLibraryHint')}</p>}
         {p === 'openai' && (
           <div className="cv-row">
             <label className="cv-field">

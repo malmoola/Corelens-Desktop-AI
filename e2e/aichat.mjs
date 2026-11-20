@@ -85,6 +85,7 @@ await page.addInitScript(({ p, s0 }) => {
         if (args.key === "aiChatEnabled") window.__settings = { ...window.__settings, chatEnabled: args.value === "1" };
         if (args.key.startsWith("aiModel.")) window.__settings = { ...window.__settings, models: { ...window.__settings.models, [args.key.slice(8)]: args.value } };
         if (args.key === "aiSnowflakeAccount") window.__settings = { ...window.__settings, snowflakeAccount: args.value };
+        if (args.key === "aiSnowflakeLibrary") window.__settings = { ...window.__settings, snowflakeLibrary: args.value };
         return Promise.resolve(window.__settings);
       }
       if (cmd === "ai_key_import") { window.__settings = { ...window.__settings, keys: { ...window.__settings.keys, [args.provider]: true } }; return Promise.resolve(window.__settings); }
@@ -267,6 +268,11 @@ check("the account is kept", (await sent("ai_setting_set")).some((c) => c.args.k
 await sf.locator('[data-action="ai-key-import-snowflake"]').click();
 await page.waitForTimeout(200);
 check("its access token comes from the clipboard through Rust, never the page", (await sent("ai_key_import")).some((c) => c.args.provider === "snowflake") && /A key is kept/.test(await ai.locator('[data-hint="ai-key-snowflake"]').innerText()));
+await sf.locator('[data-field="ai-snowflake-library"]').fill("EXAMPLE_DB.LIBRARY.PLAN_SEARCH");
+await sf.locator('[data-field="ai-snowflake-library"]').blur();
+await page.waitForTimeout(200);
+check("a plan library is kept, and said to stay in that account", (await sent("ai_setting_set")).some((c) => c.args.key === "aiSnowflakeLibrary" && c.args.value === "EXAMPLE_DB.LIBRARY.PLAN_SEARCH")
+  && /plans stay in that account/.test(await sf.innerText()));
 check("its model list offers Cortex's Claude models", (await offered("ai-model-snowflake")).includes("claude-sonnet-5-5"));
 
 await ai.locator('[data-field="ai-verbose-logging"]').check();

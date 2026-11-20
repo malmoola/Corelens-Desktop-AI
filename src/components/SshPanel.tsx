@@ -7,10 +7,12 @@ import '@xterm/xterm/css/xterm.css';
 import { dockOwnerWindow } from '../lib/dockWindow';
 import { t } from '../i18n';
 import { Colouriser } from '../lib/colourise';
-import { ipc, type SshEvent } from '../lib/ipc';
+import { ipc, isDesktop, type SshEvent } from '../lib/ipc';
 import { formatTime } from '../lib/timeFormat';
 import { useStore, type SshTab } from '../state/store';
 import { ChromeIcon } from './chromeIcons';
+import { ConsoleForm } from './ConsoleForm';
+import { describeLine, logAddress } from '../lib/consoleLine';
 
 /**
  * Open shells, one tab each, with the controls that make one usable
@@ -47,6 +49,9 @@ type Held = {
 };
 const terminals = new Map<string, Held>();
 
+/** A console needs this machine's ports, so only the desktop offers one. */
+const isDesktopConsole = isDesktop;
+
 /**
  * Opens a new session to the same device with the same saved login,
  * in the tab of the one that ended — the screen and its scrollback kept, the
@@ -56,20 +61,23 @@ const terminals = new Map<string, Held>();
 async function reconnect(held: Held) {
   if (held.reconnecting) return;
   const tab = useStore.getState().sshSessions.find((t) => t.id === held.id);
-  if (!tab || tab.status !== 'closed' || !tab.credentialId) return;
+  if (!tab || tab.status !== 'closed' || (!tab.credentialId && !tab.console)) return;
   held.reconnecting = true;
   held.term.write(`\r\n\x1b[2m${t('ssh.reconnecting', { name: tab.label })}\x1b[0m\r\n`);
   try {
     const { keepaliveSeconds, logByDefault } = useStore.getState().settings.terminal;
-    // The way it went the first time: through the same neighbour, if any.
-    const id = await ipc.sshOpen(tab.address, tab.credentialId, { cols: held.term.cols, rows: held.term.rows }, undefined, keepaliveSeconds, tab.via?.address);
+    // The way it went the first time: the same port and line, or through the
+    // same neighbour, if any.
+    const id = tab.console
+      ? await ipc.consoleOpen(tab.address, tab.console)
+      : await ipc.sshOpen(tab.address, tab.credentialId ?? '', { cols: held.term.cols, rows: held.term.rows }, undefined, keepaliveSeconds, tab.via?.address);
     terminals.set(id, held);
     terminals.delete(held.id);
     held.id = id;
     useStore.getState().reopenSshTab(tab.id, id);
     const folder = useStore.getState().settings.backupFolder;
     if (logByDefault && folder) {
-      await ipc.sshLogStart(id, { folder, device: tab.label, address: tab.address, site: '' }).catch(() => undefined);
+      await ipc.sshLogStart(id, { folder, device: tab.label, address: tab.console ? logAddress(tab.address) : tab.address, site: '' }).catch(() => undefined);
     }
   } catch (e: unknown) {
     held.term.write(`\x1b[2m${e instanceof Error ? e.message : String(e)}\x1b[0m\r\n\x1b[2m${t('ssh.pressEnter')}\x1b[0m\r\n`);
@@ -148,6 +156,10 @@ export function SshPanel() {
   const [targets, setTargets] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // A tab being dragged along the strip, and where it would land: the
+  // gap before this index, which `tabs.length` puts after the last.
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [landing, setLanding] = useState<number | null>(null);
 
   const current = tabs.find((tab) => tab.id === active);
   const open = tabs.filter((tab) => tab.status === 'open');
@@ -236,7 +248,8 @@ export function SshPanel() {
           if (held?.colour.pending) held.term.write(held.colour.flush());
           held?.term.write(`\r\n\x1b[2m${e.reason}\x1b[0m\r\n`);
           // And how to get it back, where that is possible.
-          if (useStore.getState().sshSessions.find((x) => x.id === e.id)?.credentialId) {
+          const ended = useStore.getState().sshSessions.find((x) => x.id === e.id);
+          if (ended?.credentialId || ended?.console) {
             held?.term.write(`\x1b[2m${t('ssh.pressEnter')}\x1b[0m\r\n`);
           }
           useStore.getState().endSshTab(e.id, e.reason);
@@ -308,7 +321,7 @@ export function SshPanel() {
       .sshLogStart(tab.id, {
         folder: backupFolder,
         device: tab.label,
-        address: tab.address,
+        address: tab.console ? logAddress(tab.address) : tab.address,
         site: data.site ?? '',
         pattern: undefined,
       })
@@ -364,6 +377,25 @@ export function SshPanel() {
             }
           }} />
       </label>
+      {isDesktopConsole && (
+        <button type="button" className="cv-btn cv-btn-small" data-action="console-open"
+          onClick={() => useStore.getState().askConsole({})}>
+          {t('console.button')}
+        </button>
+      )}
+      {/* A break exists only on a serial line: ROMMON and password recovery
+          wait for one in the first seconds after power-on. */}
+      {current?.console && (
+        <button type="button" className="cv-btn cv-btn-small" data-action="console-break"
+          disabled={current.status !== 'open'} title={t('console.breakHint')}
+          onClick={() => {
+            void ipc.sshSendBreak(current.id)
+              .then(() => setNote(t('console.breakSent', { port: current.address })))
+              .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+          }}>
+          {t('console.break')}
+        </button>
+      )}
       <button type="button" className="cv-btn cv-btn-small" onClick={() => setFindOpen((was) => !was)}
         disabled={!current} aria-expanded={findOpen}>
         {t('ssh.find')}
@@ -382,6 +414,11 @@ export function SshPanel() {
     return (
       <div className="cv-ssh cv-ssh-empty">
         <p className="cv-help">{t('ssh.empty')}</p>
+        {isDesktopConsole && (
+          <p><button type="button" className="cv-btn cv-btn-small" data-action="console-open"
+            onClick={() => useStore.getState().askConsole({})}>{t('console.button')}</button></p>
+        )}
+        <ConsoleForm />
         <div className="cv-ssh-foot" data-region="ssh-foot">
           <span className="cv-ssh-foot-name">{t('ssh.noSession')}</span>
         </div>
@@ -392,12 +429,48 @@ export function SshPanel() {
   return (
     <div className="cv-ssh">
       <div className="cv-tabs cv-ssh-tabs" role="tablist" aria-label={t('ssh.title')}>
-        {tabs.map((tab) => (
-          <span key={tab.id} className={`cv-ssh-tab${tab.id === active ? ' is-active' : ''}`}>
+        {tabs.map((tab, i) => (
+          <span key={tab.id} data-ssh-tab={tab.label}
+            className={`cv-ssh-tab${tab.id === active ? ' is-active' : ''}${tab.id === dragging ? ' is-dragging' : ''}${landing === i && dragging ? ' is-landing-before' : ''}${landing === tabs.length && i === tabs.length - 1 && dragging ? ' is-landing-after' : ''}`}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              // Not text/plain: dropped on a terminal by mistake, that would be
+              // typed into the device.
+              e.dataTransfer.setData('application/x-corelens-ssh-tab', tab.id);
+              setDragging(tab.id);
+            }}
+            onDragOver={(e) => {
+              if (!dragging) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              // The near half of a tab is the gap before it, the far half the gap after.
+              const box = e.currentTarget.getBoundingClientRect();
+              setLanding(e.clientX < box.left + box.width / 2 ? i : i + 1);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragging && landing !== null) {
+                const from = tabs.findIndex((x) => x.id === dragging);
+                useStore.getState().moveSshTab(dragging, landing > from ? landing - 1 : landing);
+              }
+              setDragging(null);
+              setLanding(null);
+            }}
+            onDragEnd={() => { setDragging(null); setLanding(null); }}>
             <button type="button" role="tab" aria-selected={tab.id === active}
               tabIndex={tab.id === active ? 0 : -1}
               className={tab.id === active ? 'is-active' : ''}
-              title={tab.status === 'closed' ? tab.reason : tab.via ? t('ssh.tabThrough', { address: tab.address, via: tab.via.label }) : tab.address}
+              title={tab.status === 'closed' ? tab.reason : tab.console ? t('console.tabTitle', { port: tab.address, line: describeLine(tab.console) }) : tab.via ? t('ssh.tabThrough', { address: tab.address, via: tab.via.label }) : tab.address}
+              aria-keyshortcuts="Control+Shift+ArrowLeft Control+Shift+ArrowRight"
+              onKeyDown={(e) => {
+                if (!e.ctrlKey || !e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+                e.preventDefault();
+                useStore.getState().moveSshTab(tab.id, i + (e.key === 'ArrowLeft' ? -1 : 1));
+                // The button is the same element after the move; keep it focused.
+                const self = e.currentTarget;
+                requestAnimationFrame(() => self.focus());
+              }}
               onClick={() => setActive(tab.id)}>
               <span className={`cv-ssh-dot${tab.status === 'closed' ? ' is-closed' : ''}`} aria-hidden="true" />{' '}
               {tab.label}
@@ -415,6 +488,7 @@ export function SshPanel() {
         ))}
       </div>
       {controls}
+      <ConsoleForm />
       {findOpen && (
         <div className="cv-ssh-find">
           <input className="cv-input" value={finding} autoFocus
@@ -506,6 +580,7 @@ export function SshPanel() {
           and when it last answered a keepalive. */}
       <div className="cv-ssh-foot" data-region="ssh-foot">
         <span className="cv-ssh-foot-name">{current ? current.label : t('ssh.noSession')}</span>
+        {current?.console && <span className="cv-ssh-foot-line">{t('console.tabTitle', { port: current.address, line: describeLine(current.console) })}</span>}
         {current?.logPath && <span className="cv-ssh-logging">{t('ssh.logTo', { path: current.logPath })}</span>}
         {current?.lastAlive !== undefined && (
           <span className="cv-ssh-foot-alive">{t('ssh.aliveAt', { time: formatTime(current.lastAlive, timeFormat) })}</span>

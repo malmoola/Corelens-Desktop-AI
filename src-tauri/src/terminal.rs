@@ -45,6 +45,8 @@ enum Instruction {
     LogStop,
     /// How often to tell the device we are still here, or never.
     Keepalive(Option<Duration>),
+    /// A break on a console line.
+    Break,
     Close,
 }
 
@@ -255,19 +257,88 @@ pub async fn ssh_open(
         };
         crate::vault_commands::note_use(&state, id, &what, &address);
     }
-    let (mut shell, _) = opened.map_err(describe)?;
+    let (shell, _) = opened.map_err(describe)?;
     crate::discovery::persist_host_keys(&app, &store);
 
     let id = format!("ssh-{}", uuid::Uuid::new_v4());
-    let (to_device, mut instructions) = mpsc::channel::<Instruction>(64);
+    let every = keepalive_seconds.filter(|s| *s > 0).map(Duration::from_secs);
+    spawn_session(&app, &state, id.clone(), address, Link::Ssh(shell), every)?;
+    Ok(id)
+}
 
+/// What a session is connected through: a shell on a device over SSH, or
+/// a console port on this machine. The loop below treats them the same.
+pub(crate) enum Link {
+    Ssh(Shell),
+    Serial(crate::console::SerialLink),
+}
+
+impl Link {
+    async fn read(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Link::Ssh(shell) => shell.read().await,
+            Link::Serial(port) => port.read().await,
+        }
+    }
+
+    async fn send(&mut self, bytes: &[u8]) -> Result<(), String> {
+        match self {
+            Link::Ssh(shell) => shell.send(bytes).await.map_err(describe),
+            Link::Serial(port) => port.send(bytes),
+        }
+    }
+
+    /// A console has no window size to tell anyone about.
+    async fn resize(&mut self, cols: u32, rows: u32) -> Result<(), String> {
+        match self {
+            Link::Ssh(shell) => shell.resize(cols, rows).await.map_err(describe),
+            Link::Serial(_) => Ok(()),
+        }
+    }
+
+    /// Whether anything went out. A console cable has no keepalive: the
+    /// port is there or it is not, and a read says which.
+    async fn keepalive(&mut self) -> Result<bool, String> {
+        match self {
+            Link::Ssh(shell) => shell.keepalive().await.map(|_| true).map_err(describe),
+            Link::Serial(_) => Ok(false),
+        }
+    }
+
+    /// A break on the line, the signal ROMMON and password recovery wait
+    /// for. SSH has no such thing.
+    fn send_break(&mut self) -> Result<(), String> {
+        match self {
+            Link::Ssh(_) => Err("A break can only be sent on a console port.".into()),
+            Link::Serial(port) => port.send_break(),
+        }
+    }
+
+    async fn close(self) {
+        match self {
+            Link::Ssh(shell) => shell.close().await,
+            Link::Serial(port) => port.close(),
+        }
+    }
+}
+
+/// Registers a session and starts the task that carries it: bytes from the
+/// link to the window, instructions from the window to the link.
+pub(crate) fn spawn_session(
+    app: &AppHandle,
+    state: &AppState,
+    id: String,
+    address: String,
+    mut link: Link,
+    mut every: Option<Duration>,
+) -> CmdResult<()> {
+    let (to_device, mut instructions) = mpsc::channel::<Instruction>(64);
     let emitter = app.clone();
     let session_id = id.clone();
     // The task holds the registry itself rather than reaching back through the
     // app handle: a session whose task has ended must come out of the map, or
     // the next send to it waits forever on a channel nobody is reading.
     let registry = Arc::clone(&state.sessions);
-    let mut every = keepalive_seconds.filter(|s| *s > 0).map(Duration::from_secs);
     tauri::async_runtime::spawn(async move {
         // The transcript, when one is asked for: the file it is appended to
         // and the state machine that makes it readable.
@@ -284,7 +355,7 @@ pub async fn ssh_open(
         let reason = loop {
             tokio::select! {
                 // Bytes from the device go straight to the window.
-                chunk = shell.read() => match chunk {
+                chunk = link.read() => match chunk {
                     Some(bytes) => {
                         if let Some((path, file)) = log.as_mut() {
                             let readable = shaper.feed(&bytes);
@@ -309,29 +380,43 @@ pub async fn ssh_open(
                             bytes: base64::engine::general_purpose::STANDARD.encode(&bytes),
                         });
                     }
-                    None => break "The device closed the session.".to_string(),
+                    None => break match &link {
+                        Link::Ssh(_) => "The device closed the session.".to_string(),
+                        Link::Serial(port) => port.why_ended(),
+                    },
                 },
                 // Still here.
                 _ = ticker.tick(), if every.is_some() => {
-                    if let Err(e) = shell.keepalive().await {
-                        break describe(e);
+                    match link.keepalive().await {
+                        Err(e) => break e,
+                        Ok(true) => {
+                            let _ = emitter.emit("corelens://ssh", SessionEvent::Alive {
+                                id: session_id.clone(),
+                                at: now_ms(),
+                            });
+                        }
+                        Ok(false) => {}
                     }
-                    let _ = emitter.emit("corelens://ssh", SessionEvent::Alive {
-                        id: session_id.clone(),
-                        at: now_ms(),
-                    });
                 }
                 // Instructions from the window go straight to the device.
                 instruction = instructions.recv() => match instruction {
                     None | Some(Instruction::Close) => break "Closed.".to_string(),
                     Some(Instruction::Send(bytes)) => {
-                        if let Err(e) = shell.send(&bytes).await {
-                            break describe(e);
+                        if let Err(e) = link.send(&bytes).await {
+                            break e;
                         }
                     }
                     Some(Instruction::Resize(cols, rows)) => {
-                        if let Err(e) = shell.resize(cols, rows).await {
-                            break describe(e);
+                        if let Err(e) = link.resize(cols, rows).await {
+                            break e;
+                        }
+                    }
+                    Some(Instruction::Break) => {
+                        if let Err(e) = link.send_break() {
+                            let _ = emitter.emit("corelens://ssh", SessionEvent::Warning {
+                                id: session_id.clone(),
+                                message: e,
+                            });
                         }
                     }
                     Some(Instruction::LogTo(path)) => {
@@ -368,7 +453,7 @@ pub async fn ssh_open(
                 },
             }
         };
-        shell.close().await;
+        link.close().await;
         let _ = emitter.emit(
             "corelens://ssh",
             SessionEvent::Closed {
@@ -379,10 +464,17 @@ pub async fn ssh_open(
         registry.remove(&session_id);
     });
 
-    state
-        .sessions
-        .insert(id.clone(), Session { to_device, address })?;
-    Ok(id)
+    state.sessions.insert(id, Session { to_device, address })
+}
+
+/// A break on a console session's line.
+#[tauri::command]
+pub async fn ssh_send_break(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let to_device = state.sessions.sender(&id)?;
+    to_device
+        .send(Instruction::Break)
+        .await
+        .map_err(|_| "That session is no longer open.".to_string())
 }
 
 /// Keystrokes, base64 as they came off the terminal.

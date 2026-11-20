@@ -51,6 +51,7 @@ const KEYS: &[&str] = &[
     "aiModel.ollama",
     "aiModel.snowflake",
     "aiSnowflakeAccount",
+    "aiSnowflakeLibrary",
     "aiOpenAiBaseUrl",
     "aiOpenAiStyle",
     "aiOllamaBaseUrl",
@@ -94,6 +95,9 @@ pub struct AiSettings {
     pub ollama_base_url: String,
     /// The Snowflake account identifier as typed; empty until one is.
     pub snowflake_account: String,
+    /// The Cortex Search service the chat searches for the engineer's
+    /// plans, `DB.SCHEMA.SERVICE`; empty when there is none.
+    pub snowflake_library: String,
     pub max_tool_calls: usize,
     pub tool_output_chars: usize,
     pub chat_retention_days: i64,
@@ -130,6 +134,7 @@ fn settings_from(s: &HashMap<String, String>, keys_present: HashMap<String, bool
         openai_style: s.get("aiOpenAiStyle").cloned().filter(|v| v == "chat").unwrap_or_else(|| "responses".into()),
         ollama_base_url: s.get("aiOllamaBaseUrl").cloned().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| ollama::DEFAULT_BASE.into()),
         snowflake_account: s.get("aiSnowflakeAccount").cloned().unwrap_or_default(),
+        snowflake_library: s.get("aiSnowflakeLibrary").cloned().unwrap_or_default(),
         max_tool_calls: num("aiMaxToolCalls", chat::DEFAULT_MAX_TOOL_CALLS, 1, 50),
         tool_output_chars: num("aiToolOutputChars", chat::DEFAULT_TOOL_OUTPUT_CHARS, 2_000, 24_000),
         chat_retention_days: days(transcript::RETENTION_SETTING, transcript::DEFAULT_RETENTION_DAYS),
@@ -186,6 +191,16 @@ pub fn build(settings: &AiSettings, which: &str) -> Result<Box<dyn Provider>, St
     }
 }
 
+/// The plan library a Snowflake turn may search, when one is set.
+fn library(settings: &AiSettings, which: &str) -> Result<Option<snowflake::Library>, String> {
+    if which != "snowflake" || settings.snowflake_library.trim().is_empty() {
+        return Ok(None);
+    }
+    let host = snowflake::host_for(&settings.snowflake_account)?;
+    let Some(token) = keys::read("snowflake")? else { return Ok(None) };
+    Ok(Some(snowflake::Library { host, service: settings.snowflake_library.clone(), token }))
+}
+
 #[tauri::command(async)]
 pub fn ai_settings(state: State<'_, AppState>) -> CmdResult<AiSettings> {
     Ok(current(state.inner()))
@@ -206,6 +221,8 @@ pub fn ai_setting_set(state: State<'_, AppState>, key: String, value: Option<Str
             snowflake::host_for(&v)?;
             Some(v.trim().to_string())
         }
+        ("aiSnowflakeLibrary", Some(v)) if v.trim().is_empty() => None,
+        ("aiSnowflakeLibrary", Some(v)) => Some(snowflake::check_service(&v)?),
         ("aiProvider", Some(v)) if PROVIDERS.contains(&v.as_str()) => Some(v),
         ("aiProvider", Some(v)) => return Err(format!("{v} is not a provider Corelens knows.")),
         ("aiChatEnabled", Some(v)) => (v == "1").then(|| "1".to_string()),
@@ -268,7 +285,7 @@ async fn list_models(settings: &AiSettings, which: &str) -> Result<Vec<ModelInfo
             let v = provider::get(p.as_ref(), &o.tags_url(), &[]).await.map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for (id, size) in ollama::models_from(&v) {
-                let show = provider::post_json(p.as_ref(), &o.show_url(), &serde_json::json!({ "model": id })).await.ok();
+                let show = provider::post_json(p.as_ref(), &o.show_url(), &[], &serde_json::json!({ "model": id })).await.ok();
                 out.push(ModelInfo { tools: show.as_ref().and_then(ollama::calls_tools), label: size, id });
             }
             Ok(out)
@@ -290,14 +307,26 @@ pub async fn ai_test_connection(state: State<'_, AppState>, provider: String) ->
     let model = settings.models.get(&provider).cloned().unwrap_or_default();
     let models = list_models(&settings, &provider).await?;
     let found = models.iter().find(|m| m.id == model);
-    Ok(match (provider.as_str(), found) {
+    let said = connected(&settings, &provider, &model, &models, found);
+    Ok(match library(&settings, &provider)? {
+        None => said,
+        Some(lib) => match lib.search("rollback", 1).await {
+            Ok(t) if t.starts_with("The plan library has nothing") => format!("{said}\nPlan library {}: reachable, but it returned nothing for a test search.", lib.service),
+            Ok(_) => format!("{said}\nPlan library {}: reachable.", lib.service),
+            Err(e) => format!("{said}\nPlan library {}: {e}", lib.service),
+        },
+    })
+}
+
+fn connected(settings: &AiSettings, provider: &str, model: &str, models: &[ModelInfo], found: Option<&ModelInfo>) -> String {
+    match (provider, found) {
         ("ollama", Some(m)) if m.tools == Some(false) => ProviderError::NoTools(format!("Connected, but the Ollama model {model} cannot call tools, which the chat needs. Pull a model that can — {} — and choose it.", ollama::TOOL_MODELS)).to_string(),
         ("snowflake", Some(m)) if m.tools == Some(false) => ProviderError::NoTools(format!("Connected, but Snowflake does not offer tool calls on {model}, which the chat needs. Choose a Claude or OpenAI model.")).to_string(),
         (_, Some(_)) => format!("Connected: {} models available, {model} among them.", models.len()),
         ("snowflake", None) => format!("Connected: {} models listed; {model} is not among them. Cross-region inference may still serve it, and the first question will say if not.", models.len()),
         ("openai", None) if settings.openai_base_url != openai::API => format!("Connected: {} models listed; {model} is not among them, which an OpenAI-compatible server may still accept.", models.len()),
         (_, None) => format!("Connected, but {model} is not among the {} models this account can use. Choose one of them.", models.len()),
-    })
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -338,6 +367,7 @@ pub async fn ai_chat_send(app: AppHandle, text: String, context: Option<String>)
     let which = settings.provider.clone();
     // Built here so a missing key or a chat that is off is said at once.
     let provider = build(&settings, &which)?;
+    let library = library(&settings, &which)?;
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("Type a question first.".into());
@@ -379,7 +409,7 @@ pub async fn ai_chat_send(app: AppHandle, text: String, context: Option<String>)
         };
         // Every call is recorded in `provider::record`, this one too.
         let keep_body = |_: &Value| {};
-        let cfg = chat::ChatConfig { provider: provider.as_ref(), max_tool_calls: settings.max_tool_calls, tool_output_chars: settings.tool_output_chars };
+        let cfg = chat::ChatConfig { provider: provider.as_ref(), max_tool_calls: settings.max_tool_calls, tool_output_chars: settings.tool_output_chars, library };
         if let Err(e) = chat::run_turn(&host, &pid, &cfg, &message, &emit, &keep_body).await {
             crate::applog::warn("chat", &format!("a turn on {which} ended with an error: {}", e.chars().take(200).collect::<String>()));
             emit(chat::ChatEvent::Error { message: e });
