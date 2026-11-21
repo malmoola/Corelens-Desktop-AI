@@ -1144,6 +1144,7 @@ dependencies = [
  "russh-sftp",
  "serde",
  "serde_json",
+ "serialport",
  "snmp2",
  "tempfile",
  "thiserror 1.0.69",

@@ -13,6 +13,7 @@ import { sameAddresses, withInterfaceAddresses } from './deviceAddresses';
 import { sshAddress } from './sshLaunch';
 import { stackFields } from './topology';
 import type { DeviceInfo } from './ipc';
+import type { ProjectPage } from '../state/store';
 import type { DeviceNodeData } from '../types/domain';
 
 /** The fields this fills, with the word shown for each. */
@@ -58,21 +59,45 @@ export function deviceInfoPatch(
   return { patch: { ...said, evidence, discoveredVia: had.discoveredVia ?? 'SSH' }, changed };
 }
 
-/** Every drawing of the device that was asked, on every page: the node it was
- *  asked from, wherever that now is, and any other device drawn with the same
- *  management address. The page in front does not matter — the answer is the
- *  device's, and a page switched while it ran must not lose it. */
-export function drawingsOf<N extends { id: string; type?: string; data: unknown }>(
-  pages: readonly { id: string; nodes: readonly N[] }[],
+const bare = (address: string) => address.trim().split('/')[0]!.trim();
+
+/**
+ * What a device said, onto every drawing of it — whichever page is in front
+ * when the answer arrives.
+ *
+ * The device that was asked is found by its id on any page: the answer took
+ * a while, and whoever asked may have turned the page since. A device drawn
+ * again on another page is a drawing of its own, so it is recognised by the
+ * address it is managed on, which is the address that was dialled. Each
+ * drawing keeps what was typed into it.
+ *
+ * `filled` is the ids written to, in page order; empty when the device is no
+ * longer on any page, and then `pages` is the list that was passed in.
+ */
+export function fillDeviceInfo(
+  pages: ProjectPage[],
   nodeId: string,
-  address: string,
-): { pageId: string; node: N }[] {
-  const out: { pageId: string; node: N }[] = [];
-  for (const page of pages) {
-    for (const node of page.nodes) {
-      if (node.type !== 'device') continue;
-      if (node.id === nodeId || (address && sshAddress(node.data as DeviceNodeData) === address)) out.push({ pageId: page.id, node });
-    }
-  }
-  return out;
+  info: DeviceInfo,
+  atMs: number,
+  reachedOn: string,
+  newId?: () => string,
+): { pages: ProjectPage[]; filled: string[]; changed: string[] } {
+  const dialled = bare(reachedOn);
+  const filled: string[] = [];
+  const changed: string[] = [];
+  const next = pages.map((page) => {
+    let touched = false;
+    const nodes = page.nodes.map((node) => {
+      if (node.type !== 'device') return node;
+      const had = node.data as DeviceNodeData;
+      if (node.id !== nodeId && !(dialled && bare(sshAddress(had)) === dialled)) return node;
+      const got = deviceInfoPatch(info, had, atMs, reachedOn, newId);
+      touched = true;
+      filled.push(node.id);
+      for (const word of got.changed) if (!changed.includes(word)) changed.push(word);
+      return { ...node, data: { ...had, ...got.patch } } as typeof node;
+    });
+    return touched ? { ...page, nodes } : page;
+  });
+  return filled.length ? { pages: next, filled, changed } : { pages, filled, changed };
 }
