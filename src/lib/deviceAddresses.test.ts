@@ -46,21 +46,30 @@ describe("a device's own interface addresses, under its checks", () => {
   it('with no interface table, still has the address that answered', () => {
     expect(withInterfaceAddresses([], '192.0.2.1', [], id).map((a) => [a.label, a.address, a.isPrimary])).toEqual([['Discovered', '192.0.2.1', true]]);
   });
+});
 
-  it('never lists a link-local address, which no one off that segment can reach', () => {
-    const local = [
-      { ip: '192.0.2.1', interface: 'Vlan10' },
-      { ip: '169.254.10.1/16', interface: 'Gi0/0' },
-      { ip: 'fe80::1%Vlan10', interface: 'Vlan10' },
-      { ip: 'FE80::a00:27ff:fe4e:66a1/64', interface: 'Vlan20' },
-      { ip: 'febf::1', interface: 'Vlan30' },
-      { ip: '2001:db8::1/64', interface: 'Vlan40' },
-    ];
-    expect(withInterfaceAddresses([], '192.0.2.1', local, id).map((a) => a.address)).toEqual(['192.0.2.1', '2001:db8::1']);
+describe('addresses nothing off the link can reach', () => {
+  const local = [
+    { ip: '192.0.2.1', interface: 'Vlan10' },
+    { ip: 'fe80::1', interface: 'Vlan10' },
+    { ip: 'FE80::0211:22ff:fe33:4455%eth0/64', interface: 'eth0' },
+    { ip: 'febf::1', interface: 'eth1' },
+    { ip: '169.254.10.20', interface: 'Gi0/0' },
+    { ip: '169.254.0.1/16', interface: 'Gi0/1' },
+    { ip: '2001:db8::1', interface: 'Loopback0' },
+    { ip: '169.25.4.1', interface: 'Vlan30' },
+  ];
+
+  it('are not listed: IPv6 link-local and IPv4 self-assigned', () => {
+    const got = withInterfaceAddresses([], '192.0.2.1', local, id);
+    expect(got.map((a) => a.address)).toEqual(['192.0.2.1', '2001:db8::1', '169.25.4.1']);
   });
 
-  it('keeps a link-local address somebody typed', () => {
-    const had = [{ id: 'mine', label: 'Console', address: '169.254.1.1', isPrimary: false }];
-    expect(withInterfaceAddresses(had, '192.0.2.1', [], id).map((a) => a.address)).toEqual(['192.0.2.1', '169.254.1.1']);
+  it('but one somebody typed, or the one that was dialled, stays', () => {
+    const had = [{ id: 'mine', label: 'Lab', address: '169.254.10.20', isPrimary: true }];
+    const got = withInterfaceAddresses(had, '169.254.10.20', local, id);
+    expect(got[0]).toEqual(had[0]);
+    expect(got.filter((a) => a.address.startsWith('169.254.')).length).toBe(1);
+    expect(got.some((a) => /^fe[89ab]/i.test(a.address))).toBe(false);
   });
 });
