@@ -6,8 +6,7 @@ import { create } from 'zustand';
 import type { Edge, Node } from '@xyflow/react';
 import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } from '@xyflow/react';
 
-import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, type Change as ConfigChange, type DiagnoseArgs, type ConsoleLine, setCurrentProject } from '../lib/ipc';
-import { CONSOLE_SPEEDS, framing } from '../lib/consoleLine';
+import { ipc, isDesktop, type ProbeResultDto, type IconLibEntry, type StoredSettings, type JobSnapshot, type CrawledDevice, type Neighbor, type ProjectPackage, type SharedEntry, type Change as ConfigChange, type DiagnoseArgs, setCurrentProject } from '../lib/ipc';
 import { projectFolderFiles } from '../lib/projectFolder';
 import { copyToOpen, folderName, heldBy, overwroteNotice } from '../lib/sharedProjects';
 import { applyJob } from '../lib/jobs';
@@ -181,10 +180,6 @@ export interface SshTab {
   /** The neighbour it was reached through, when it was not reached
    *  directly: that device's address and name. Reopening goes the same way. */
   via?: { address: string; label: string };
-  /** A console on a port of this machine rather than SSH to an address:
-   *  `address` is then the port's name, and this is how its line was set,
-   *  so reopening it opens it the same way. */
-  console?: ConsoleLine;
 }
 
 export interface ProjectDocument {
@@ -378,9 +373,6 @@ export function terminalFromStored(stored: StoredSettings, current: TerminalSett
     externalCommand: stored.sshExternalCommand ?? current.externalCommand,
     copyOnSelect: flag(stored.sshCopyOnSelect, current.copyOnSelect),
     pasteOnRight: flag(stored.sshPasteOnRight, current.pasteOnRight),
-    consoleSpeed: CONSOLE_SPEEDS.includes(Number(stored.consoleSpeed)) ? Number(stored.consoleSpeed) : current.consoleSpeed,
-    consoleFraming: framing(stored.consoleFraming) ? stored.consoleFraming! : current.consoleFraming,
-    consoleFlow: stored.consoleFlow === 'hardware' || stored.consoleFlow === 'software' || stored.consoleFlow === 'none' ? stored.consoleFlow : current.consoleFlow,
   };
 }
 
@@ -405,11 +397,6 @@ export interface TerminalSettings {
   /** Right-click pastes into the session instead of opening the menu.
    *  Off until asked for: it types into a live device with no confirmation. */
   pasteOnRight: boolean;
-  /** A console's line as it was last opened, so the next opens the same. */
-  consoleSpeed: number;
-  /** Data bits, parity and stop bits: `8N1`. */
-  consoleFraming: string;
-  consoleFlow: 'none' | 'hardware' | 'software';
 }
 
 /** What the terminal does before anyone has said otherwise. */
@@ -428,10 +415,6 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   externalCommand: '',
   copyOnSelect: true,
   pasteOnRight: false,
-  // What every vendor's console ships at.
-  consoleSpeed: 9600,
-  consoleFraming: '8N1',
-  consoleFlow: 'none',
 };
 
 export interface HistoryEntry {
@@ -675,10 +658,6 @@ interface Store {
    *  hostname and a username it was never asked to keep. */
   sshSessions: SshTab[];
   sshActive: string | null;
-  /** The console form is open in the terminal panel — for this device
-   *  when it was asked for from one, for no device in particular otherwise. */
-  consoleAsk: { label?: string; nodeId?: string } | null;
-  askConsole: (target: { label?: string; nodeId?: string } | null) => void;
   /** The drawer beside the canvas — a device or a finding — and
    *  whether it is pinned. Window state, never the document. */
   drawer: DrawerContent | null;
@@ -702,9 +681,6 @@ interface Store {
   endSshTab: (id: string, reason: string) => void;
   /** Takes the tab away. The backend is told separately. */
   forgetSshTab: (id: string) => void;
-  /** Moves a tab to this place along the strip; the others shift. Only the
-   *  order changes — the showing tab and every session stay as they were. */
-  moveSshTab: (id: string, toIndex: number) => void;
   /** Drops references to credentials the vault no longer holds.
    *  Returns how many went, so the caller can say so. */
   pruneStaleCredentials: (inVault: { id: string }[]) => number;
@@ -1526,7 +1502,6 @@ export const useStore = create<Store>((set, get) => ({
   toolsView: 'settings',
   importOpen: null,
   sshSessions: [],
-  consoleAsk: null,
   sshActive: null,
   jobs: [],
   drawer: null,
@@ -2205,10 +2180,6 @@ export const useStore = create<Store>((set, get) => ({
     set({ sshActive: id });
   },
 
-  askConsole(target) {
-    set({ consoleAsk: target });
-  },
-
   reopenSshTab(oldId, newId) {
     set((s) => ({
       sshSessions: s.sshSessions.map((t) => (t.id === oldId ? { ...t, id: newId, status: 'open' as const, reason: undefined, logPath: null } : t)),
@@ -2229,20 +2200,6 @@ export const useStore = create<Store>((set, get) => ({
         sshSessions: left,
         sshActive: s.sshActive === id ? (left[left.length - 1]?.id ?? null) : s.sshActive,
       };
-    });
-  },
-
-  moveSshTab(id, toIndex) {
-    set((s) => {
-      const from = s.sshSessions.findIndex((t) => t.id === id);
-      if (from < 0) return {};
-      const to = Math.max(0, Math.min(s.sshSessions.length - 1, toIndex));
-      if (to === from) return {};
-      const next = [...s.sshSessions];
-      const [moved] = next.splice(from, 1);
-      if (!moved) return {};
-      next.splice(to, 0, moved);
-      return { sshSessions: next };
     });
   },
 
@@ -4475,9 +4432,6 @@ export const useStore = create<Store>((set, get) => ({
       externalCommand: 'sshExternalCommand',
       copyOnSelect: 'sshCopyOnSelect',
       pasteOnRight: 'sshPasteOnRight',
-      consoleSpeed: 'consoleSpeed',
-      consoleFraming: 'consoleFraming',
-      consoleFlow: 'consoleFlow',
     };
     for (const [key, value] of Object.entries(patch)) {
       const stored = keys[key as keyof TerminalSettings];

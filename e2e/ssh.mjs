@@ -73,13 +73,6 @@ await page.addInitScript(({ p }) => {
   window.__logStops = [];   // every ssh_log_stop id
   window.__keepalives = []; // every ssh_keepalive payload
   window.__external = [];   // every ssh_external payload
-  window.__consoles = [];   // every console_open payload
-  window.__breaks = [];     // every ssh_send_break id
-  window.__ports = [
-    { name: "COM1", kind: "other", description: "Built-in serial port", console: false },
-    { name: "COM2", kind: "other", description: "Built-in serial port", console: false },
-    { name: "COM4", kind: "bluetooth", description: "Bluetooth serial link", console: false },
-  ];
   // A configuration folder is already chosen, as it would be on a machine
   // that takes backups — that is where a session log goes.
   window.__settings = { backupFolder: "/tmp/cv-configs" };
@@ -134,15 +127,6 @@ await page.addInitScript(({ p }) => {
         sessions += 1;
         return Promise.resolve(`ssh-${sessions}`);
       }
-      // The machine's serial ports, which a check below changes to plug a
-      // cable in while the console form is open.
-      if (cmd === "console_ports") return Promise.resolve(window.__ports.map((x) => ({ ...x })));
-      if (cmd === "console_open") {
-        window.__consoles.push(args);
-        if (args.port === "COM1") return Promise.reject("COM1 is in use by another program — PuTTY, SecureCRT, or another console tab. Close it there first.");
-        return Promise.resolve(`console-${window.__consoles.length}`);
-      }
-      if (cmd === "ssh_send_break") { window.__breaks.push(args.id); return Promise.resolve(); }
       if (cmd === "ssh_send") { window.__sent.push({ id: args.id, text: atob(args.bytes) }); return Promise.resolve(); }
       if (cmd === "ssh_resize") { window.__resized.push(args); return Promise.resolve(); }
       if (cmd === "ssh_close") { window.__closed.push(args.id); return Promise.resolve(); }
@@ -325,38 +309,6 @@ const returnedScreen = await page.locator(".cv-ssh-screen:not([hidden]) .xterm-r
 // is unmounted to switch tabs loses everything the device said.
 check("and going back to a tab still has everything that was said in it",
   /CORE-SW1#show version/.test(returnedScreen ?? "") && /Cisco IOS Software/.test(returnedScreen ?? ""), (returnedScreen ?? "").slice(0, 200));
-
-// --------------------------------------------- reordering the tabs
-
-const tabOrder = () => page.locator(".cv-ssh-tab").evaluateAll((els) => els.map((e) => e.dataset.sshTab));
-check("tabs start in the order they were opened", JSON.stringify(await tabOrder()) === '["CORE-SW1","ACCESS-SW7"]', JSON.stringify(await tabOrder()));
-// A real drag: pointer down on the second tab, moved over the near half of the first, released.
-{
-  const second = await page.locator('.cv-ssh-tab[data-ssh-tab="ACCESS-SW7"]').boundingBox();
-  const first = await page.locator('.cv-ssh-tab[data-ssh-tab="CORE-SW1"]').boundingBox();
-  await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(first.x + 6, first.y + first.height / 2, { steps: 8 });
-  check("a marker shows where a held tab will land",
-    (await page.locator('.cv-ssh-tab[data-ssh-tab="CORE-SW1"].is-landing-before').count()) === 1);
-  await page.mouse.up();
-}
-await page.waitForTimeout(300);
-check("dropping a tab on another's near half puts it there", JSON.stringify(await tabOrder()) === '["ACCESS-SW7","CORE-SW1"]', JSON.stringify(await tabOrder()));
-check("and the drag leaves no marker behind", (await page.locator(".cv-ssh-tab.is-landing-before, .cv-ssh-tab.is-landing-after, .cv-ssh-tab.is-dragging").count()) === 0);
-check("the tab that was showing is still showing",
-  (await page.locator(".cv-ssh-tab.is-active").first().getAttribute("data-ssh-tab")) === "CORE-SW1");
-const afterMove = await page.locator(".cv-ssh-screen:not([hidden]) .xterm-rows").textContent();
-check("and its screen kept everything that was said in it",
-  /CORE-SW1#show version/.test(afterMove ?? "") && /Cisco IOS Software/.test(afterMove ?? ""), (afterMove ?? "").slice(0, 120));
-check("nothing was typed into a device by the drag",
-  (await st(() => window.__sent)).map((x) => x.text).join("") === "show ip int brief\r");
-await page.locator('.cv-ssh-tab[data-ssh-tab="CORE-SW1"] button[role="tab"]').focus();
-await page.keyboard.press("Control+Shift+ArrowLeft");
-await page.waitForTimeout(200);
-check("Ctrl+Shift+Left moves the focused tab one place left", JSON.stringify(await tabOrder()) === '["CORE-SW1","ACCESS-SW7"]', JSON.stringify(await tabOrder()));
-check("and keeps it focused",
-  await page.evaluate(() => document.activeElement?.closest(".cv-ssh-tab")?.dataset.sshTab === "CORE-SW1"));
 
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 
@@ -665,91 +617,6 @@ check("and tells the backend to end it", (await st(() => window.__closed)).inclu
   await page.waitForTimeout(600);
   const direct = (await st(() => window.__opened)).at(-1);
   check("a direct session sends no neighbour at all", direct.address === "192.0.2.10" && !("via" in direct), JSON.stringify(direct));
-}
-
-// --------------------------------------------------- serial console
-
-{
-  await rightClick("CORE-SW1");
-  await menuItem("Console to this device").click();
-  await page.waitForTimeout(600);
-  const form = page.locator('[data-region="console-open"]');
-  check("Console to this device opens the console form in the panel, for that device",
-    (await form.count()) === 1 && /CORE-SW1/.test((await form.locator("strong").textContent()) ?? ""));
-  check("with no console cable it says it cannot choose, and chooses nothing",
-    /none is a known console cable/.test((await form.locator('[data-region="console-found"]').textContent()) ?? "") &&
-    (await form.locator('[data-field="console-port"]').inputValue()) === "");
-  check("the line starts at 9600 8N1 with no flow control",
-    (await form.locator('[data-field="console-speed"]').inputValue()) === "9600" &&
-    (await form.locator('[data-field="console-framing"]').inputValue()) === "8N1" &&
-    (await form.locator('[data-field="console-flow"]').inputValue()) === "none");
-
-  // The cable goes in while the form is open.
-  await st(() => window.__ports.push({ name: "COM7", kind: "usb", description: "Silicon Labs CP210x USB to UART Bridge", vid: 0x10c4, pid: 0xea60, console: true }));
-  await page.waitForTimeout(2200);
-  check("a cable plugged in while the form is open is found and chosen",
-    (await form.locator('[data-field="console-port"]').inputValue()) === "COM7" &&
-    /COM7.*plugged in just now/.test((await form.locator('[data-region="console-found"]').textContent()) ?? ""),
-    (await form.locator('[data-region="console-found"]').textContent()) ?? "");
-  if (process.env.SHOT_CONSOLE) await page.screenshot({ path: process.env.SHOT_CONSOLE });
-  check("and listed as a console cable",
-    /COM7 — Silicon Labs CP210x USB to UART Bridge \(console cable\)/.test((await form.locator('[data-field="console-port"] option:checked').textContent()) ?? ""));
-
-  // A port that is busy says so and leaves the form open.
-  await form.locator('[data-field="console-port"]').selectOption("COM1");
-  await form.locator("button", { hasText: "Open COM1" }).click();
-  await page.waitForTimeout(500);
-  check("a port in use by another program says so, and the form stays",
-    /in use by another program/.test((await form.locator(".cv-problem").textContent().catch(() => "")) ?? "") && (await form.count()) === 1);
-  await page.waitForTimeout(1700);
-  check("a port chosen by hand is not taken back while nothing new is plugged in",
-    (await form.locator('[data-field="console-port"]').inputValue()) === "COM1");
-
-  await form.locator('[data-field="console-port"]').selectOption("COM7");
-  await form.locator('[data-field="console-speed"]').selectOption("115200");
-  await form.locator("button", { hasText: "Open COM7 at 115200 8N1" }).click();
-  await page.waitForTimeout(700);
-  const asked = (await st(() => window.__consoles)).at(-1);
-  check("the port is opened at the line chosen",
-    JSON.stringify(asked) === JSON.stringify({ port: "COM7", speed: 115200, dataBits: 8, parity: "none", stopBits: 1, flow: "none" }), JSON.stringify(asked));
-  check("the form closes, and the console is a tab named after the device",
-    (await form.count()) === 0 &&
-    (await page.locator('.cv-ssh-tab.is-active button[role="tab"]').getAttribute("title")) === "COM7, 115200 8N1" &&
-    /CORE-SW1/.test((await page.locator(".cv-ssh-tab.is-active").first().textContent()) ?? ""),
-    `${await form.count()} ${await page.locator('.cv-ssh-tab.is-active button[role="tab"]').getAttribute("title")} ${await page.locator(".cv-ssh-tab.is-active").first().textContent()}`);
-  check("the speed is remembered for the next console",
-    (await st(() => window.__cvStore.getState().settings.terminal.consoleSpeed)) === 115200);
-  const logged = (await st(() => window.__logStarts)).at(-1);
-  check("its log is kept under the device, named by the port",
-    logged.id === "console-2" && logged.device === "CORE-SW1" && logged.address === "COM7", JSON.stringify(logged));
-
-  await st(() => window.__fromDevice("console-2", "\r\nSwitch>"));
-  await page.waitForTimeout(400);
-  check("what the console says lands on its screen",
-    /Switch>/.test((await page.locator(".cv-ssh-screen:not([hidden]) .xterm-rows").textContent()) ?? ""));
-  await page.locator(".cv-ssh-screen:not([hidden]) .xterm-helper-textarea").focus();
-  await page.keyboard.type("en");
-  await page.waitForTimeout(400);
-  check("and what is typed goes to the console",
-    (await st(() => window.__sent)).filter((x) => x.id === "console-2").map((x) => x.text).join("") === "en");
-
-  await page.locator('[data-action="console-break"]').click();
-  await page.waitForTimeout(300);
-  check("Send break sends a break on that console's line", JSON.stringify(await st(() => window.__breaks)) === '["console-2"]');
-  await page.locator(".cv-ssh-tab", { hasText: "ACCESS-SW7" }).first().locator("button").first().click();
-  await page.waitForTimeout(200);
-  check("and is offered only on a console tab", (await page.locator('[data-action="console-break"]').count()) === 0);
-
-  // Unplugged: the tab stays with why, and Enter opens the same port the same way.
-  await page.locator('.cv-ssh-tab button[role="tab"][title="COM7, 115200 8N1"]').click();
-  await st(() => window.__deviceHungUp("console-2", "COM7 stopped answering — was the cable unplugged?"));
-  await page.waitForTimeout(300);
-  await page.locator(".cv-ssh-screen:not([hidden]) .xterm-helper-textarea").focus();
-  await page.keyboard.press("Enter");
-  await page.waitForTimeout(700);
-  const again = (await st(() => window.__consoles)).at(-1);
-  check("Enter in an ended console opens the same port at the same line",
-    (await st(() => window.__consoles)).length === 3 && again.port === "COM7" && again.speed === 115200, JSON.stringify(again));
 }
 
 // ------------------------------------ closing the project ends every shell

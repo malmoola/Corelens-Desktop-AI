@@ -21,7 +21,6 @@ mod discovery;
 mod collection;
 mod collection_db;
 mod terminal;
-mod console;
 mod vault_commands;
 mod meraki;
 mod updater;
@@ -390,9 +389,6 @@ fn main() {
             terminal::ssh_keepalive,
             terminal::ssh_external,
             terminal::ssh_test_credential,
-            terminal::ssh_send_break,
-            console::console_ports,
-            console::console_open,
             vault_commands::list_credential_use,
             vault_commands::clear_credential_use,
             vault_commands::remember_vault_key,

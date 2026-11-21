@@ -998,28 +998,6 @@ export type SshProgress =
 /** What happened when a saved credential was tried on one device.
  *  Three outcomes, not two: `refused` is a password problem, `unreachable`
  *  means the login was never tested at all. */
-/** One serial port, as `console_ports` lists it. */
-export interface ConsolePort {
-  /** What it is opened by: `COM3`, `/dev/ttyUSB0`. */
-  name: string;
-  kind: 'usb' | 'pci' | 'bluetooth' | 'other';
-  /** What the system says it is. */
-  description: string;
-  vid?: number | null;
-  pid?: number | null;
-  /** A known console adapter. */
-  console: boolean;
-}
-
-/** How a console's line is set. */
-export interface ConsoleLine {
-  speed: number;
-  dataBits: 7 | 8;
-  parity: 'none' | 'even' | 'odd';
-  stopBits: 1 | 2;
-  flow: 'none' | 'hardware' | 'software';
-}
-
 export interface CredentialTestResult {
   outcome: 'reached' | 'refused' | 'unreachable';
   detail: string;
@@ -1433,11 +1411,6 @@ export type StoredSettings = Partial<{
   /** Clipboard manners in the terminal, both off until asked for. */
   sshCopyOnSelect: string;
   sshPasteOnRight: string;
-  /** A console's line, as last opened: speed, framing such as `8N1`,
-   *  and flow control (`none`, `hardware` or `software`). */
-  consoleSpeed: string;
-  consoleFraming: string;
-  consoleFlow: string;
   /** Whether to ask GitHub for a newer release when the app starts: "1"
    *  when switched on, absent otherwise. Off until somebody turns it on. */
   updateCheckOnStart: string;
@@ -2194,26 +2167,6 @@ export const ipc = {
   },
   sshClose(id: string) {
     return invoke<void>('ssh_close', { id });
-  },
-  /** A break on a console session's line, for ROMMON and password recovery. */
-  sshSendBreak(id: string) {
-    return invoke<void>('ssh_send_break', { id });
-  },
-
-  // ---------------------------------------------------- serial consoles
-
-  /** Every serial port this machine has, console cables first. */
-  consolePorts() {
-    if (!isDesktop) throw new BackendUnavailable('A console port');
-    return invoke<ConsolePort[]>('console_ports');
-  },
-  /** Opens a console session on a port. The id it returns is a session's
-   *  like any other: send, resize, log and close take it. */
-  consoleOpen(port: string, line: ConsoleLine) {
-    if (!isDesktop) throw new BackendUnavailable('A console session');
-    return invoke<string>('console_open', {
-      port, speed: line.speed, dataBits: line.dataBits, parity: line.parity, stopBits: line.stopBits, flow: line.flow,
-    });
   },
   /** Ends every session. Closing a project must not leave a shell logged in. */
   sshCloseAll() {

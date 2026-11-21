@@ -3,8 +3,7 @@
  * from the inspector's action row. One place, so both ask the same
  * questions in the same order and report the same refusals.
  */
-import { ipc, type ConsoleLine } from '../lib/ipc';
-import { describeLine, logAddress } from '../lib/consoleLine';
+import { ipc } from '../lib/ipc';
 import { deviceInfoPatch, drawingsOf } from '../lib/deviceInfo';
 import { planSsh, sshAddress } from '../lib/sshLaunch';
 import { t } from '../i18n';
@@ -50,36 +49,6 @@ export async function openSsh(nodeId: string, data: DeviceNodeData, via?: { addr
     }
   } catch (e: unknown) {
     useStore.getState().setStatusMessage(e instanceof Error ? e.message : String(e));
-  }
-}
-
-/**
- * Opens a console on a port of this machine and puts its tab in front.
- * Resolves to why it could not, or null once the tab is open.
- *
- * Named after the device when it was asked for from one, after the port
- * otherwise. Logged the same as an SSH session, under the port's name.
- */
-export async function openConsole(port: string, line: ConsoleLine, target?: { label?: string; nodeId?: string }): Promise<string | null> {
-  const store = useStore.getState();
-  store.setStatusMessage(t('console.opening', { port, line: describeLine(line) }));
-  try {
-    const id = await ipc.consoleOpen(port, line);
-    const label = target?.label?.trim() || port;
-    useStore.getState().openSshTab({ id, address: port, label, nodeId: target?.nodeId, status: 'open', console: line });
-    useStore.getState().setStatusMessage(null);
-    const { logByDefault } = useStore.getState().settings.terminal;
-    const folder = useStore.getState().settings.backupFolder;
-    if (logByDefault && folder) {
-      await ipc
-        .sshLogStart(id, { folder, device: label, address: logAddress(port), site: '' })
-        .catch((e: unknown) => useStore.getState().setStatusMessage(e instanceof Error ? e.message : String(e)));
-    }
-    return null;
-  } catch (e: unknown) {
-    const why = e instanceof Error ? e.message : String(e);
-    useStore.getState().setStatusMessage(why);
-    return why;
   }
 }
 
