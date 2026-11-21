@@ -822,7 +822,7 @@ export function TopBar({ onExit }: { onExit: () => void }) {
           onClick={() => useStore.getState().requestCommandPalette(true)} />
 
         <button type="button" className="cv-btn" data-action="diagnose-open" title={t('diagnose.open')} onClick={() => useStore.getState().requestDiagnose({ scope: 'project' }, false)}>
-          <ChromeIcon name="pulse" /> {t('diagnose.button')}
+          <ChromeIcon name="pulse" /> <span className="cv-diagnose-label">{t('diagnose.button')}</span>
         </button>
         <button type="button" className="cv-btn" data-region="import" onClick={() => useStore.getState().setImportOpen('choose')}>
           {t('import.open')}

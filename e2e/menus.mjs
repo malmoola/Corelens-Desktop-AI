@@ -139,6 +139,32 @@ await page.locator(".cv-page-tab").first().click({ button: "right" });
 await expectInside("a page tab's menu", ".cv-menu");
 await close();
 
+// ------------------------------------- the top bar stays one row, uncovered
+
+// The top bar is one fixed-height row. If its buttons wrap, the second line
+// falls under the canvas toolbar and cannot be clicked.
+for (const width of [1000, 900]) {
+  await page.setViewportSize({ width, height: H });
+  await page.waitForTimeout(300);
+  const covered = await page.evaluate(() => {
+    const bar = document.querySelector(".cv-topbar");
+    const out = [];
+    for (const el of bar.querySelectorAll("button, summary")) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      // What sits inside a closed dropdown is not on the bar.
+      const d = el.closest("details");
+      if (d && !d.open && el.tagName !== "SUMMARY") continue;
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      if (!top || !el.contains(top)) out.push((el.getAttribute("aria-label") ?? el.getAttribute("title") ?? el.textContent ?? "").trim().slice(0, 30));
+    }
+    return out;
+  });
+  check(`at ${width} px every top-bar control can be clicked`, covered.length === 0, JSON.stringify(covered));
+}
+await page.setViewportSize({ width: W, height: H });
+await page.waitForTimeout(300);
+
 // ---------------------------------------------- every dropdown on the screen
 
 const dropdowns = await page.locator("details.cv-dropdown").count();
