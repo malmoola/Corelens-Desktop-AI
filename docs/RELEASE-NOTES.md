@@ -41,6 +41,19 @@ Newest first.
 
 ## 2.17.4 — 2026-11-17
 
+**Fill in drawn links from the devices**
+- On the canvas's right-click menu. Every device drawn on the page with an
+  address and a login is asked who is on its ports, and nothing else is
+  contacted: no neighbour is followed and no device is added.
+- A drawn link the devices confirm takes its port at each end and the
+  colour of what the port is made of — Ethernet, SFP or QSFP.
+- A drawn link no device reports turns purple.
+- Management links (`mgmt0` and the like) are drawn sky blue and thinner,
+  including ones not drawn before; **Hide management links** takes them off
+  the page and out of exports.
+- A legend says what the colours mean, on screen and in exported drawings.
+- A new link kind, **Management**, can also be chosen by hand.
+
 **Fixed**
 - **Snowflake Cortex refused every call with 415 "Invalid input value.
   null".** No Snowflake request said what it accepts, so the generic
