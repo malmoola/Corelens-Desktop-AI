@@ -2,6 +2,54 @@
 
 Newest first.
 
+## 2.18.0 — 2026-11-21
+
+Everything Corelens Desktop added up to its 2.18.2 is here too. Apart from
+the AI features, the two apps now work the same.
+
+**New**
+- **Fill in drawn links from the devices.** It's on the canvas's
+  right-click menu:
+  - Every device drawn on the page with an address and a login is asked
+    who is on its ports. Nothing else is contacted, no neighbour is
+    followed and no device is added.
+  - A link the devices confirm takes its port at each end, and the colour
+    of what the port is made of: Ethernet, SFP or QSFP.
+  - A drawn link no device reports turns purple.
+  - Management links are drawn sky blue and thinner. **Hide management
+    links** takes them off the page and out of exports.
+  - A legend says what the colours mean.
+  - A new link kind, **Management**, can also be chosen by hand.
+- **The console has a tab of its own.** Serial console sessions moved out
+  of the SSH tab into a **Console** tab beside it in the dock, with
+  **Port** and **Speed**. The port is found for you when exactly one USB
+  serial adapter is plugged in. With two, or none, it asks rather than
+  guesses. Nothing is sent by opening it.
+- **SSH tabs in your order.** Drag a tab onto another, or use
+  Ctrl+Shift+Left and Right.
+
+**Changed**
+- The console is Corelens Desktop's: 9600 8N1 with no flow control, and
+  the speed can be changed. The framing and flow-control choices of 2.17.5
+  are gone, and a speed chosen in 2.17.5 is not carried over.
+
+**Fixed**
+- Several devices could be drawn as one, with every one's links on it,
+  because they shared an address: an anycast gateway, or the address a
+  pair answers on. Devices whose serial numbers differ are never taken for
+  one device now. Links already drawn wrongly are not removed: delete them,
+  or the page, and discover again.
+- A right-click menu longer than the window ran off the bottom. Every
+  menu, dropdown and dialog now stays inside the window and scrolls.
+- In a window narrower than about 1000 px, the top bar's buttons wrapped
+  under the canvas toolbar, and **More** could not be clicked. The bar now
+  stays one row: the project name and the save state shorten first, the
+  clock steps aside below 1100 px, and **Diagnose** shows only its icon
+  below 1000 px.
+
+**Under the surface**
+- Each device on the canvas is drawn with two fewer page elements.
+
 ## 2.17.5 — 2026-11-20
 
 **New**
