@@ -8,26 +8,38 @@ import { modelChoices } from '../lib/aiModels';
 import { useStore } from '../state/store';
 
 /**
- * Settings → AI: the chat inside Corelens, the providers it can run on,
- * the engineer's documents it searches, Claude Code and Claude Desktop
- * through MCP, and how long what was asked and changed is kept. Then the
- * change record.
+ * AI's settings, in two places. The application's (`app`, on the start
+ * screen): the chat on or off, the providers and models, the library
+ * folder every project shares, Claude Code and Claude Desktop through MCP,
+ * how long records are kept and the log. A project's (`project`, inside
+ * it): its own documents folder, what Claude asked in it, its change
+ * record, and clearing its chat.
  */
-export function AiSettings() {
+export function AiSettings({ scope }: { scope: 'app' | 'project' }) {
   // One copy of the settings and of the models each provider listed, so the
   // chat's model and the provider's model are the same choice wherever it
   // is made.
   const shared = useAiSettings();
   const [listed, setListed] = useState<Partial<Record<AiProviderId, AiModel[]>>>({});
+  if (scope === 'project') {
+    return (
+      <section id="settings-aiproject" data-settings-section="aiproject" className="cv-settings-block" data-region="ai-project">
+        <h2>{t('settings.aiProject')}</h2>
+        <DocumentsSection scope="project" />
+        <McpActivitySection />
+        <ChangeHistory />
+        <ProjectChatClear />
+      </section>
+    );
+  }
   return (
     <section id="settings-ai" data-settings-section="ai" className="cv-settings-block" data-region="ai">
       <h2>{t('settings.ai')}</h2>
       <ChatSection ai={shared} listed={listed} />
       <ProvidersSection ai={shared} listed={listed} setListed={setListed} />
-      <DocumentsSection />
+      <DocumentsSection scope="library" />
       <McpSection />
       <RetentionSection />
-      <ChangeHistory />
     </section>
   );
 }
@@ -111,7 +123,8 @@ function useAiSettings() {
 /** The folders of the engineer's own documents the chat searches first:
  *  the project's, and the library every project shares. Rust reads them;
  *  this lists what it found. */
-function DocumentsSection() {
+/** The documents folder of one scope, and what was read from it. */
+function DocumentsSection({ scope }: { scope: 'library' | 'project' }) {
   const projectId = useStore((s) => s.meta?.id ?? null);
   const [status, setStatus] = useState<LibraryStatusDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -130,7 +143,7 @@ function DocumentsSection() {
   useEffect(() => {
     void refresh();
   }, [refresh, projectId]);
-  const choose = async (scope: 'library' | 'project') => {
+  const choose = async () => {
     const current = (scope === 'library' ? status?.folders.library : status?.folders.project) ?? undefined;
     const picked = await ipc.pickFolder(t('docs.chooseTitle'), current);
     if (!picked) return;
@@ -144,14 +157,14 @@ function DocumentsSection() {
       setBusy(false);
     }
   };
-  const clear = async (scope: 'library' | 'project') => {
+  const clear = async () => {
     try {
       setStatus(await ipc.libraryFolderSet(scope, null));
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));
     }
   };
-  const row = (scope: 'library' | 'project', label: string, hint: string, path: string | null | undefined, disabled: boolean) => (
+  const row = (label: string, hint: string, path: string | null | undefined, disabled: boolean) => (
     <div className="cv-docs-folder" data-region={`docs-folder-${scope}`}>
       <span className="cv-docs-folder-label">
         <strong>{label}</strong>
@@ -159,20 +172,22 @@ function DocumentsSection() {
       </span>
       <code className="cv-docs-path" data-field={`docs-path-${scope}`}>{path ?? t('docs.notSet')}</code>
       <span className="cv-row">
-        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-choose-${scope}`} disabled={disabled || busy || !isDesktop} onClick={() => void choose(scope)}>{t('docs.choose')}</button>
-        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-clear-${scope}`} disabled={disabled || !path} onClick={() => void clear(scope)}>{t('docs.clear')}</button>
+        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-choose-${scope}`} disabled={disabled || busy || !isDesktop} onClick={() => void choose()}>{t('docs.choose')}</button>
+        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-clear-${scope}`} disabled={disabled || !path} onClick={() => void clear()}>{t('docs.clear')}</button>
       </span>
     </div>
   );
-  const docs = status?.documents ?? [];
+  const docs = (status?.documents ?? []).filter((d) => d.project === (scope === 'project'));
+  const folder = scope === 'project' ? status?.folders.project : status?.folders.library;
   return (
     <div data-region="ai-documents">
       <h3>{t('docs.title')}</h3>
       <p className="cv-help">{t('docs.intro')}</p>
-      {row('project', t('docs.project'), t('docs.projectHint'), status?.folders.project, !projectId)}
-      {row('library', t('docs.library'), t('docs.libraryHint'), status?.folders.library, false)}
+      {scope === 'project'
+        ? row(t('docs.project'), t('docs.projectHint'), folder, !projectId)
+        : row(t('docs.library'), t('docs.libraryHint'), folder, false)}
       {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
-      {(status?.folders.project || status?.folders.library) && (
+      {folder && (
         <>
           <p className="cv-help cv-row" data-hint="docs-count">
             {docs.length === 0 ? t('docs.none') : t('docs.count', { count: docs.length })}
@@ -386,10 +401,10 @@ function RetentionSection() {
       setProblem(String(err));
     });
   };
-  const clear = async (all: boolean) => {
+  const clear = async () => {
     setProblem(null);
     try {
-      setCleared(await ipc.aiChatClear(all));
+      setCleared(await ipc.aiChatClear(true));
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));
     }
@@ -417,8 +432,7 @@ function RetentionSection() {
       </div>
       <p className="cv-help">{t('aiSettings.retentionHint')}</p>
       <div className="cv-row">
-        <button type="button" className="cv-btn cv-btn-small" data-action="ai-chat-clear" onClick={() => void clear(false)}>{t('aiSettings.clearChat')}</button>
-        <button type="button" className="cv-btn cv-btn-small is-danger" data-action="ai-chat-clear-all" onClick={() => void clear(true)}>{t('aiSettings.clearAllChats')}</button>
+        <button type="button" className="cv-btn cv-btn-small is-danger" data-action="ai-chat-clear-all" onClick={() => void clear()}>{t('aiSettings.clearAllChats')}</button>
         {cleared !== null && <span className="cv-help" role="status">{t('aiSettings.cleared', { n: cleared })}</span>}
       </div>
       <h4>{t('aiSettings.logTitle')}</h4>
@@ -494,32 +508,14 @@ function ChangeHistory() {
  * is listed here with exactly what it was given, already redacted.
  */
 function McpSection() {
-  const projectName = useStore((s) => s.meta?.name ?? 'project');
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [activity, setActivity] = useState<McpActivity[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await ipc.mcpStatus());
-      setActivity(await ipc.mcpActivity(false, 50));
-    } catch (e) {
-      setProblem(String(e));
-    }
-  }, []);
-
   useEffect(() => {
-    void refresh();
-    let stop: (() => void) | undefined;
-    void ipc.onMcpActivity((e) => {
-      if (!e.running) void ipc.mcpActivity(false, 50).then(setActivity).catch(() => {});
-    }).then((s) => {
-      stop = s;
-    });
-    return () => stop?.();
-  }, [refresh]);
+    void ipc.mcpStatus().then(setStatus).catch((e: unknown) => setProblem(String(e)));
+  }, []);
 
   const toggle = async (on: boolean) => {
     // The switch moves at once; the reply then says what is really so.
@@ -542,24 +538,6 @@ function McpSection() {
       setCopied(which);
       window.setTimeout(() => setCopied(null), 1500);
     });
-  };
-
-  const exportRecord = async () => {
-    try {
-      const md = await ipc.mcpChangeRecord();
-      await saveExport(`${slug(projectName)}-ai-change-record.md`, md, 'text/markdown');
-    } catch (e) {
-      setProblem(String(e));
-    }
-  };
-
-  const clear = async () => {
-    try {
-      await ipc.mcpClearActivity(false);
-      setActivity([]);
-    } catch (e) {
-      setProblem(String(e));
-    }
   };
 
   const state = !status
@@ -601,7 +579,57 @@ function McpSection() {
           </button>
         </div>
       )}
-      <h4>{t('ai.activity')}</h4>
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+    </div>
+  );
+}
+
+/** What Claude asked in the open project, with what Corelens returned. */
+function McpActivitySection() {
+  const projectName = useStore((s) => s.meta?.name ?? 'project');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [activity, setActivity] = useState<McpActivity[]>([]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setActivity(await ipc.mcpActivity(false, 50));
+    } catch (e) {
+      setProblem(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    let stop: (() => void) | undefined;
+    void ipc.onMcpActivity((e) => {
+      if (!e.running) void ipc.mcpActivity(false, 50).then(setActivity).catch(() => {});
+    }).then((s) => {
+      stop = s;
+    });
+    return () => stop?.();
+  }, [refresh]);
+
+  const exportRecord = async () => {
+    try {
+      const md = await ipc.mcpChangeRecord();
+      await saveExport(`${slug(projectName)}-ai-change-record.md`, md, 'text/markdown');
+    } catch (e) {
+      setProblem(String(e));
+    }
+  };
+
+  const clear = async () => {
+    try {
+      await ipc.mcpClearActivity(false);
+      setActivity([]);
+    } catch (e) {
+      setProblem(String(e));
+    }
+  };
+
+  return (
+    <div className="cv-ai-part" data-region="ai-mcp-activity">
+      <h3>{t('ai.activity')}</h3>
       <p className="cv-help">{t('ai.activityHint')}</p>
       <div className="cv-row">
         <button type="button" className="cv-btn cv-btn-small" data-action="ai-refresh" onClick={() => void refresh()}>{t('ai.refresh')}</button>
@@ -627,6 +655,30 @@ function McpSection() {
           ))}
         </ul>
       )}
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+    </div>
+  );
+}
+
+/** The open project's chat, cleared on request. */
+function ProjectChatClear() {
+  const [cleared, setCleared] = useState<number | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const clear = async () => {
+    setProblem(null);
+    try {
+      setCleared(await ipc.aiChatClear(false));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="cv-ai-part" data-region="ai-project-chat">
+      <h3>{t('aiSettings.projectChatTitle')}</h3>
+      <div className="cv-row">
+        <button type="button" className="cv-btn cv-btn-small" data-action="ai-chat-clear" onClick={() => void clear()}>{t('aiSettings.clearChat')}</button>
+        {cleared !== null && <span className="cv-help" role="status">{t('aiSettings.cleared', { n: cleared })}</span>}
+      </div>
       {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
     </div>
   );

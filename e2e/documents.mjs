@@ -1,6 +1,7 @@
 // The engineer's documents and runbooks, against a stubbed backend that
-// plays Rust's answers: Settings → AI → Documents (the project's folder
-// and the library, chosen and cleared, the documents listed with which
+// plays Rust's answers: the project's folder under its Settings → AI in
+// this project, the library under the start screen's Settings → AI (chosen
+// and cleared, the documents listed with which
 // are runbooks, a PDF beside its Word file, one that could not be read),
 // and the chat's Runbooks list (no folder, a runbook's Parts with their
 // progress, Start and Continue asking the chat, Start over, nothing sent
@@ -100,7 +101,7 @@ const chat = page.locator('[data-region="ai-chat"]');
 check("the chat has a Runbooks button", (await chat.locator('[data-region="ai-chat-runbooks"]').count()) === 1);
 await chat.locator('[data-region="ai-chat-runbooks"]').click();
 await page.waitForTimeout(300);
-check("with no folder it says where to choose one", /Settings → AI → Documents/.test(await chat.locator('[data-hint="runbooks-no-folder"]').innerText().catch(() => "")));
+check("with no folder it says where to choose one", /Settings → AI in this project/.test(await chat.locator('[data-hint="runbooks-no-folder"]').innerText().catch(() => "")));
 await chat.locator('[data-region="ai-chat-collapse"]').click();
 await page.waitForTimeout(200);
 
@@ -108,9 +109,10 @@ await page.waitForTimeout(200);
 await page.locator(".cv-nav-item", { hasText: /^Settings$/ }).click();
 await page.waitForTimeout(500);
 const docs = page.locator('[data-region="ai-documents"]');
-check("Settings → AI has a Documents part", (await docs.count()) === 1);
+check("a project's Settings → AI in this project has a Documents part", (await docs.count()) === 1 && (await page.locator('[data-region="ai-project"] [data-region="ai-documents"]').count()) === 1);
+check("with this project's folder only: the library is the application's", (await docs.locator('[data-region="docs-folder-library"]').count()) === 0);
 check("it says what is sent and that nothing is uploaded", /Only the sections a search returns are sent/.test(await docs.innerText()) && /never writes to these folders/.test(await docs.innerText()));
-check("neither folder is set at first", (await docs.locator('[data-field="docs-path-project"]').innerText()) === "Not set" && (await docs.locator('[data-field="docs-path-library"]').innerText()) === "Not set");
+check("the folder is not set at first", (await docs.locator('[data-field="docs-path-project"]').innerText()) === "Not set");
 check("Clear waits for a folder", await docs.locator('[data-action="docs-clear-project"]').isDisabled());
 await page.evaluate(() => { window.__pick = "/work/example/docs"; });
 await docs.locator('[data-action="docs-choose-project"]').click();
@@ -119,15 +121,10 @@ const set = await sent("library_folder_set");
 check("choosing the project's folder sends it to Rust for this project", set.length === 1 && set[0].args.scope === "project" && set[0].args.path === "/work/example/docs", JSON.stringify(set));
 check("and the folder is shown", (await docs.locator('[data-field="docs-path-project"]').innerText()) === "/work/example/docs");
 const list = docs.locator('[data-region="docs-list"]');
-check("the documents are listed, with how many", (await list.locator("li").count()) === 4 && /4 documents/.test(await docs.locator('[data-hint="docs-count"]').innerText()));
+check("this project's documents are listed, with how many", (await list.locator("li").count()) === 3 && /3 documents/.test(await docs.locator('[data-hint="docs-count"]').innerText()));
 check("a runbook says so, with its Parts", /Runbook, 3 Parts/.test(await list.locator('[data-doc="Edge_Runbook.docx"]').innerText()) && (await list.locator('[data-kind="runbook"]').count()) === 1);
 check("a PDF beside its Word file says which one is read", /The same as LLD\.docx beside it/.test(await list.locator('[data-doc="design/LLD.pdf"]').innerText()));
-check("one that could not be read says why", /Could not be read: no text in it/.test(await list.locator('[data-doc="Vendor guide.pdf"]').innerText()));
-check("and whose each is", /library/.test(await list.locator('[data-doc="Vendor guide.pdf"]').innerText()) && /project/.test(await list.locator('[data-doc="design/LLD.docx"]').innerText()));
-await page.evaluate(() => { window.__pick = null; });
-await docs.locator('[data-action="docs-choose-library"]').click();
-await page.waitForTimeout(300);
-check("a cancelled choice changes nothing", (await sent("library_folder_set")).length === 1);
+check("and the library's are not", (await list.locator('[data-doc="Vendor guide.pdf"]').count()) === 0 && /project/.test(await list.locator('[data-doc="design/LLD.docx"]').innerText()));
 const before = (await sent("library_status")).length;
 await docs.locator('[data-action="docs-refresh"]').click();
 await page.waitForTimeout(200);
@@ -167,6 +164,25 @@ const reset = await sent("runbook_step_set");
 check("Start over clears that Part's record in Rust", reset.length === 1 && reset[0].args.document === "Edge_Runbook.docx" && reset[0].args.part === "Part B" && reset[0].args.step === null && reset[0].args.status === "pending", JSON.stringify(reset));
 check("and the Part is back to its first step", /0 of 3 done/.test(await partB.innerText()) && (await partB.locator('[data-action="runbook-start"]').count()) === 1);
 check("the list is read again when a turn ends, since the chat records steps", (await sent("library_status")).length >= before + 3);
+
+// ------------------------------------------------- the library, on the start screen
+await page.evaluate(() => window.__cvStore.getState().closeProject());
+await page.waitForTimeout(600);
+await page.locator('[data-action="app-settings"]').click();
+await page.waitForTimeout(500);
+const lib = page.locator('[data-region="ai"] [data-region="ai-documents"]');
+check("the start screen's Settings → AI has the library folder, and no project's", (await lib.locator('[data-region="docs-folder-library"]').count()) === 1 && (await lib.locator('[data-region="docs-folder-project"]').count()) === 0);
+const chosen = (await sent("library_folder_set")).length;
+await page.evaluate(() => { window.__pick = null; });
+await lib.locator('[data-action="docs-choose-library"]').click();
+await page.waitForTimeout(300);
+check("a cancelled choice changes nothing", (await sent("library_folder_set")).length === chosen);
+await page.evaluate(() => { window.__pick = "/work/library"; });
+await lib.locator('[data-action="docs-choose-library"]').click();
+await page.waitForTimeout(300);
+const libSet = (await sent("library_folder_set")).at(-1);
+check("choosing it sends the library's folder to Rust", libSet?.args.scope === "library" && libSet?.args.path === "/work/library", JSON.stringify(libSet));
+check("and only the library's documents are listed there, with why one could not be read", (await lib.locator('[data-region="docs-list"] li').count()) === 1 && /Could not be read: no text in it/.test(await lib.locator('[data-doc="Vendor guide.pdf"]').innerText()) && /library/.test(await lib.locator('[data-doc="Vendor guide.pdf"]').innerText()));
 
 await browser.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nall documents checks passed");

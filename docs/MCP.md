@@ -43,8 +43,9 @@ Authenticode-signed yet, so SmartScreen may say *Windows protected your PC*:
 
 ## 2. Switch it on
 
-Open Corelens Desktop AI, open the customer's project, unlock the vault,
-then *Settings → AI → Let Claude use Corelens*. The section then shows the
+Open Corelens Desktop AI, press *Settings* on the start screen, then
+*AI → Let Claude use Corelens*; unlock the vault and open the customer's
+project. The section then shows the
 two snippets below with this installation's own path; copy them from there.
 
 ## 3. Connect Claude Code
@@ -110,7 +111,8 @@ Ask Claude, one at a time, and check each answer:
 8. **Disconnect the VPN**, then **"Run `show clock` on SW1."** — an error
    within about ten seconds saying the switch did not answer and to check
    the VPN. Reconnect.
-9. In Corelens, *Settings → AI → What Claude has asked* lists every call
+9. In Corelens, the project's *Settings → AI in this project → What Claude
+   has asked* lists every call
    above, the commands and exactly what was returned. *Export change
    record…* saves it as Markdown.
 10. Switch *Let Claude use Corelens* off, and ask once more — Claude is told
@@ -236,8 +238,8 @@ describes what is checked.
 
 `list_documents`, `search_library` and `read_document` read the engineer's
 own documents on this computer. They come from the open project's
-documents folder and the library folder, both set in *Settings → AI →
-Documents*: designs, IP plans, MOPs, runbooks and vendor guides in Word,
+documents folder (the project's *Settings → AI in this project*) and the
+library folder (*Settings → AI* on the start screen): designs, IP plans, MOPs, runbooks and vendor guides in Word,
 Excel, PowerPoint, PDF, Markdown or text. A search returns the
 best-matching sections, each named by its document and headings; a read
 returns one section or the whole document with line numbers. What is

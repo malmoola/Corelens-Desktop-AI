@@ -77,16 +77,15 @@ await page.addInitScript(({ p, exe, activity }) => {
 page.on("pageerror", (e) => console.log("PAGE EXCEPTION:", String(e).slice(0, 300)));
 await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForTimeout(500);
-await page.locator(".cv-project-open").first().click();
-await page.waitForTimeout(700);
-await page.locator(".cv-nav-item", { hasText: /^Settings$/ }).click();
+// The application's settings are on the start screen, before any project.
+await page.locator('[data-action="app-settings"]').click();
 await page.waitForTimeout(500);
 
 const ai = page.locator('[data-region="ai"]');
 const sent = (cmd) => page.evaluate((c) => window.__calls.filter((x) => x.cmd === c), cmd);
 
 // ------------------------------------------------- off by default
-check("Settings has an AI block, listed in the nav", (await ai.count()) === 1 && (await page.locator(".cv-settings-nav", { hasText: "AI" }).count()) === 1);
+check("the start screen's Settings has an AI block, listed in the nav", (await ai.count()) === 1 && (await page.locator(".cv-settings-nav", { hasText: "AI" }).count()) === 1);
 check("it says Claude never connects to a device", /Claude never connects to a device/.test(await ai.innerText()), (await ai.innerText()).slice(0, 200));
 check("and what reaches Anthropic, and that this part of Corelens sends nothing there itself", /reaches Anthropic through the Claude app/.test(await ai.innerText()) && /sends nothing to Anthropic itself and holds no key/.test(await ai.innerText()));
 check("the switch is off until somebody turns it on", !(await ai.locator('[data-field="mcp-enabled"]').isChecked()));
@@ -105,15 +104,25 @@ check("the Claude Code command names this installation, with --mcp", code === `c
 const desktop = JSON.parse(await ai.locator('[data-field="claude-desktop-config"]').innerText());
 check("and the Claude Desktop entry starts the same executable", desktop.mcpServers.corelens.command === EXE && desktop.mcpServers.corelens.args[0] === "--mcp");
 
-// ------------------------------------------------- what Claude asked
-const rows = ai.locator('[data-region="ai-activity"] li');
+check("the start screen's AI block lists no project's activity", (await page.locator('[data-region="ai-mcp-activity"]').count()) === 0 && (await page.locator('[data-region="ai-changes"]').count()) === 0);
+
+// ------------------------------------------------- what Claude asked, inside the project
+await page.locator('[data-action="app-settings"]').click();
+await page.waitForTimeout(300);
+await page.locator(".cv-project-open").first().click();
+await page.waitForTimeout(700);
+await page.locator(".cv-nav-item", { hasText: /^Settings$/ }).click();
+await page.waitForTimeout(500);
+const mine = page.locator('[data-region="ai-project"]');
+check("a project's Settings has AI in this project, and not the application's AI", (await mine.count()) === 1 && (await ai.count()) === 0 && (await page.locator('[data-field="mcp-enabled"]').count()) === 0);
+const rows = mine.locator('[data-region="ai-activity"] li');
 check("every call for the project is listed, newest first", (await rows.count()) === 2 && (await rows.first().getAttribute("data-tool")) === "run_show_command");
 check("a call names its device and command", /run_show_command.*on SW1.*show ip arp.*answered/s.test(await rows.first().innerText()), await rows.first().innerText());
 check("a withheld result says why", /withheld \(looked like a secret\)/.test(await rows.nth(1).innerText()));
 await rows.first().locator("summary").click();
 check("and opens to exactly what Claude was given", /Internet  192\.0\.2\.1/.test(await rows.first().locator(".cv-ai-result").innerText()));
 
-await ai.locator('[data-action="ai-export"]').click();
+await mine.locator('[data-action="ai-export"]').click();
 await page.waitForTimeout(300);
 check("the change record is saved through the save dialog", (await sent("mcp_change_record")).length === 1 && (await sent("save_export")).length === 1);
 check("under the project's name", (await sent("pick_export_target"))[0]?.args.filename === "example-project-ai-change-record.md", JSON.stringify(await sent("pick_export_target")));
@@ -128,9 +137,15 @@ await page.waitForTimeout(150);
 check("and goes when it ends", (await page.locator('[data-region="ai-busy"]').count()) === 0);
 
 // ------------------------------------------------- clearing, switching off
-await ai.locator('[data-action="ai-clear"]').click();
+await mine.locator('[data-action="ai-clear"]').click();
 await page.waitForTimeout(300);
-check("clearing empties the list", (await ai.locator('[data-hint="ai-no-activity"]').count()) === 1 && (await sent("mcp_clear_activity")).length === 1);
+check("clearing empties the list", (await mine.locator('[data-hint="ai-no-activity"]').count()) === 1 && (await sent("mcp_clear_activity")).length === 1);
+
+// ------------------------------------------------- switching off, from the start screen again
+await page.evaluate(() => window.__cvStore.getState().closeProject());
+await page.waitForTimeout(700);
+await page.locator('[data-action="app-settings"]').click();
+await page.waitForTimeout(500);
 await ai.locator('[data-field="mcp-enabled"]').uncheck();
 await page.waitForTimeout(300);
 const off = await sent("mcp_set_enabled");

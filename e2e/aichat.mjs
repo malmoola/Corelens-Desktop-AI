@@ -93,6 +93,7 @@ await page.addInitScript(({ p, s0 }) => {
       if (cmd === "ai_chat_send" || cmd === "ai_chat_stop" || cmd === "change_decide") return Promise.resolve(cmd === "ai_chat_stop" ? true : null);
       if (cmd === "change_rollback") return Promise.resolve(window.__rolledBack);
       if (cmd === "change_export") return Promise.resolve("# Configuration changes\n");
+      if (cmd === "ai_chat_clear") return Promise.resolve(0);
       if (cmd === "app_log_info") return Promise.resolve({ folder: "/nowhere/logs", files: [["corelens.log", 2048]], totalBytes: 2048, limitBytes: 52428800, verboseUntilMs: 0 });
       if (cmd === "app_log_verbose") return Promise.resolve({ folder: "/nowhere/logs", files: [], totalBytes: 0, limitBytes: 52428800, verboseUntilMs: args.on ? Date.now() + 86400000 : 0 });
       if (cmd === "pick_export_target") return Promise.resolve({ token: "t1", path: "/nowhere/x" });
@@ -225,12 +226,28 @@ await page.waitForTimeout(200);
 
 // ------------------------------------------------- Settings → AI
 await page.evaluate((s) => { window.__settings = s; }, settings(false));
+// Inside the project, its own: the change record and its chat.
 await page.locator(".cv-nav-item", { hasText: /^Settings$/ }).click();
 await page.waitForTimeout(500);
-const ai = page.locator('[data-region="ai"]');
-for (const region of ["ai-chat-settings", "ai-providers", "ai-mcp", "ai-retention", "ai-changes"]) {
-  check(`Settings → AI has its ${region} part`, (await ai.locator(`[data-region="${region}"]`).count()) === 1);
+const mine = page.locator('[data-region="ai-project"]');
+for (const region of ["ai-documents", "ai-mcp-activity", "ai-changes", "ai-project-chat"]) {
+  check(`a project's Settings → AI in this project has its ${region} part`, (await mine.locator(`[data-region="${region}"]`).count()) === 1);
 }
+check("and none of the application's AI settings", (await page.locator('[data-region="ai"]').count()) === 0 && (await page.locator('[data-region="ai-providers"]').count()) === 0);
+await mine.locator('[data-action="ai-chat-clear"]').click();
+await page.waitForTimeout(200);
+check("clearing this project's chat asks for this project only", (await sent("ai_chat_clear")).at(-1)?.args.allProjects === false, JSON.stringify(await sent("ai_chat_clear")));
+
+// On the start screen, the application's.
+await page.evaluate(() => window.__cvStore.getState().closeProject());
+await page.waitForTimeout(600);
+await page.locator('[data-action="app-settings"]').click();
+await page.waitForTimeout(500);
+const ai = page.locator('[data-region="ai"]');
+for (const region of ["ai-chat-settings", "ai-providers", "ai-documents", "ai-mcp", "ai-retention"]) {
+  check(`the start screen's Settings → AI has its ${region} part`, (await ai.locator(`[data-region="${region}"]`).count()) === 1);
+}
+check("and no project's record", (await page.locator('[data-region="ai-changes"]').count()) === 0 && (await page.locator('[data-region="ai-project"]').count()) === 0);
 check("the chat is off by default and says nothing is sent", !(await ai.locator('[data-field="ai-chat-enabled"]').isChecked()) && /makes no request to any AI provider/.test(await ai.locator('[data-hint="ai-chat-off-note"]').innerText()));
 check("Test connection waits for the chat to be on", await ai.locator('[data-action="ai-test-connection"]').isDisabled());
 await ai.locator('[data-action="ai-key-import-anthropic"]').click();

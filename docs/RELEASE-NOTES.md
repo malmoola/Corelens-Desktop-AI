@@ -2,6 +2,24 @@
 
 Newest first.
 
+## Unreleased
+
+**Changed**
+- **Settings in two places, by whose they are.** The application's
+  settings are on the start screen, behind a new **Settings** button:
+  Display, Terminal, Updates, Shared projects, Saved credentials (the
+  vault's lock) and AI (the chat, providers and models, the library
+  folder, MCP, retention and the log).
+  - A project's **Settings** now holds only that project's: logins,
+    folders, SFTP server, Meraki, saved logins, host keys, and **AI in
+    this project** (its documents folder, what Claude asked, its
+    configuration changes and clearing its chat).
+  - Each page says where the other one is.
+  - **Update to …** in the top bar saves and closes the project, then
+    opens the start screen's Settings at Updates.
+  - The start screen no longer has the Folders note and the vault's lock
+    at the bottom: the lock is under Settings → Saved credentials.
+
 ## 2.19.0 — 2026-11-22
 
 **New**

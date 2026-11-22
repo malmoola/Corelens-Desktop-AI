@@ -14,7 +14,8 @@ any provider at all.
 
 ## 1. Choose a provider
 
-*Settings → AI*:
+*Settings → AI*, from the **Settings** button on the start screen (the
+application's settings, the same for every project):
 
 1. **AI chat in Corelens** — tick *Turn on AI chat in Corelens*, choose the
    provider.
@@ -133,11 +134,13 @@ sections a search returns are sent to the provider, through the same
 redaction as every other tool result. With Ollama, nothing leaves the
 computer at all. Corelens never writes to these folders.
 
-*Settings → AI → Documents* has two folders:
+There are two folders:
 
-- **This project's documents folder.** The project's own design, runbooks
-  and plans. It is searched first, and each project has its own.
-- **Library folder, for every project.** Templates, standards, vendor
+- **This project's documents folder**, under the project's own *Settings →
+  AI in this project → Documents*. The project's own design, runbooks and
+  plans. It is searched first, and each project has its own.
+- **Library folder, for every project**, under *Settings → AI → Documents*
+  on the start screen. Templates, standards, vendor
   guides and earlier plans that any project can use.
 
 Sub-folders are read too. A document is read once and again only when it
@@ -204,7 +207,8 @@ and the approval dialog opens over the window — exactly as for a change
 Claude Code proposes. The chat shows the proposal waiting, with *Open
 approval*. Approve, deny, or let it time out (10 minutes, then denied). The
 dialog follows the change through its push, verification and any rollback,
-and *Settings → AI → Configuration changes* keeps the record, exported as
+and the project's *Settings → AI in this project → Configuration changes*
+keeps the record, exported as
 Markdown or CSV. Saving the configuration is always a separate proposal.
 
 ## 4. What it costs and what is sent
