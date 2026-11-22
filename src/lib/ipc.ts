@@ -415,6 +415,57 @@ export interface Change {
 /** The in-app chat (`src-tauri/src/ai`). The page never sees a key or a
  *  request; only text, settings and whether a key is kept. */
 export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'snowflake';
+/** A runbook Part, as the chat panel lists it: how many steps, how many
+ *  done or skipped, how many failed, and the next one. */
+export interface RunbookPartDto {
+  label: string;
+  title: string;
+  steps: number;
+  done: number;
+  failed: number;
+  next: string | null;
+}
+
+/** One of the engineer's documents, read on this computer. */
+export interface LibraryDocDto {
+  name: string;
+  kind: string;
+  project: boolean;
+  error: string | null;
+  /** The runbook's title when the document is one. */
+  runbook: string | null;
+  parts: RunbookPartDto[];
+  /** A PDF beside the Word file it was made from: that file is the one read. */
+  copyOf: string | null;
+}
+
+export interface LibraryStatusDto {
+  folders: { project: string | null; library: string | null };
+  projectOpen: boolean;
+  documents: LibraryDocDto[];
+}
+
+/** The documents status as Rust sent it, or null when it is not that
+ *  shape: a page that could not read it shows nothing found rather than
+ *  failing. */
+export function readLibraryStatus(v: unknown): LibraryStatusDto | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as Partial<LibraryStatusDto>;
+  if (typeof o.folders !== 'object' || o.folders === null || !Array.isArray(o.documents)) return null;
+  const str = (x: unknown) => (typeof x === 'string' && x ? x : null);
+  return {
+    folders: { project: str(o.folders.project), library: str(o.folders.library) },
+    projectOpen: o.projectOpen === true,
+    documents: o.documents.filter((d): d is LibraryDocDto => typeof d === 'object' && d !== null && typeof d.name === 'string').map((d) => ({
+      ...d,
+      parts: Array.isArray(d.parts) ? d.parts : [],
+      runbook: str(d.runbook),
+      copyOf: str(d.copyOf),
+      error: str(d.error),
+    })),
+  };
+}
+
 export interface AiSettingsDto {
   chatEnabled: boolean;
   provider: AiProviderId;
@@ -1975,6 +2026,19 @@ export const ipc = {
   },
   aiChatStop() {
     return invoke<boolean>('ai_chat_stop');
+  },
+  /** The documents folders and what is in them. Read by Rust, on this
+   *  computer; nothing is sent anywhere. */
+  async libraryStatus(): Promise<LibraryStatusDto | null> {
+    if (!isDesktop) return null;
+    return readLibraryStatus(await invoke<unknown>('library_status'));
+  },
+  async libraryFolderSet(scope: 'library' | 'project', path: string | null): Promise<LibraryStatusDto | null> {
+    return readLibraryStatus(await invoke<unknown>('library_folder_set', { scope, path }));
+  },
+  /** Marks a runbook step, or with no step and `pending` starts the Part over. */
+  async runbookStepSet(document: string, part: string, step: string | null, status: 'done' | 'skipped' | 'failed' | 'pending'): Promise<LibraryStatusDto | null> {
+    return readLibraryStatus(await invoke<unknown>('runbook_step_set', { document, part, step, status }));
   },
   aiLastRequest(provider: AiProviderId) {
     return invoke<string>('ai_last_request', { provider });

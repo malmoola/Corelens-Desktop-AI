@@ -231,3 +231,27 @@ runs, the Corelens window shows each device's progress and can stop it.
 Claude Code waits as long as it takes; a client that gives up sooner can
 read the result with `get_diagnosis` once it is done. `docs/DIAGNOSE.md`
 describes what is checked.
+
+## 9. The engineer's documents and runbooks
+
+`list_documents`, `search_library` and `read_document` read the engineer's
+own documents on this computer. They come from the open project's
+documents folder and the library folder, both set in *Settings → AI →
+Documents*: designs, IP plans, MOPs, runbooks and vendor guides in Word,
+Excel, PowerPoint, PDF, Markdown or text. A search returns the
+best-matching sections, each named by its document and headings; a read
+returns one section or the whole document with line numbers. What is
+returned passes the same redaction as every other result. Nothing is
+written to the folders.
+
+`get_runbook` lists the runbooks, a runbook's Parts and where each
+stands, or one Part's steps in order. For each step it gives its kind
+(check, config, exec, manual), the devices it names matched to the open
+project, its commands exactly as written, what to expect, its recorded
+status, the Part's rollback and the next step not done. `record_step`
+records how a step went (done, skipped, failed, or pending to undo) in
+this project's record, and touches no device. It is the one tool besides
+the proposals that writes, so it is not marked read-only. A change a
+runbook step asks for is still a `propose_config_change` that waits for
+the engineer.
+

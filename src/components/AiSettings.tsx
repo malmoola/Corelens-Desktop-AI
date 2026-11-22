@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { t } from '../i18n';
-import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type McpActivity, type McpStatus } from '../lib/ipc';
+import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type LibraryStatusDto, type McpActivity, type McpStatus } from '../lib/ipc';
 import { saveExport, slug } from '../lib/exports';
 import { canRollBack } from '../lib/changes';
 import { modelChoices } from '../lib/aiModels';
 import { useStore } from '../state/store';
 
 /**
- * Settings → AI, in four parts: the chat inside Corelens, the providers it
- * can run on, Claude Code and Claude Desktop through MCP, and how long
- * what was asked and changed is kept. Then the change record.
+ * Settings → AI: the chat inside Corelens, the providers it can run on,
+ * the engineer's documents it searches, Claude Code and Claude Desktop
+ * through MCP, and how long what was asked and changed is kept. Then the
+ * change record.
  */
 export function AiSettings() {
   // One copy of the settings and of the models each provider listed, so the
@@ -23,6 +24,7 @@ export function AiSettings() {
       <h2>{t('settings.ai')}</h2>
       <ChatSection ai={shared} listed={listed} />
       <ProvidersSection ai={shared} listed={listed} setListed={setListed} />
+      <DocumentsSection />
       <McpSection />
       <RetentionSection />
       <ChangeHistory />
@@ -104,6 +106,95 @@ function useAiSettings() {
     }
   };
   return { settings, setSettings, set, problem, setProblem };
+}
+
+/** The folders of the engineer's own documents the chat searches first:
+ *  the project's, and the library every project shares. Rust reads them;
+ *  this lists what it found. */
+function DocumentsSection() {
+  const projectId = useStore((s) => s.meta?.id ?? null);
+  const [status, setStatus] = useState<LibraryStatusDto | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(async () => {
+    setBusy(true);
+    try {
+      setStatus(await ipc.libraryStatus());
+      setProblem(null);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh, projectId]);
+  const choose = async (scope: 'library' | 'project') => {
+    const current = (scope === 'library' ? status?.folders.library : status?.folders.project) ?? undefined;
+    const picked = await ipc.pickFolder(t('docs.chooseTitle'), current);
+    if (!picked) return;
+    setBusy(true);
+    try {
+      setStatus(await ipc.libraryFolderSet(scope, picked));
+      setProblem(null);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const clear = async (scope: 'library' | 'project') => {
+    try {
+      setStatus(await ipc.libraryFolderSet(scope, null));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const row = (scope: 'library' | 'project', label: string, hint: string, path: string | null | undefined, disabled: boolean) => (
+    <div className="cv-docs-folder" data-region={`docs-folder-${scope}`}>
+      <span className="cv-docs-folder-label">
+        <strong>{label}</strong>
+        <span className="cv-help">{disabled ? t('docs.noProject') : hint}</span>
+      </span>
+      <code className="cv-docs-path" data-field={`docs-path-${scope}`}>{path ?? t('docs.notSet')}</code>
+      <span className="cv-row">
+        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-choose-${scope}`} disabled={disabled || busy || !isDesktop} onClick={() => void choose(scope)}>{t('docs.choose')}</button>
+        <button type="button" className="cv-btn cv-btn-small" data-action={`docs-clear-${scope}`} disabled={disabled || !path} onClick={() => void clear(scope)}>{t('docs.clear')}</button>
+      </span>
+    </div>
+  );
+  const docs = status?.documents ?? [];
+  return (
+    <div data-region="ai-documents">
+      <h3>{t('docs.title')}</h3>
+      <p className="cv-help">{t('docs.intro')}</p>
+      {row('project', t('docs.project'), t('docs.projectHint'), status?.folders.project, !projectId)}
+      {row('library', t('docs.library'), t('docs.libraryHint'), status?.folders.library, false)}
+      {problem && <p className="cv-help cv-update-problem" role="alert">{problem}</p>}
+      {(status?.folders.project || status?.folders.library) && (
+        <>
+          <p className="cv-help cv-row" data-hint="docs-count">
+            {docs.length === 0 ? t('docs.none') : t('docs.count', { count: docs.length })}
+            <button type="button" className="cv-btn cv-btn-small" data-action="docs-refresh" disabled={busy} onClick={() => void refresh()}>{t('docs.refresh')}</button>
+          </p>
+          {docs.length > 0 && (
+            <ul className="cv-docs-list" data-region="docs-list">
+              {docs.map((d) => (
+                <li key={`${d.project ? 'p' : 'l'}:${d.name}`} data-doc={d.name} data-kind={d.runbook ? 'runbook' : d.kind}>
+                  <code>{d.name}</code>
+                  <span className="cv-help"> · {t(d.project ? 'docs.whose.project' : 'docs.whose.library')}</span>
+                  {d.runbook && <span className="cv-docs-badge"> {t('docs.runbook', { count: d.parts.length })}</span>}
+                  {d.copyOf && <span className="cv-help"> · {t('docs.copyOf', { name: d.copyOf })}</span>}
+                  {d.error && <span className="cv-help cv-update-problem"> · {t('docs.unreadable', { why: d.error })}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 /** 1. The chat inside Corelens: on or off, which provider, which model. */

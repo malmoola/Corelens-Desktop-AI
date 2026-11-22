@@ -13,7 +13,7 @@
 │                                  │                                                             │
 │                          lib/ipc.ts  ← the only IPC surface                                    │
 └──────────────────────────────────┬─────────────────────────────────────────────────────────────┘
-                                   │ named Tauri commands (168 at this release) + 1 event channel
+                                   │ named Tauri commands (171 at this release) + 1 event channel
 ┌──────────────────────────────────┴─────────────────────────────────────────────────────────────┐
 │  Rust                                                                                          │
 │                                                                                                │
@@ -153,7 +153,7 @@ working explanation is `docs/BRAND_AND_LICENSING.md`).
 
 ## Security boundaries
 
-1. **JS → Rust.** A fixed list of named commands (168 at this release). No
+1. **JS → Rust.** A fixed list of named commands (171 at this release). No
    shell plugin, no HTTP plugin, no generic exec. Listed explicitly in
    `main.rs`; `isolation/` checks its command table against that list.
 2. **Rust → OS.** `parse_target` must succeed before any target reaches an argv,

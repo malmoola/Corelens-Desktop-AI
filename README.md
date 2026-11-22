@@ -71,6 +71,15 @@ exactly as the terminal would. The model sees only what Corelens hands back.
   accepted, so `uci set`, `uci commit`, `opkg install`, `reboot` and
   `sysupgrade` never reach it. Its WireGuard keys, Wi-Fi keys and passwords
   are removed from what comes back.
+- **Search your own documents first.** Designs, IP plans, MOPs, runbooks
+  and vendor guides in a project's documents folder and a shared library
+  folder, in Word, Excel, PowerPoint, PDF, Markdown or text, are read on
+  this computer and searched before a change is planned or a fault is
+  chased. Only the sections found are sent, redacted like everything else.
+  A runbook's Parts can be run step by step: checks read-only, each change
+  proposed exactly as written and waiting for you, hands-on steps waiting
+  for you to say they are done, and how far each Part got kept with the
+  project (`docs/AI-CHAT.md`).
 - **Propose a configuration change — which waits for you.** Corelens reads
   the device's running configuration and opens a dialog with the exact
   commands, a diff against what is running, the risk and the rollback the

@@ -2,6 +2,31 @@
 
 Newest first.
 
+## Unreleased
+
+**New**
+- **Your own documents, searched first, on any provider.** Under
+  *Settings → AI → Documents*, choose this project's documents folder and
+  a library folder for every project. Designs, IP plans, MOPs, runbooks
+  and vendor guides in Word, Excel, PowerPoint, PDF, Markdown or text are
+  read on this computer.
+  - The chat searches them before it plans or reviews a change, runs a
+    runbook, or troubleshoots. When troubleshooting it compares what the
+    design says with what the devices say.
+  - Only the sections a search returns are sent, cleaned of passwords and
+    keys. With Ollama nothing leaves the computer.
+  - Claude Code and Claude Desktop get the same tools through MCP.
+- **Runbooks, one step at a time.** A document with Parts and steps is a
+  runbook. The chat's new **Runbooks** button lists each Part and how far
+  it has got. **Start** or *start Window 1 Part A* runs it in order:
+  - Checks run read-only and are compared with what the step expects.
+  - Each change is proposed exactly as written, for you to approve.
+  - Steps done by hand (a controller, cabling) wait for you to say
+    they're done.
+  - A failure stops the Part and shows its rollback.
+  - Each step's outcome is kept with the project, and **Continue**
+    carries on from the next step not done.
+
 ## 2.18.0 — 2026-11-21
 
 Everything Corelens Desktop added up to its 2.18.2 is here too. Apart from

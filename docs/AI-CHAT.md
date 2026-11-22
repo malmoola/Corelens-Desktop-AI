@@ -123,6 +123,80 @@ passes the same redaction as any tool result before it is sent. A service
 built with other column names still works; the document names are then
 not shown.
 
+## 2b. Your own documents, on this computer
+
+The chat on **any** provider can search your own documents first: designs
+(HLD, LLD), IP plans, MOPs, runbooks, standards and vendor guides, in Word,
+Excel, PowerPoint, PDF, Markdown or text. Corelens reads them on this
+computer. Nothing is uploaded or copied, and nothing is trained. Only the
+sections a search returns are sent to the provider, through the same
+redaction as every other tool result. With Ollama, nothing leaves the
+computer at all. Corelens never writes to these folders.
+
+*Settings → AI → Documents* has two folders:
+
+- **This project's documents folder.** The project's own design, runbooks
+  and plans. It is searched first, and each project has its own.
+- **Library folder, for every project.** Templates, standards, vendor
+  guides and earlier plans that any project can use.
+
+Sub-folders are read too. A document is read once and again only when it
+changes, so adding or editing a file counts at the next question. The list
+under the folders shows what was found: which documents are runbooks, a
+PDF that is a copy of the Word file beside it (only the Word file is read),
+and any file that could not be read and why (a scanned PDF has no text).
+
+The chat is told to search them before it plans, writes or reviews a
+change, runs a runbook, or troubleshoots. When troubleshooting, the design
+and the IP plan say how the network is meant to be. The chat compares that
+with what the devices say, and names each difference with the document
+and section it comes from. A value in a document can be out of date, so it
+is confirmed on the device first. Claude Code and Claude Desktop get the
+same tools through MCP.
+
+### Runbooks: "start Part A"
+
+A document is a runbook when it has Part headings ("Part A – …",
+"Phase 2", "Window 1") with steps under them. A step is either a numbered
+line ("A3.", "3.", "Step 3.") or a device line followed by its commands
+("CORE-1 and CORE-2:" then the block). Commands are recognised by the
+fixed-width font they are set in (Consolas, Courier and the like, or a
+Code style), or by a code block in Markdown. Parts under a "Window 1" or
+"Phase 2" heading are named with it, for example *Window 2 · Part A*.
+"Expect:" lines and tables under a step are kept with it, and "Rollback"
+lines with the Part.
+
+The chat panel's **Runbooks** button (the page icon) lists each runbook's
+Parts and how far each has got. **Start** and **Continue** ask the chat to
+run that Part. You can also type it: *start Window 1 Part A*, *continue
+Part B*, *do the prechecks*. The chat then works one step at a time, in
+order:
+
+- **check** steps (read-only commands): it runs them on the device the
+  step names and compares the output with the step's Expect lines.
+- **config** steps: it proposes the block exactly as written, as a change
+  for you to approve, with the step quoted. "X, then Y" is proposed as a
+  batch in that order. It never changes, adds to or fills in a value. A
+  placeholder or a value still to be filled in stops it, and it asks.
+- **exec** steps (clear, ping): it asks you to run them in the terminal
+  and tell it the result. A save is its own save proposal.
+- **manual** steps (FMC or another controller, cabling, hands onsite): it
+  says what the step says and waits for you to say it is done.
+
+After each step it records the outcome in this project: done, skipped,
+failed, with a note. A failed check, verification or change stops the
+Part. The chat says what differs and gives the Part's rollback, then
+waits. **Start over** clears a Part's record. A device the runbook names
+that is not in the project is said to be missing, and the chat asks which
+device it is.
+
+A Part with many steps can need more tool calls than one answer may make
+(15 unless *Settings → AI* says otherwise). The chat then stops at the end
+of a step and says where it is, and **Continue** carries on from the next
+step not done. A runbook written with Parts and numbered steps, commands
+in a fixed-width font, and one device line above each block of commands is
+read best.
+
 ## 3. Changes
 
 When the model wants to change a device it calls `propose_config_change`,

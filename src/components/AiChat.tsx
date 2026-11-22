@@ -2,17 +2,26 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { t } from '../i18n';
 import { applyEvent, isChatShortcut, itemsFromHistory, tokens, type ChatItem, type Table } from '../lib/aiChat';
-import { ipc, isDesktop, type AiSettingsDto, type AiUsage } from '../lib/ipc';
+import { ipc, isDesktop, type AiSettingsDto, type AiUsage, type LibraryStatusDto } from '../lib/ipc';
 import { useStore } from '../state/store';
 import { ChromeIcon, IconButton } from './chromeIcons';
 
 const DOCK_KEY = 'corelens.ai.chatDocked';
+const RUNBOOKS_KEY = 'corelens.ai.runbooksOpen';
 
-function remembered(): boolean {
+function remembered(key = DOCK_KEY): boolean {
   try {
-    return localStorage.getItem(DOCK_KEY) === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     return false;
+  }
+}
+
+function remember(key: string, on: boolean) {
+  try {
+    localStorage.setItem(key, on ? '1' : '0');
+  } catch {
+    // A per-viewer convenience; without storage it is simply not kept.
   }
 }
 
@@ -38,7 +47,9 @@ export function AiChat() {
   const [text, setText] = useState('');
   const [settings, setSettings] = useState<AiSettingsDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [docked, setDocked] = useState(remembered);
+  const [docked, setDocked] = useState(() => remembered());
+  const [showRunbooks, setShowRunbooks] = useState(() => remembered(RUNBOOKS_KEY));
+  const [library, setLibrary] = useState<LibraryStatusDto | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -53,6 +64,19 @@ export function AiChat() {
       setProblem(String(e));
     }
   }, []);
+
+  // The runbooks and how far each Part got: read when the list is shown,
+  // and again when a turn ends, since the chat records steps as it goes.
+  const loadLibrary = useCallback(async () => {
+    try {
+      setLibrary(await ipc.libraryStatus());
+    } catch (e) {
+      setProblem(String(e));
+    }
+  }, []);
+  useEffect(() => {
+    if (open && showRunbooks) void loadLibrary();
+  }, [open, showRunbooks, projectId, running, loadLibrary]);
 
   useEffect(() => {
     if (open) void load();
@@ -116,19 +140,20 @@ export function AiChat() {
 
   const dock = (on: boolean) => {
     setDocked(on);
-    try {
-      localStorage.setItem(DOCK_KEY, on ? '1' : '0');
-    } catch {
-      // A per-viewer convenience; without storage it is simply not kept.
-    }
+    remember(DOCK_KEY, on);
   };
 
-  const send = async () => {
-    const q = text.trim();
+  const toggleRunbooks = () => {
+    setShowRunbooks(!showRunbooks);
+    remember(RUNBOOKS_KEY, !showRunbooks);
+  };
+
+  const send = async (asked?: string) => {
+    const q = (asked ?? text).trim();
     if (!q || running) return;
     setProblem(null);
     setItems((list) => [...list, { kind: 'user', text: context ? `[About: ${context}]\n${q}` : q }]);
-    setText('');
+    if (asked === undefined) setText('');
     try {
       await ipc.aiChatSend(q, context);
       useStore.setState({ aiChatContext: null });
@@ -168,10 +193,25 @@ export function AiChat() {
           {t('aiChat.sessionTokens', { input: tokens(session.inputTokens), output: tokens(session.outputTokens) })}
         </span>
         <span className="cv-ai-chat-tools">
+          <IconButton icon="page" label={t('runbooks.toggle')} pressed={showRunbooks} onClick={toggleRunbooks} region="ai-chat-runbooks" />
           <IconButton icon={docked ? 'pop-out' : 'pin'} label={docked ? t('aiChat.float') : t('aiChat.dock')} onClick={() => dock(!docked)} region="ai-chat-dock" />
           <IconButton icon="hide" label={t('aiChat.collapse')} shortcut="Ctrl+Shift+A" onClick={() => setOpen(false)} region="ai-chat-collapse" />
         </span>
       </header>
+      {showRunbooks && (
+        <Runbooks
+          library={library}
+          busy={running || off}
+          onStart={(q) => void send(q)}
+          onReset={async (doc, part) => {
+            try {
+              setLibrary(await ipc.runbookStepSet(doc, part, null, 'pending'));
+            } catch (e) {
+              setProblem(String(e));
+            }
+          }}
+        />
+      )}
       <div className="cv-ai-chat-body" ref={body} data-region="ai-chat-body" aria-live="polite">
         {off && <p className="cv-help" data-hint="ai-chat-off">{t('aiChat.off')}</p>}
         {!off && items.length === 0 && <p className="cv-help">{t('aiChat.empty')}</p>}
@@ -215,6 +255,59 @@ export function AiChat() {
         )}
       </footer>
     </section>
+  );
+}
+
+/** The project's runbooks, each Part with how far it got and a button
+ *  that asks the chat to start or continue it. */
+function Runbooks({ library, busy, onStart, onReset }: { library: LibraryStatusDto | null; busy: boolean; onStart: (q: string) => void; onReset: (doc: string, part: string) => void }) {
+  if (!library) return <div className="cv-ai-runbooks" data-region="ai-runbooks" />;
+  const books = library.documents.filter((d) => d.runbook);
+  const noFolder = !library.folders.project && !library.folders.library;
+  return (
+    <div className="cv-ai-runbooks" data-region="ai-runbooks">
+      {noFolder && <p className="cv-help" data-hint="runbooks-no-folder">{t('runbooks.noFolder')}</p>}
+      {!noFolder && books.length === 0 && <p className="cv-help" data-hint="runbooks-none">{t('runbooks.none')}</p>}
+      {books.map((d) => (
+        <div key={d.name} className="cv-ai-runbook" data-runbook={d.name}>
+          <div className="cv-ai-runbook-title">
+            <strong>{d.runbook}</strong> <span className="cv-help">{d.name}</span>
+          </div>
+          <ul>
+            {d.parts.map((p) => {
+              const started = p.done > 0 || p.failed > 0;
+              const finished = p.next === null;
+              return (
+                <li key={p.label} data-part={p.label} className={finished ? 'is-done' : p.failed ? 'is-failed' : ''}>
+                  <span className="cv-ai-runbook-part" title={p.title}>{p.label}</span>
+                  <span className="cv-help" data-hint="runbook-progress">
+                    {t('runbooks.progress', { done: p.done, steps: p.steps })}
+                    {p.failed > 0 && <> · {t('runbooks.failed', { count: p.failed })}</>}
+                  </span>
+                  {!finished && (
+                    <button
+                      type="button"
+                      className="cv-btn cv-btn-small"
+                      data-action={started ? 'runbook-continue' : 'runbook-start'}
+                      disabled={busy}
+                      onClick={() => onStart(started && p.next ? t('runbooks.continueAsk', { part: p.label, doc: d.name, step: p.next }) : t('runbooks.startAsk', { part: p.label, doc: d.name }))}
+                    >
+                      {started ? t('runbooks.continue') : t('runbooks.start')}
+                    </button>
+                  )}
+                  {started && (
+                    <button type="button" className="cv-btn cv-btn-small" data-action="runbook-reset" disabled={busy} onClick={() => onReset(d.name, p.label)}>
+                      {t('runbooks.again')}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+      {books.length > 0 && <p className="cv-help">{t('runbooks.hint')}</p>}
+    </div>
   );
 }
 

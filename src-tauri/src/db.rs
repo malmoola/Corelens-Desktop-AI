@@ -12,7 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 13;
 /// Bumped whenever the diagram document shape changes; the frontend migrates.
 pub const DOCUMENT_VERSION: i64 = 1;
 
@@ -555,6 +555,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::mcp::audit::tables(conn)?;
     schema_10(conn)?;
     schema_11(conn)?;
+    crate::library::tables(conn)?;
 
     apply_migrations(conn, MIGRATIONS)
 }
@@ -572,7 +573,7 @@ type Migration = (i64, fn(&Connection) -> rusqlite::Result<()>);
 /// Every migration ever written, oldest first. Adding a column is a new entry
 /// here and a bump of `SCHEMA_VERSION`, never an edit to an old one — a
 /// database in the field may be at any version in this list.
-const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables), (10, schema_10), (11, schema_11), (12, logins_and_host_keys_per_project)];
+const MIGRATIONS: &[Migration] = &[(2, split_settings_per_project), (3, crawl_runs_written_as_they_go), (4, projects_in_folders), (5, credentials_have_owners), (6, crate::collection_db::discovery_tables), (7, crate::collection_db::shadow_columns), (8, crate::collection_db::topology_tables), (9, crate::mcp::audit::tables), (10, schema_10), (11, schema_11), (12, logins_and_host_keys_per_project), (13, crate::library::tables)];
 
 /// Schema 10: the change record (tier 2) and the chat transcript.
 fn schema_10(conn: &Connection) -> rusqlite::Result<()> {
@@ -954,6 +955,7 @@ pub fn delete_project(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM config_changes WHERE project_id = ?1", params![id])?;
     crate::ai::transcript::clear(conn, Some(id))?;
     crate::diagnose::store::clear(conn, Some(id))?;
+    crate::library::clear(conn, id)?;
     if !id.is_empty() {
         // A collection run names its project without referring to it, so
         // nothing cascaded: every device, command log and table a collection

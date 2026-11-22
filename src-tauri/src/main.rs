@@ -28,6 +28,7 @@ mod shared;
 mod mcp;
 mod ai;
 mod diagnose;
+mod library;
 mod db;
 
 use std::sync::{Arc, Mutex};
@@ -342,6 +343,9 @@ fn main() {
             ai::ai_chat_send,
             ai::ai_chat_stop,
             ai::ai_last_request,
+            library::library_status,
+            library::library_folder_set,
+            library::runbook_step_set,
             applog::app_log_verbose,
             mcp::changes::change_list,
             mcp::changes::change_decide,

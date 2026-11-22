@@ -275,6 +275,7 @@ pub async fn execute(host: &Host<'_>, tool: &str, arguments: Value) -> Outcome {
         Some(_) if tool == "get_change_status" => changes::status(host, &arguments).await,
         Some(p) if tool == "run_diagnostic" => crate::diagnose::tool(host, p, &arguments).await,
         Some(p) if tool == "get_diagnosis" => crate::diagnose::get_tool(host, p, &arguments),
+        Some(p) if crate::library::TOOLS.contains(&tool) => crate::library::tool(host, p, tool, &arguments),
         Some(p) => run_read(state, p, tool, &arguments),
     };
     let secrets = vault_secrets(state);
