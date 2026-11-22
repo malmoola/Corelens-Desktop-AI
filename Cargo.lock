@@ -1097,7 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "corelens-desktop-ai"
-version = "2.18.0"
+version = "2.19.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",

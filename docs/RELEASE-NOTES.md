@@ -2,7 +2,7 @@
 
 Newest first.
 
-## Unreleased
+## 2.19.0 — 2026-11-22
 
 **New**
 - **Your own documents, searched first, on any provider.** Under
