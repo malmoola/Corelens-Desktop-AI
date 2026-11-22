@@ -2,7 +2,7 @@
 
 Newest first.
 
-## Unreleased
+## 2.20.0 — 2026-11-22
 
 **Changed**
 - **Settings in two places, by whose they are.** The application's
