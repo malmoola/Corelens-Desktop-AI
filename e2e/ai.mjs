@@ -41,9 +41,22 @@ await page.addInitScript(({ p, exe, activity }) => {
     listening: window.__enabled,
     error: null,
     executable: exe,
-    claudeCodeCommand: `claude mcp add --transport stdio --scope user corelens -- "${exe}" --mcp`,
-    claudeDesktopConfig: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2),
+    // As Rust writes them for an executable whose path has a space.
+    setups: [
+      { client: "claudeCode", text: `claude mcp add --transport stdio --scope user corelens -- "${exe}" --mcp` },
+      { client: "claudeDesktop", text: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "vscode", text: JSON.stringify({ servers: { corelens: { type: "stdio", command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "copilotCli", text: `copilot mcp add corelens -- "${exe}" --mcp` },
+      { client: "visualStudio", text: JSON.stringify({ servers: { corelens: { type: "stdio", command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "codex", text: `[mcp_servers.corelens]\ncommand = ${JSON.stringify(exe)}\nargs = ["--mcp"]` },
+      { client: "cursor", text: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "windsurf", text: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "gemini", text: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "other", text: `"${exe}" --mcp` },
+    ],
   });
+  window.__copied = [];
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: (x) => { window.__copied.push(x); return Promise.resolve(); } }, configurable: true });
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = next++; window[`_${id}`] = cb; return id; },
     invoke(cmd, args = {}) {
@@ -86,8 +99,10 @@ const sent = (cmd) => page.evaluate((c) => window.__calls.filter((x) => x.cmd ==
 
 // ------------------------------------------------- off by default
 check("the start screen's Settings has an AI block, listed in the nav", (await ai.count()) === 1 && (await page.locator(".cv-settings-nav", { hasText: "AI" }).count()) === 1);
-check("it says Claude never connects to a device", /Claude never connects to a device/.test(await ai.innerText()), (await ai.innerText()).slice(0, 200));
-check("and what reaches Anthropic, and that this part of Corelens sends nothing there itself", /reaches Anthropic through the Claude app/.test(await ai.innerText()) && /sends nothing to Anthropic itself and holds no key/.test(await ai.innerText()));
+check("it names more than one assistant, and that none connects to a device",
+  /Claude, GitHub Copilot, ChatGPT and Codex, Cursor, Gemini/.test(await ai.innerText()) && /The assistant never connects to a device/.test(await ai.innerText()), (await ai.innerText()).slice(0, 300));
+check("and what reaches the company behind it, and that this part of Corelens sends nothing there itself",
+  /reaches the company behind it \(Anthropic, GitHub, OpenAI, Google…\)/.test(await ai.innerText()) && /sends nothing to any of them itself and holds no key/.test(await ai.innerText()));
 check("the switch is off until somebody turns it on", !(await ai.locator('[data-field="mcp-enabled"]').isChecked()));
 check("and says nothing is listening", (await ai.locator('[data-hint="mcp-state"]').getAttribute("data-tone")) === "off");
 check("nothing was asked to listen on load", (await sent("mcp_set_enabled")).length === 0);
@@ -99,10 +114,28 @@ await page.waitForTimeout(300);
 const on = await sent("mcp_set_enabled");
 check("switching on sends one request to listen", on.length === 1 && on[0].args.enabled === true, JSON.stringify(on));
 check("and the state says an MCP client can use the open project", (await ai.locator('[data-hint="mcp-state"]').getAttribute("data-tone")) === "on");
-const code = await ai.locator('[data-field="claude-code-command"]').innerText();
-check("the Claude Code command names this installation, with --mcp", code === `claude mcp add --transport stdio --scope user corelens -- "${EXE}" --mcp`, code);
-const desktop = JSON.parse(await ai.locator('[data-field="claude-desktop-config"]').innerText());
-check("and the Claude Desktop entry starts the same executable", desktop.mcpServers.corelens.command === EXE && desktop.mcpServers.corelens.args[0] === "--mcp");
+const setupShown = () => ai.locator('[data-field="mcp-setup-text"]').innerText();
+const clients = await ai.locator('[data-field="mcp-client"] option').allInnerTexts();
+check("one dropdown names every assistant it can set up",
+  JSON.stringify(clients) === JSON.stringify(["Claude Code", "Claude Desktop", "GitHub Copilot in VS Code", "GitHub Copilot CLI", "GitHub Copilot in Visual Studio or JetBrains", "ChatGPT desktop / OpenAI Codex", "Cursor", "Windsurf", "Gemini CLI", "Any other MCP client"]), JSON.stringify(clients));
+check("and one setup is shown at a time", (await ai.locator('[data-field="mcp-setup-text"]').count()) === 1 && (await ai.locator('[data-action="copy-mcp-setup"]').count()) === 1);
+check("Claude Code's command first, naming this installation, with --mcp", (await setupShown()) === `claude mcp add --transport stdio --scope user corelens -- "${EXE}" --mcp`, await setupShown());
+await ai.locator('[data-field="mcp-client"]').selectOption("claudeDesktop");
+const desktop = JSON.parse(await setupShown());
+check("Claude Desktop's entry starts the same executable", desktop.mcpServers.corelens.command === EXE && desktop.mcpServers.corelens.args[0] === "--mcp");
+await ai.locator('[data-field="mcp-client"]').selectOption("vscode");
+const vscode = JSON.parse(await setupShown());
+check("Copilot in VS Code: a stdio server under servers, and how to reach it in Agent mode",
+  vscode.servers.corelens.type === "stdio" && vscode.servers.corelens.command === EXE && /Agent mode/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()));
+await ai.locator('[data-field="mcp-client"]').selectOption("codex");
+check("ChatGPT desktop / Codex: the config.toml entry, and what a browser cannot do",
+  (await setupShown()).startsWith("[mcp_servers.corelens]\ncommand = ") && /ChatGPT in a browser cannot start a program/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()));
+await ai.locator('[data-field="mcp-client"]').selectOption("copilotCli");
+await ai.locator('[data-action="copy-mcp-setup"]').click();
+await page.waitForTimeout(200);
+check("Copy copies exactly the setup shown", (await page.evaluate(() => window.__copied.at(-1))) === `copilot mcp add corelens -- "${EXE}" --mcp`);
+check("and says it did", (await ai.locator('[data-action="copy-mcp-setup"]').innerText()) === "Copied");
+check("the choice is remembered", (await page.evaluate(() => localStorage.getItem("corelens.ai.mcpClient"))) === "copilotCli");
 
 check("the start screen's AI block lists no project's activity", (await page.locator('[data-region="ai-mcp-activity"]').count()) === 0 && (await page.locator('[data-region="ai-changes"]').count()) === 0);
 
@@ -131,7 +164,7 @@ check("under the project's name", (await sent("pick_export_target"))[0]?.args.fi
 check("nothing in the top bar while Claude is idle", (await page.locator('[data-region="ai-busy"]').count()) === 0);
 await page.evaluate(() => window.__emit("corelens://mcp-activity", { tool: "run_show_command", device: "SW1", running: true, outcome: "" }));
 await page.waitForTimeout(150);
-check("a running call is named in the top bar, with its device", (await page.locator('[data-region="ai-busy"]').innerText()) === "Claude: run_show_command on SW1\u2026", await page.locator('[data-region="ai-busy"]').innerText().catch(() => ""));
+check("a running call is named in the top bar, with its device", (await page.locator('[data-region="ai-busy"]').innerText()) === "AI: run_show_command on SW1\u2026", await page.locator('[data-region="ai-busy"]').innerText().catch(() => ""));
 await page.evaluate(() => window.__emit("corelens://mcp-activity", { tool: "run_show_command", device: "SW1", running: false, outcome: "ok" }));
 await page.waitForTimeout(150);
 check("and goes when it ends", (await page.locator('[data-region="ai-busy"]').count()) === 0);

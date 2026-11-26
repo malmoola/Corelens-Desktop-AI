@@ -79,7 +79,7 @@ await page.addInitScript(({ p, s0 }) => {
       if (cmd === "load_project") return Promise.resolve({ meta, document_version: 1, document: p.document });
       if (cmd === "get_settings") return Promise.resolve({});
       if (cmd === "app_info") return Promise.resolve({ version: "2.13.0", dataDir: "/nowhere", documentVersion: 1 });
-      if (cmd === "mcp_status") return Promise.resolve({ enabled: false, listening: false, error: null, executable: "x", claudeCodeCommand: "x", claudeDesktopConfig: "{}" });
+      if (cmd === "mcp_status") return Promise.resolve({ enabled: false, listening: false, error: null, executable: "x", setups: [] });
       if (cmd === "ai_settings") return Promise.resolve(window.__settings);
       if (cmd === "ai_setting_set") {
         if (args.key === "aiChatEnabled") window.__settings = { ...window.__settings, chatEnabled: args.value === "1" };
@@ -274,6 +274,17 @@ check("a model ID can still be typed by hand, and is then in the list",
   (await sent("ai_setting_set")).some((c) => c.args.key === "aiModel.anthropic" && c.args.value === "claude-custom-fixture")
   && (await offered("ai-model-anthropic")).includes("claude-custom-fixture"));
 check("still no model list asked of a provider", (await sent("ai_models")).length === 0);
+
+// One provider at a time, from a dropdown that opens on the chat's.
+const shownProviders = () => ai.locator('[data-region="ai-providers"] [data-provider]').evaluateAll((els) => els.map((e) => e.getAttribute("data-provider")));
+check("the providers show one at a time, the chat's first", JSON.stringify(await shownProviders()) === '["anthropic"]', JSON.stringify(await shownProviders()));
+check("each one in the dropdown says whether a key is kept",
+  JSON.stringify(await ai.locator('[data-field="ai-provider-shown"] option').allInnerTexts()) === JSON.stringify(["Anthropic · key kept", "OpenAI · no key yet", "Ollama · on this computer", "Snowflake Cortex · no key yet"]),
+  JSON.stringify(await ai.locator('[data-field="ai-provider-shown"] option').allInnerTexts()));
+await ai.locator('[data-field="ai-provider-shown"]').selectOption("snowflake");
+await page.waitForTimeout(200);
+check("choosing another shows only that one", JSON.stringify(await shownProviders()) === '["snowflake"]');
+check("and leaves the chat's provider alone", !(await sent("ai_setting_set")).some((c) => c.args.key === "aiProvider"));
 
 // Snowflake Cortex: an account, a token through the clipboard, its models.
 const sf = ai.locator('[data-provider="snowflake"]');

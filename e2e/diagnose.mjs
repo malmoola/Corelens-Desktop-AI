@@ -88,7 +88,7 @@ await page.addInitScript(({ p, rep }) => {
       if (cmd === "load_project") return Promise.resolve({ meta, document_version: 1, document: p.document });
       if (cmd === "get_settings") return Promise.resolve({});
       if (cmd === "app_info") return Promise.resolve({ version: "2.13.0", dataDir: "/nowhere", documentVersion: 1 });
-      if (cmd === "mcp_status") return Promise.resolve({ enabled: false, listening: false, error: null, executable: "x", claudeCodeCommand: "x", claudeDesktopConfig: "{}" });
+      if (cmd === "mcp_status") return Promise.resolve({ enabled: false, listening: false, error: null, executable: "x", setups: [] });
       if (cmd === "ai_settings") return Promise.resolve({ chatEnabled: true, provider: "anthropic", models: { anthropic: "claude-opus-5-5", openai: "x", ollama: "x" }, keys: { anthropic: true, openai: false } });
       if (cmd === "ai_chat_history") return Promise.resolve({ rows: [], session: { inputTokens: 0, outputTokens: 0 }, running: false });
       if (cmd === "diagnose_start") return Promise.resolve(`d${window.__calls.filter((c) => c.cmd === "diagnose_start").length}`);

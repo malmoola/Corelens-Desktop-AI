@@ -1794,13 +1794,23 @@ Settings are kept in two places, by whose they are.
   projects**, **Saved credentials** (the vault's passphrase and lock, and
   whether this computer opens it by itself) and **AI** (the chat on or off,
   providers and models, the library folder every project shares, letting
-  Claude use Corelens through MCP, how long records are kept, and the log).
+  an AI assistant use Corelens through MCP, how long records are kept, and
+  the log). The providers are shown one at a time: choose one under
+  **Provider**, and each name there says whether its key is kept. Under
+  **Use with an AI assistant (MCP)**, once the switch is on, choose your
+  assistant under **Your assistant** — Claude Code, Claude Desktop, GitHub
+  Copilot in VS Code, the Copilot CLI, Copilot in Visual Studio or
+  JetBrains, the ChatGPT desktop app or Codex, Cursor, Windsurf, Gemini CLI,
+  or any other client that runs local MCP servers — and Corelens shows the
+  one command or configuration entry it needs, with **Copy**. Every one
+  starts this program with `--mcp`; what the assistant is then given
+  reaches the company behind it, under its terms.
   They are this computer's, whichever project is open. **Back to projects**
   returns to the list.
 - **A project's** are under **Settings** on the rail once it is open:
   its **Logins**, **Folders**, **SFTP server**, **Meraki**, **Saved logins**,
   **SSH host keys**, and **AI in this project** (its documents folder, what
-  Claude asked in it, its configuration changes, and clearing its chat).
+  assistants asked in it, its configuration changes, and clearing its chat).
   Another project never sees them.
 
 When a newer release is found while a project is open, the top bar's

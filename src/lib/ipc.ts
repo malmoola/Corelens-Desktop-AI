@@ -206,9 +206,10 @@ export interface McpStatus {
   listening: boolean;
   error: string | null;
   executable: string;
-  claudeCodeCommand: string;
-  claudeDesktopConfig: string;
+  /** What each MCP client needs to start this executable, in the dropdown's order. */
+  setups: { client: McpClientId; text: string }[];
 }
+export type McpClientId = 'claudeCode' | 'claudeDesktop' | 'vscode' | 'copilotCli' | 'visualStudio' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'other';
 
 /** One call a client made, as the audit log keeps it (already redacted). */
 export interface McpActivity {

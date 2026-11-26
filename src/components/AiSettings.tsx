@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { t } from '../i18n';
-import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type LibraryStatusDto, type McpActivity, type McpStatus } from '../lib/ipc';
+import { ipc, isDesktop, type AiModel, type AiProviderId, type AiSettingsDto, type AppLogInfo, type Change, type LibraryStatusDto, type McpActivity, type McpClientId, type McpStatus } from '../lib/ipc';
 import { saveExport, slug } from '../lib/exports';
 import { canRollBack } from '../lib/changes';
 import { modelChoices } from '../lib/aiModels';
@@ -10,9 +10,9 @@ import { useStore } from '../state/store';
 /**
  * AI's settings, in two places. The application's (`app`, on the start
  * screen): the chat on or off, the providers and models, the library
- * folder every project shares, Claude Code and Claude Desktop through MCP,
+ * folder every project shares, AI assistants through MCP,
  * how long records are kept and the log. A project's (`project`, inside
- * it): its own documents folder, what Claude asked in it, its change
+ * it): its own documents folder, what assistants asked in it, its change
  * record, and clearing its chat.
  */
 export function AiSettings({ scope }: { scope: 'app' | 'project' }) {
@@ -269,7 +269,14 @@ function ChatSection({ ai, listed }: { ai: Ai; listed: Partial<Record<AiProvider
 function ProvidersSection({ ai, listed: models, setListed: setModels }: { ai: Ai; listed: Partial<Record<AiProviderId, AiModel[]>>; setListed: (m: Partial<Record<AiProviderId, AiModel[]>>) => void }) {
   const { settings, setSettings, set, problem, setProblem } = ai;
   const [lastRequest, setLastRequest] = useState<{ provider: AiProviderId; body: string } | null>(null);
+  // One provider at a time; until one is chosen here, the chat's.
+  const [picked, setPicked] = useState<AiProviderId | null>(null);
   if (!settings) return null;
+  const shown = picked ?? settings.provider;
+  const optionLabel = (p: AiProviderId) =>
+    p === 'ollama'
+      ? t('aiSettings.optLocal', { name: PROVIDER_NAMES[p] })
+      : t(settings.keys[p] ? 'aiSettings.optKeyKept' : 'aiSettings.optNoKey', { name: PROVIDER_NAMES[p] });
   const run = async (f: () => Promise<void>) => {
     setProblem(null);
     try {
@@ -285,7 +292,6 @@ function ProvidersSection({ ai, listed: models, setListed: setModels }: { ai: Ai
     const known = list.find((m) => m.id === chosen);
     return (
       <div className="cv-ai-provider" key={p} data-provider={p}>
-        <h4>{PROVIDER_NAMES[p]}</h4>
         {p !== 'ollama' && (
           <div className="cv-row">
             <span className="cv-help" data-hint={`ai-key-${p}`}>{settings.keys[p] ? t('aiSettings.keyKept') : t('aiSettings.keyNone')}</span>
@@ -363,7 +369,15 @@ function ProvidersSection({ ai, listed: models, setListed: setModels }: { ai: Ai
     <div className="cv-ai-part" data-region="ai-providers">
       <h3>{t('aiSettings.providersTitle')}</h3>
       {!settings.chatEnabled && <p className="cv-help">{t('aiSettings.providersOff')}</p>}
-      {(Object.keys(PROVIDER_NAMES) as AiProviderId[]).map(card)}
+      <label className="cv-field">
+        <span>{t('aiSettings.providerShown')}</span>
+        <select className="cv-input" data-field="ai-provider-shown" value={shown} onChange={(e) => setPicked(e.target.value as AiProviderId)}>
+          {(Object.keys(PROVIDER_NAMES) as AiProviderId[]).map((id) => (
+            <option key={id} value={id}>{optionLabel(id)}</option>
+          ))}
+        </select>
+      </label>
+      {card(shown)}
       {problem && <p className="cv-help cv-update-problem" role="alert" data-hint="ai-providers-problem">{problem}</p>}
     </div>
   );
@@ -507,11 +521,27 @@ function ChangeHistory() {
  * only the approval dialog here can let through — and every call it makes
  * is listed here with exactly what it was given, already redacted.
  */
+const CLIENT_KEY = 'corelens.ai.mcpClient';
 function McpSection() {
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [client, setClient] = useState<McpClientId>(() => {
+    try {
+      return (localStorage.getItem(CLIENT_KEY) as McpClientId | null) ?? 'claudeCode';
+    } catch {
+      return 'claudeCode';
+    }
+  });
+  const chooseClient = (id: McpClientId) => {
+    setClient(id);
+    try {
+      localStorage.setItem(CLIENT_KEY, id);
+    } catch {
+      // Remembering the choice is a convenience; the dropdown works without it.
+    }
+  };
 
   useEffect(() => {
     void ipc.mcpStatus().then(setStatus).catch((e: unknown) => setProblem(String(e)));
@@ -540,6 +570,10 @@ function McpSection() {
     });
   };
 
+  // The one chosen, or the first if what was remembered is no longer offered.
+  const setups = status?.setups ?? [];
+  const setup = setups.find((x) => x.client === client) ?? setups[0];
+
   const state = !status
     ? null
     : status.error
@@ -563,19 +597,20 @@ function McpSection() {
         </p>
       )}
       <p className="cv-help">{t('ai.data')}</p>
-      {status?.enabled && (
-        <div className="cv-ai-setup" data-region="ai-setup">
-          <h4>{t('ai.claudeCode')}</h4>
-          <p className="cv-help">{t('ai.claudeCodeHint')}</p>
-          <pre className="cv-mono" data-field="claude-code-command">{status.claudeCodeCommand}</pre>
-          <button type="button" className="cv-btn cv-btn-small" data-action="copy-claude-code" onClick={() => copy('code', status.claudeCodeCommand)}>
-            {copied === 'code' ? t('ai.copied') : t('ai.copy')}
-          </button>
-          <h4>{t('ai.claudeDesktop')}</h4>
-          <p className="cv-help">{t('ai.claudeDesktopHint')}</p>
-          <pre className="cv-mono" data-field="claude-desktop-config">{status.claudeDesktopConfig}</pre>
-          <button type="button" className="cv-btn cv-btn-small" data-action="copy-claude-desktop" onClick={() => copy('desktop', status.claudeDesktopConfig)}>
-            {copied === 'desktop' ? t('ai.copied') : t('ai.copy')}
+      {status?.enabled && setup && (
+        <div className="cv-ai-setup" data-region="ai-setup" data-client={setup.client}>
+          <label className="cv-field">
+            <span>{t('ai.client')}</span>
+            <select className="cv-input" data-field="mcp-client" value={setup.client} onChange={(e) => chooseClient(e.target.value as McpClientId)}>
+              {setups.map((x) => (
+                <option key={x.client} value={x.client}>{t(`ai.client.${x.client}`)}</option>
+              ))}
+            </select>
+          </label>
+          <p className="cv-help" data-hint="mcp-client-hint">{t(`ai.clientHint.${setup.client}`)}</p>
+          <pre className="cv-mono" data-field="mcp-setup-text">{setup.text}</pre>
+          <button type="button" className="cv-btn cv-btn-small" data-action="copy-mcp-setup" onClick={() => copy(setup.client, setup.text)}>
+            {copied === setup.client ? t('ai.copied') : t('ai.copy')}
           </button>
         </div>
       )}

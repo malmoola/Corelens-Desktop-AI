@@ -392,18 +392,45 @@ pub struct McpStatus {
     pub error: Option<String>,
     /// This installation's executable, as a client must be told to start it.
     pub executable: String,
-    /// `claude mcp add …` for Claude Code, ready to paste.
-    pub claude_code_command: String,
-    /// The `mcpServers` entry for Claude Desktop's configuration file.
-    pub claude_desktop_config: String,
+    /// What each MCP client needs to start this executable, ready to paste.
+    pub setups: Vec<ClientSetup>,
 }
 
-/// The setup text for an executable at `exe`.
-pub fn setup_text(exe: &str) -> (String, String) {
+/// One client's setup: a command to run once or the entry for its
+/// configuration file. The label and the instructions around it are the
+/// front end's, by `client`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientSetup {
+    pub client: &'static str,
+    pub text: String,
+}
+
+/// The setup text for an executable at `exe`, one per client, in the
+/// order the dropdown lists them. Every client is told the same thing —
+/// start `exe` with `--mcp` over stdio — in its own file format.
+pub fn setup_text(exe: &str) -> Vec<ClientSetup> {
     let quoted = if exe.contains(' ') { format!("\"{exe}\"") } else { exe.to_string() };
-    let command = format!("claude mcp add --transport stdio --scope user corelens -- {quoted} --mcp");
-    let desktop = serde_json::to_string_pretty(&json!({ "mcpServers": { "corelens": { "command": exe, "args": ["--mcp"] } } })).unwrap_or_default();
-    (command, desktop)
+    let pretty = |v: Value| serde_json::to_string_pretty(&v).unwrap_or_default();
+    // The common `mcpServers` shape (Claude Desktop, Cursor, Windsurf, Gemini CLI).
+    let mcp_servers = pretty(json!({ "mcpServers": { "corelens": { "command": exe, "args": ["--mcp"] } } }));
+    // VS Code, Visual Studio and JetBrains read `servers` with a type.
+    let servers = pretty(json!({ "servers": { "corelens": { "type": "stdio", "command": exe, "args": ["--mcp"] } } }));
+    // A JSON string is a valid TOML basic string: the same escapes.
+    let toml_exe = serde_json::to_string(exe).unwrap_or_default();
+    let setups = [
+        ("claudeCode", format!("claude mcp add --transport stdio --scope user corelens -- {quoted} --mcp")),
+        ("claudeDesktop", mcp_servers.clone()),
+        ("vscode", servers.clone()),
+        ("copilotCli", format!("copilot mcp add corelens -- {quoted} --mcp")),
+        ("visualStudio", servers),
+        ("codex", format!("[mcp_servers.corelens]\ncommand = {toml_exe}\nargs = [\"--mcp\"]")),
+        ("cursor", mcp_servers.clone()),
+        ("windsurf", mcp_servers.clone()),
+        ("gemini", mcp_servers),
+        ("other", format!("{quoted} --mcp")),
+    ];
+    setups.into_iter().map(|(client, text)| ClientSetup { client, text }).collect()
 }
 
 async fn status_of(app: &AppHandle) -> McpStatus {
@@ -411,8 +438,8 @@ async fn status_of(app: &AppHandle) -> McpStatus {
     let mcp = app.state::<McpState>();
     let listening = mcp.listening.lock().await.is_some();
     let executable = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
-    let (claude_code_command, claude_desktop_config) = setup_text(&executable);
-    McpStatus { enabled: enabled(&state), listening, error: mcp.error.lock().ok().and_then(|e| e.clone()), executable, claude_code_command, claude_desktop_config }
+    let setups = setup_text(&executable);
+    McpStatus { enabled: enabled(&state), listening, error: mcp.error.lock().ok().and_then(|e| e.clone()), executable, setups }
 }
 
 #[tauri::command]
@@ -506,12 +533,32 @@ mod tests {
 
     #[test]
     fn the_setup_text_starts_this_executable_with_mcp() {
-        let (cmd, desktop) = setup_text(r"C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe");
-        assert_eq!(cmd, r#"claude mcp add --transport stdio --scope user corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
-        let v: Value = serde_json::from_str(&desktop).unwrap();
-        assert_eq!(v["mcpServers"]["corelens"]["command"], r"C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe");
-        assert_eq!(v["mcpServers"]["corelens"]["args"], json!(["--mcp"]));
-        assert_eq!(setup_text("/usr/bin/corelens-desktop-ai").0, "claude mcp add --transport stdio --scope user corelens -- /usr/bin/corelens-desktop-ai --mcp");
+        const EXE: &str = r"C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe";
+        let all = setup_text(EXE);
+        let of = |c: &str| all.iter().find(|x| x.client == c).unwrap_or_else(|| panic!("no setup for {c}")).text.clone();
+        let ids: Vec<_> = all.iter().map(|x| x.client).collect();
+        assert_eq!(ids, ["claudeCode", "claudeDesktop", "vscode", "copilotCli", "visualStudio", "codex", "cursor", "windsurf", "gemini", "other"]);
+
+        assert_eq!(of("claudeCode"), r#"claude mcp add --transport stdio --scope user corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
+        assert_eq!(of("copilotCli"), r#"copilot mcp add corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
+        assert_eq!(of("other"), r#""C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
+        for c in ["claudeDesktop", "cursor", "windsurf", "gemini"] {
+            let v: Value = serde_json::from_str(&of(c)).unwrap();
+            assert_eq!(v["mcpServers"]["corelens"]["command"], EXE, "{c}");
+            assert_eq!(v["mcpServers"]["corelens"]["args"], json!(["--mcp"]), "{c}");
+        }
+        for c in ["vscode", "visualStudio"] {
+            let v: Value = serde_json::from_str(&of(c)).unwrap();
+            assert_eq!(v["servers"]["corelens"]["type"], "stdio", "{c}");
+            assert_eq!(v["servers"]["corelens"]["command"], EXE, "{c}");
+            assert_eq!(v["servers"]["corelens"]["args"], json!(["--mcp"]), "{c}");
+        }
+        // TOML: the backslashes escaped, as a basic string needs.
+        assert_eq!(of("codex"), "[mcp_servers.corelens]\ncommand = \"C:\\\\Program Files\\\\Corelens Desktop AI\\\\corelens-desktop-ai.exe\"\nargs = [\"--mcp\"]");
+
+        let unix = setup_text("/usr/bin/corelens-desktop-ai");
+        assert_eq!(unix[0].text, "claude mcp add --transport stdio --scope user corelens -- /usr/bin/corelens-desktop-ai --mcp");
+        assert_eq!(unix.iter().find(|x| x.client == "codex").unwrap().text, "[mcp_servers.corelens]\ncommand = \"/usr/bin/corelens-desktop-ai\"\nargs = [\"--mcp\"]");
     }
 
     /// Calls run side by side, and each takes the vault and the database.

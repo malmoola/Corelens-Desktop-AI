@@ -28,8 +28,11 @@ There are two ways to use AI with Corelens Desktop AI, and both are **off
 until you switch them on** in *Settings → AI* on the start screen; the app works exactly the
 same without either.
 
-- **Claude Code or Claude Desktop, through MCP.** The Claude app on this
-  computer starts `corelens-desktop-ai --mcp`, a small process that speaks
+- **An AI assistant on this computer, through MCP** — Claude Code, Claude
+  Desktop, GitHub Copilot (VS Code, CLI, Visual Studio, JetBrains), the
+  ChatGPT desktop app or Codex, Cursor, Windsurf, Gemini CLI, or any other
+  client that runs local MCP servers; *Settings → AI* shows the setup for
+  the one you choose. The assistant starts `corelens-desktop-ai --mcp`, a small process that speaks
   the Model Context Protocol and holds nothing: no logins, no projects, no
   network. It passes each request over a local pipe (a named pipe on
   Windows, a Unix socket elsewhere) to the Corelens window you already have
