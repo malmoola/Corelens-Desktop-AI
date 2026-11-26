@@ -2,7 +2,7 @@
 
 Newest first.
 
-## Unreleased
+## 2.21.0 — 2026-11-26
 
 **Fixed**
 - **The terminal is no longer logged out by the device's idle timeout.**
