@@ -2,6 +2,39 @@
 
 Newest first.
 
+## 2.22.0 — 2026-11-26
+
+**Fixed**
+- **The diagram keeps its room beside the terminal.** In a laptop-sized
+  window, the shape list, the inspector and the terminal down the right
+  left the diagram a sliver. Now the diagram has a floor of its own:
+  - The terminal narrows first, to its minimum.
+  - Then the shape list folds to its handle, then the inspector while
+    nothing is selected.
+  - If there is still no room, the terminal sits below until the window
+    is wide enough again.
+  - An empty terminal tab opens narrow, and widens when a session starts.
+  - A panel you fold by hand stays folded, and one you bring back with its
+    handle stays.
+
+**New**
+- **The interface scales.** **Settings ▸ Display ▸ Interface size** has
+  **Auto**, the default: a little smaller in a laptop-sized window, a little
+  larger on a big monitor. **Ctrl+Shift+=** and **Ctrl+Shift+−** (⌘⇧ on a
+  Mac) size the whole interface from 50 % to 200 %, and **Ctrl+Shift+0**
+  goes back to Auto. **Ctrl+=** and **Ctrl+−** still zoom only the diagram.
+
+**Faster**
+- One element fewer for each link on the diagram.
+
+**Security**
+- **The Windows installer is signed**, with the sidecar's programs inside
+  it, by a certificate from the product's own certificate authority. Its
+  public root is published beside the installer; a machine that trusts it
+  names the publisher. How to trust it is in `docs/INSTALL-WINDOWS.md`.
+- Two libraries the app uses indirectly are updated for newly published
+  advisories: `cookie` 0.18.3 and `url` 2.5.9.
+
 ## 2.21.0 — 2026-11-26
 
 **Fixed**
