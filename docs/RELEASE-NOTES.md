@@ -2,6 +2,17 @@
 
 Newest first.
 
+## Unreleased
+
+**New**
+- **Import a project into another one.** **Import… ▸ From a project**
+  reads a `.corelens` file and lists its pages.
+  - **Add to this project** brings the ticked pages in beside this
+    project's own. Every device, link and check gets a new ID, so nothing
+    already here changes, and one Undo takes the import back.
+  - **Open as a separate project** saves and closes this project and
+    imports the file as its own project, credentials question included.
+
 ## 2.20.0 — 2026-11-22
 
 **Changed**
