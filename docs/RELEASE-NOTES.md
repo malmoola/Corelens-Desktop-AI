@@ -4,7 +4,25 @@ Newest first.
 
 ## Unreleased
 
+**Fixed**
+- **The terminal is no longer logged out by the device's idle timeout.**
+  The keepalive kept the connection up, but a switch's `exec-timeout`
+  counts only what is typed, and logged the session out anyway. A new
+  **Keep the command line awake** tick, on by default, makes each
+  keepalive also send a space and a backspace. They cancel out, and they go
+  only at a bare prompt with nothing typed since the last one: never into
+  a half-typed command, a `--More--` or a question, and never a newline.
+
 **New**
+- **Availability report.** **Export ▸ Availability report (HTML)**
+  turns every check's recorded history into a report for a customer.
+  - Summary tiles, then **wide events**: many checks down at the same
+    moment, which usually points at a shared network path.
+  - The checks that were down throughout.
+  - Availability by group.
+  - Each check's timeline with how long each state lasted, in your time
+    zone.
+  - It prints to PDF from the browser.
 - **Import a project into another one.** **Import… ▸ From a project**
   reads a `.corelens` file and lists its pages.
   - **Add to this project** brings the ticked pages in beside this
