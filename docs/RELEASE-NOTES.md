@@ -2,6 +2,49 @@
 
 Newest first.
 
+## 2.22.2 — 2026-11-26
+
+**Fixed**
+- **Diagram on the rail goes back to the diagram.** With Discover, the
+  terminal or another dock tab open, pressing **Diagram** (or Ctrl+1) did
+  nothing. It now puts the dock away; open sessions keep running, and a
+  dock in a window of its own stays open.
+- **Present (F5) fills the screen** again. With a dock open down the right,
+  the diagram was drawn in a narrow strip.
+- **Importing a project with its saved logins** on the start screen said
+  "Open a project first". The passphrase is now tried first (a wrong one
+  is said in the box), then the project is made and the logins go into it.
+- **Imported logins stay attached.** They were re-sealed under new ids, but
+  the project's own logins, its devices' and its rules still named the old
+  ones, so they were "forgotten" the next time Settings was opened.
+- **Types and Filter** on the canvas strip no longer look pressed while
+  they are off.
+- **An FTD can be backed up.** Its command line greets a login with a bare
+  `>` and no hostname, which was never recognised as a prompt, so the login
+  waited until it gave up; and a backup insisted on `enable`, which an FTD
+  does not have. It is now backed up with `show running-config`, as you
+  would by hand.
+
+**New**
+- **Settings ▸ AI ▸ Use with an AI assistant (MCP)** sets up any assistant
+  that runs local MCP servers, one at a time from **Your assistant**:
+  Claude Code, Claude Desktop, GitHub Copilot (VS Code, the CLI, Visual
+  Studio and JetBrains), the ChatGPT desktop app and Codex, Cursor,
+  Windsurf, Gemini CLI, or any other. Each shows the one command or
+  configuration entry it needs, with **Copy**.
+- **AI providers** are shown one at a time under **Provider**, each name
+  saying whether its key is kept.
+- **Import… ▸ From a project ▸ Add pages** can bring the file's saved
+  logins: type the passphrase they were exported with, and the pages'
+  devices use them here. Left empty, the pages come without them.
+- **Fill in drawn links from the devices** now draws the cables it finds
+  between devices on the page that nobody drew, with their ports. A link
+  you drew that no device reports is never removed: it is kept as a
+  logical link, purple and dotted.
+- **Fill in finds what speaks no CDP or LLDP** — an FTD, most firewalls — by
+  MAC address: the switch port that learned one of its interfaces'
+  addresses is its cable. Such a link says it came from the MAC table.
+
 ## 2.22.0 — 2026-11-26
 
 **Fixed**
