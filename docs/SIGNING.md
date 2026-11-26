@@ -52,7 +52,8 @@ inside the collector sidecar that its publisher has not already signed
 
 ## With no certificate
 
-The default today. The signing action and `sign.ps1` each post a notice
+Not the case since 2.22.0, which is signed with the product's own CA's
+certificate; this is what happens if the secret is ever removed. The signing action and `sign.ps1` each post a notice
 that the build is **unsigned** and carry on; nothing fails. Each installer
 is still scanned on VirusTotal and fails the build on any detection, its
 SHA-256 goes into `SHA256SUMS.txt`, and CycloneDX SBOMs into `sbom/`. What

@@ -1,13 +1,16 @@
 # Installing Corelens Desktop AI on Windows
 
-Corelens Desktop AI's Windows installer is **not yet Authenticode-signed**:
-this product has no code-signing certificate of its own, and the one
-Corelens Desktop signs with is not used for it. Windows therefore shows
-*Unknown publisher*. What still holds is below: the installer's checksum,
-the VirusTotal scan it passed before it was published, and the minisign
-signature the app checks before it installs an update of itself. This page
-is how a customer's administrator checks and deploys it, and what to expect
-from SmartScreen meanwhile.
+Corelens Desktop AI's Windows installer, and every program inside it that
+its publisher had not already signed, is **Authenticode-signed** by
+*Corelens-Desktop-AI-code-signing*, a certificate issued by the product's
+own certificate authority, *Corelens-Desktop-AI-CA*. It is not a commercial
+certificate, so Windows shows the publisher only on a machine that trusts
+that root (step 2 below); elsewhere it still shows *Unknown publisher*.
+What holds everywhere: the installer's checksum, the VirusTotal scan it
+passed before it was published, and the minisign signature the app checks
+before it installs an update of itself. This page is how a customer's
+administrator checks, trusts and deploys it, and what to expect from
+SmartScreen.
 
 ## What comes with each build
 
@@ -18,6 +21,7 @@ release's assets:
 | --- | --- |
 | `Corelens-Desktop-AI_<version>_x64-setup.exe` | The installer. |
 | `Corelens-Desktop-AI_<version>_x64-setup.exe.sig` | Its updater signature, which the app checks before installing an update. |
+| `Corelens-Desktop-AI-CA.crt`, `Corelens-Desktop-AI-code-signing.crt` | The public halves of the signing chain: the root to trust, and the certificate the installer is signed with. Never a private key. |
 | `SHA256SUMS.txt` | The installer's SHA-256, recorded after the VirusTotal scan passed. A release's copy lists every file it offers to download: this installer, the macOS disk image and the macOS update archive. |
 | `sbom/*.cdx.json` | CycloneDX software bills of materials: the Rust executable, the collector sidecar's Python, the page's npm packages. |
 
@@ -32,10 +36,20 @@ Get-Content .\SHA256SUMS.txt
 
 The first must equal the installer's line in the second.
 
-## 2. SmartScreen and Microsoft Defender
+## 2. Trust the root, then SmartScreen and Microsoft Defender
 
-- **User Account Control** shows *Unknown publisher*. That changes only
-  with a code-signing certificate.
+- **Trust the root once per machine** and Windows names the publisher, and
+  `Get-AuthenticodeSignature` reports the installer **Valid**. From an
+  elevated PowerShell, beside the downloaded `Corelens-Desktop-AI-CA.crt`:
+  `Import-Certificate -FilePath .\Corelens-Desktop-AI-CA.crt -CertStoreLocation Cert:\LocalMachine\Root`.
+  Across an estate, a GPO (*Computer Configuration → Policies → Windows
+  Settings → Security Settings → Public Key Policies → Trusted Root
+  Certification Authorities*) or an Intune trusted-certificate profile
+  does the same. Check its thumbprint against the one in the repository's
+  `brand/signing/` first. Trusting it is a choice: it is a root, and a
+  machine that trusts it trusts what it signs.
+- **User Account Control** shows *Unknown publisher* on a machine that does
+  not trust that root.
 - **Defender SmartScreen**'s "Windows protected your PC" prompt looks only
   at files that carry the *Mark of the Web* — files downloaded through a
   browser. So:
@@ -48,10 +62,11 @@ The first must equal the installer's line in the second.
 - **Microsoft Defender Antivirus** scans the installer like any file. Each
   build's installer has already passed VirusTotal with no detection before
   it was published (the build fails otherwise). **App Control for Business /
-  WDAC** estates need a hash rule for an unsigned installer.
+  WDAC** estates can allow it by a publisher rule on the signing
+certificate once the root is trusted, or by a hash rule per installer.
 - **Chrome may refuse the download outright** — "This file is dangerous",
   with no *Keep* button. That is Google Safe Browsing judging an installer
-  with no signing reputation; it is not a detection. Three ways past it,
+  with no download reputation, signed or not; it is not a detection. Three ways past it,
   from best to worst:
   1. Fetch it without a browser. From a terminal with the GitHub CLI signed
      in: `gh release download v<version> -R <owner>/<repo>`, or
