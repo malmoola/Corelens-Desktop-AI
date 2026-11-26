@@ -169,7 +169,7 @@ MIT OR Apache-2.0 (354), MIT (149), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (32),
 | combine | 4.6.8 | MIT |
 | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT |
-| cookie | 0.18.2 | MIT OR Apache-2.0 |
+| cookie | 0.18.3 | MIT OR Apache-2.0 |
 | cookie_store | 0.22.1 | MIT OR Apache-2.0 |
 | core_detect | 1.0.0 | MIT/Apache-2.0 |
 | core_maths | 0.1.1 | MIT |
@@ -271,7 +271,7 @@ MIT OR Apache-2.0 (354), MIT (149), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (32),
 | foreign-types | 0.5.0 | MIT/Apache-2.0 |
 | foreign-types-macros | 0.2.4 | MIT/Apache-2.0 |
 | foreign-types-shared | 0.3.1 | MIT/Apache-2.0 |
-| form_urlencoded | 1.2.2 | MIT OR Apache-2.0 |
+| form_urlencoded | 1.2.3 | MIT OR Apache-2.0 |
 | futures | 0.3.34 | MIT OR Apache-2.0 |
 | futures-channel | 0.3.34 | MIT OR Apache-2.0 |
 | futures-core | 0.3.34 | MIT OR Apache-2.0 |
@@ -732,7 +732,7 @@ MIT OR Apache-2.0 (354), MIT (149), Apache-2.0 OR MIT (99), MIT/Apache-2.0 (32),
 | unsafe-libyaml | 0.2.11 | MIT |
 | untrusted | 0.7.1 | ISC |
 | untrusted | 0.9.0 | ISC |
-| url | 2.5.8 | MIT OR Apache-2.0 |
+| url | 2.5.9 | MIT OR Apache-2.0 |
 | urlpattern | 0.6.0 | MIT |
 | usvg | 0.45.1 | Apache-2.0 OR MIT |
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT |
@@ -1727,7 +1727,7 @@ SOFTWARE.
 - filetime 0.2.29
 - flate2 1.1.10
 - fnv 1.0.7
-- form_urlencoded 1.2.2
+- form_urlencoded 1.2.3
 - futures-lite 2.6.1
 - gethostname 1.1.0
 - ghash 0.5.1
@@ -1898,7 +1898,7 @@ SOFTWARE.
 - unicode-vo 0.1.0
 - universal-hash 0.5.1
 - universal-hash 0.6.1
-- url 2.5.8
+- url 2.5.9
 - utf8_iter 1.0.4
 - uuid 1.26.0
 - wasi 0.11.1+wasi-snapshot-preview1
@@ -4898,7 +4898,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 - data-url 0.3.2
 - idna 1.1.0
 - percent-encoding 2.3.2
-- url 2.5.8
+- url 2.5.9
 
 ```
 Copyright (c) 2013-2025 The rust-url developers
@@ -11782,7 +11782,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### cookie 0.18.2
+### cookie 0.18.3
 
 ```
 Apache License
@@ -11989,7 +11989,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### cookie 0.18.2
+### cookie 0.18.3
 
 ```
 Copyright (c) 2017 Sergio Benitez
@@ -14188,7 +14188,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### form_urlencoded 1.2.2
+### form_urlencoded 1.2.3
 
 ```
 Copyright (c) 2013-2016 The rust-url developers
