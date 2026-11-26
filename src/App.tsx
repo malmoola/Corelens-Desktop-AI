@@ -246,7 +246,9 @@ export default function App() {
             and which one depends on whether there is something to inspect. */}
         {/* The body holds the canvas and the dock, so the dock can sit
             along the bottom or, popped out, down the right. */}
-        <div className={`cv-body${dockSide === 'right' ? ` is-dock-right ${dockWidthClass(dockTab, dockHasSession)}` : ''}${dockMax ? ' is-dock-max' : ''}${registerOpen || helpOpen || toolsOpen ? ' is-behind' : ''}`}>
+        {/* Presenting, the dock is hidden and the diagram is the whole
+            window: none of a right dock's columns or widths apply. */}
+        <div className={`cv-body${dockSide === 'right' && !presenting ? ` is-dock-right ${dockWidthClass(dockTab, dockHasSession)}` : ''}${dockMax ? ' is-dock-max' : ''}${registerOpen || helpOpen || toolsOpen ? ' is-behind' : ''}`}>
         <div
           className={[
             'cv-main',
@@ -257,7 +259,7 @@ export default function App() {
           ]
             .filter(Boolean)
             .join(' ')}
-          style={dockSide === 'right' && fit.mainMin ? { minWidth: `${fit.mainMin}px` } : undefined}
+          style={dockSide === 'right' && !presenting && fit.mainMin ? { minWidth: `${fit.mainMin}px` } : undefined}
         >
           {/* Both stay mounted and are hidden in CSS. Unmounting one leaves
               two children in a three-track grid, and the canvas slides into
