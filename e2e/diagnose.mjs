@@ -129,6 +129,17 @@ check("it says it only reads", /Read-only/.test(await panel.innerText()));
 await panel.locator('[data-field="diagnose-scope-site"]').check();
 check("one site offers the project's sites", (await panel.locator('[data-field="diagnose-site"] option', { hasText: "HQ" }).count()) === 1);
 check("and waits for one to be chosen", await panel.locator('[data-action="diagnose-run"]').isDisabled());
+// The form is as tall as what is in it: Run is in view when the panel opens.
+{
+  const fit = await page.evaluate(() => {
+    const body = document.querySelector(".cv-diagnose-body").getBoundingClientRect();
+    const run = document.querySelector('[data-action="diagnose-run"]').getBoundingClientRect();
+    const tallest = Math.max(...[...document.querySelectorAll(".cv-diagnose-form > .cv-field")].map((f) => f.getBoundingClientRect().height));
+    return { runBottom: Math.round(run.bottom), bodyBottom: Math.round(body.bottom), tallest: Math.round(tallest) };
+  });
+  check("Run diagnosis is in view without scrolling", fit.runBottom <= fit.bodyBottom, JSON.stringify(fit));
+  check("and no field is taller than what it holds", fit.tallest < 90, JSON.stringify(fit));
+}
 await panel.locator('[data-field="diagnose-scope-project"]').check();
 await panel.locator('[data-field="diagnose-depth"]').selectOption("full");
 await panel.locator('[data-field="diagnose-symptom"]').fill("phones get no IP");
