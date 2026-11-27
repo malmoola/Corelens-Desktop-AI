@@ -2,6 +2,55 @@
 
 Newest first.
 
+## 2.22.3 — 2026-11-27
+
+A pass over the whole application: every screen looked at in a small and a
+large window, and the 2.22 changes read again.
+
+**Fixed**
+- **Escape closes a right-click menu.** It did nothing; only clicking away
+  closed one. The device or link the menu was opened on stays selected.
+- **Diagnose network** opened with **Run diagnosis** below the bottom of
+  the window: each field of its form was drawn 300 px tall.
+- **The guided tour's title** could not be read on the light canvas (dark
+  on dark), nor the **Not checked** chip at the top of a link's or a
+  check's details.
+- **Dropdowns narrower than what they say**: "Mouse wheel on the diagram"
+  in Settings, and the source, engine and profile lists in Discover,
+  Path-Trace, Path check, Tracert and Where is, which cut a device's name
+  short. A dropdown is now as wide as its longest entry.
+- **Discover docked on the right** cut its Duo tick off at the panel's
+  edge. It wraps.
+- **In a window under 1080 px wide** the two handles that fold the side
+  panels sat in the wrong place, one over the diagram and one on top of
+  the details panel's text. The save state in the top bar was cut through
+  the middle of the time; it ends in an ellipsis.
+- **One dock tab that fails no longer takes the dock with it.** The tabs
+  stay, and choosing another one works.
+- **Fill in drawn links** drew one cable twice where LLDP sends a port's
+  description instead of its name, and where a device is drawn twice on
+  the page.
+- **Fill in, by MAC address**, gave a firewall a second cable to a switch
+  that had only learned its address on the uplink; it could name a VLAN
+  interface as the cable's port; and it replaced a port you had typed
+  with its own guess. One address is now one cable (the port that learned
+  fewest addresses; a bundle to a pair of switches still gets a cable to
+  each), a VLAN interface or loopback never names a port, and a typed
+  port is kept.
+- **Fill in found no firewall** drawn with an address that was not the
+  first one its MAC answers for in the switch's ARP table.
+- **A link you set to Logical** after it was marked "no cable found" kept
+  the mark.
+- **Imported logins**: a check over SNMP and a saved discovery profile
+  kept the id the login had on the machine it was exported from. They
+  follow the import now, and are exported with the project.
+- **An import that failed after its passphrase was accepted** said
+  nothing. The reason is shown on the start screen.
+- **An FTD backup could be cut short** by a long line of output ending in
+  `>` that wrapped onto a row of its own, which read as its prompt.
+- Three hints still pointed at Settings ▸ Display inside a project; it is
+  on the start screen.
+
 ## 2.22.2 — 2026-11-26
 
 **Fixed**
