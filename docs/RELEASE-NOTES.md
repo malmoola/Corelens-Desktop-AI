@@ -2,6 +2,23 @@
 
 Newest first.
 
+## 2.22.5 — 2026-11-27
+
+**New**
+- **Several links selected at once.** A selection box or an `Alt` lasso
+  now catches every link it is drawn across, with or without a device in
+  it — before, a box drawn over a bundle of links selected nothing. The
+  links light up while you draw. `Delete` removes them together, a
+  right-click on one of them offers **Delete N selected links**, and the
+  details panel edits them all.
+
+**Fixed**
+- `Ctrl`-click on a selected link takes it out of the selection; its
+  handles used to be in the way of the click. A link shows its handles
+  only when it is selected alone.
+- A right-click on one of several selected links no longer drops the rest
+  of the selection.
+
 ## 2.22.4 — 2026-11-27
 
 **Fixed**
