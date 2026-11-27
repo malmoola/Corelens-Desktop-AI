@@ -145,7 +145,20 @@ async function touchIntoLine() {
 
 // --- a link's end, its drag cancelled -----------------------------------------
 {
-  await page.locator('.cv-edge-hit path[data-id="e1"]').first().click({ force: true });
+  // Clicked where the link itself is on top. A forced click at its middle
+  // lands on whatever lies over that point, and the link is not selected.
+  const open = await page.evaluate(() => {
+    const path = document.querySelector('.cv-edge-hit path[data-id="e1"]');
+    const length = path.getTotalLength();
+    const toScreen = path.getScreenCTM();
+    for (let i = 1; i < 40; i++) {
+      const at = path.getPointAtLength((length * i) / 40).matrixTransform(toScreen);
+      if (document.elementFromPoint(at.x, at.y) === path) return { x: at.x, y: at.y };
+    }
+    return null;
+  });
+  check("some part of the link is in the open to be clicked", open !== null);
+  if (open) await page.mouse.click(open.x, open.y);
   await page.waitForTimeout(300);
   const handles = page.locator(".cv-edge-endpoint");
   check("a selected link shows its end handles", (await handles.count()) >= 2, `${await handles.count()}`);

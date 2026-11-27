@@ -692,7 +692,42 @@ pub fn chosen(all: &[String], wanted: Option<&[String]>) -> Vec<String> {
 #[cfg(test)]
 mod import_tests {
     use super::{import_into, NO_PROJECT_OPEN};
+    use crate::commands::AppState;
     use crate::db;
+    use std::sync::{Arc, Mutex};
+
+    /// An application with a vault, unlocked, holding one login of project
+    /// `p1`. The test's own, so it needs nothing of any other feature's.
+    fn state() -> AppState {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::migrate_for_tests(&conn);
+        let (header, key) = corelens_discover::vault::create("fixture vault passphrase").unwrap();
+        db::create_vault(&conn, &header.salt, &header.verifier, 1).unwrap();
+        let sealed = corelens_discover::vault::seal(&key, "not-a-real-password").unwrap();
+        let login = db::StoredCredential {
+            id: "cred-1".into(),
+            label: "reader".into(),
+            kind: "ssh".into(),
+            username: "reader".into(),
+            secret: (sealed.nonce, sealed.ciphertext),
+            extra: None,
+            detail: String::new(),
+        };
+        db::save_credential(&conn, "p1", &login, 1).unwrap();
+        let (engine, _rx) = corelens_probe::Engine::new(4);
+        AppState {
+            engine,
+            db: Mutex::new(conn),
+            session_id: Mutex::new(None),
+            project_id: Mutex::new(None),
+            jobs: Arc::new(crate::jobs::Jobs::default()),
+            vault_key: Mutex::new(Some(key)),
+            limiter: crate::ratelimit::RateLimiter::default(),
+            sessions: Arc::new(crate::terminal::Sessions::default()),
+            export_targets: crate::commands::ExportTargets::default(),
+            open_project: Mutex::new(Some("p1".into())),
+        }
+    }
 
     /// A package as `export_vault` writes it, from the fixture's vault.
     fn package(state: &crate::commands::AppState) -> serde_json::Value {
@@ -714,7 +749,7 @@ mod import_tests {
     /// open, then imports into the project it has just made.
     #[test]
     fn a_check_needs_no_project_and_writes_nothing_then_the_import_goes_into_the_open_one() {
-        let state = crate::mcp::roundtrip::app_state_as("SW1", true);
+        let state = state();
         let pkg = package(&state);
 
         let wrong = import_into(&state, None, &pkg, "not the exporting passphrase", true);
@@ -732,6 +767,82 @@ mod import_tests {
         assert_ne!(now, "cred-1");
         assert!(db::credential(&state.db.lock().unwrap(), "fresh", now).unwrap().is_some());
         assert_eq!(count(&state, "p1"), 1, "and no other project's");
+    }
+}
+
+#[cfg(test)]
+mod lock_order_tests {
+    /// Every function that holds the vault key and the database at once
+    /// takes the vault first. Two that took them in opposite orders would
+    /// each wait on the other for ever, and nothing would say why the window
+    /// had stopped. Read from the source, so the next function written the
+    /// other way round fails here rather than on somebody's desk.
+    ///
+    /// A database guard counts as held from the `let` that binds it to the
+    /// end of the block it was bound in, or to a `drop` of it; one taken and
+    /// used within a single statement is gone by the next.
+    #[test]
+    fn the_vault_is_locked_before_the_database_wherever_both_are_held() {
+        let sources = [
+            ("vault_commands.rs", include_str!("vault_commands.rs")),
+            ("commands.rs", include_str!("commands.rs")),
+            ("meraki.rs", include_str!("meraki.rs")),
+            ("terminal.rs", include_str!("terminal.rs")),
+            ("collection.rs", include_str!("collection.rs")),
+            ("diagnose/mod.rs", include_str!("diagnose/mod.rs")),
+            ("mcp/mod.rs", include_str!("mcp/mod.rs")),
+            ("mcp/changes/mod.rs", include_str!("mcp/changes/mod.rs")),
+        ];
+        let mut wrong = Vec::new();
+        let mut both = 0;
+        for (file, source) in sources {
+            // (name of the guard, depth of the block it lives in)
+            let mut held: Vec<(String, i32)> = Vec::new();
+            let mut depth = 0i32;
+            for (number, line) in source.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                if code.contains("vault_key.lock()") && !code.contains("fn the_vault_is_locked") {
+                    if !held.is_empty() {
+                        wrong.push(format!("{file}:{}: the vault is locked while `{}` holds the database", number + 1, held[0].0));
+                    }
+                    both += 1;
+                }
+                if let Some(rest) = code.trim_start().strip_prefix("let ") {
+                    if code.contains(".db.lock()") && code.trim_end().ends_with(';') {
+                        let name = rest.trim_start_matches("mut ").split([' ', ':', '=']).next().unwrap_or("").to_string();
+                        held.push((name, depth));
+                    }
+                }
+                held.retain(|(name, _)| !code.contains(&format!("drop({name})")));
+                depth += code.matches('{').count() as i32 - code.matches('}').count() as i32;
+                held.retain(|(_, at)| *at <= depth);
+            }
+        }
+        assert!(both > 5, "the sources were read: {both} places lock the vault");
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// The reading above does catch the thing it is for.
+    #[test]
+    fn the_reading_sees_a_database_guard_still_held() {
+        let held_at = |source: &str| {
+            let mut held: Vec<i32> = Vec::new();
+            let mut depth = 0i32;
+            let mut found = false;
+            for line in source.lines() {
+                if line.contains("vault_key.lock()") && !held.is_empty() {
+                    found = true;
+                }
+                if line.trim_start().starts_with("let ") && line.contains(".db.lock()") && line.trim_end().ends_with(';') {
+                    held.push(depth);
+                }
+                depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+                held.retain(|at| *at <= depth);
+            }
+            found
+        };
+        assert!(held_at("fn f() {\n    let conn = state.db.lock().unwrap();\n    let key = state.vault_key.lock().unwrap();\n}\n"));
+        assert!(!held_at("fn f() {\n    let row = {\n        let conn = state.db.lock().unwrap();\n        read(&conn)\n    };\n    let key = state.vault_key.lock().unwrap();\n}\n"));
     }
 }
 
