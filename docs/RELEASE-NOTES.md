@@ -2,6 +2,53 @@
 
 Newest first.
 
+## 2.22.4 — 2026-11-27
+
+**Fixed**
+- **Fill in drawn links cabled the wrong devices together.** On a VXLAN
+  page one leaf was joined to both border gateways and the DCI switch,
+  while their links to the spines were marked "no cable found". The
+  cables were real; what was wrong was *whose* they were. A neighbour is
+  matched to a drawn device by serial number, then name, then address,
+  and whatever came first was believed even where it could not tell two
+  devices apart. Now:
+  - A serial, a name or an address that two devices share identifies
+    neither. Cloned virtual switches report one serial; an anycast address
+    belongs to every leaf.
+  - Where the serial names one drawn device and the name another, nothing
+    is guessed.
+  - The device that answers at an address is checked against the device
+    drawn there. One that says it is another device on the page has its
+    answer counted as that device's, and the status line names the address
+    to correct. Two differently named devices drawn with one address are
+    no longer treated as one (2.22.3 did, by the address alone).
+  - One port, one cable: two reports that put two cables on one port are
+    neither believed, unless both ends report one of them.
+  - A cable is drawn only where the far device was named or its serial
+    given. A match by address alone can confirm a link you drew, and never
+    draws one.
+- **Fill in no longer reads ARP tables**, and matches by MAC address only
+  for a firewall or a router, from that device's own interfaces, and only
+  to fill in a link you drew. Behind an anycast gateway any switch may
+  answer for an address, so neither is evidence about a switch. Addresses
+  learned over the overlay (`nve`), on a VLAN interface or across the peer
+  link are ignored.
+- **Tunnels and shared segments are not cables.** A neighbour seen over a
+  tunnel, a VLAN interface or a loopback is left out. Several neighbours on
+  one port — a provider's layer-2 service between routers — can confirm a
+  link you drew and draw none. A link drawn between two BGP peers with no
+  cable between them is kept as a logical link, as before.
+
+**New**
+- **Every link Fill in touched says what it rests on**, when you point at
+  it and in its details: "Reported by BGW-01 Eth1/1: it sees SPINE-01
+  Eth1/49. Matched to the device drawn here by name. Both ends report it."
+- **The status line says what was left out and why**: cables reported and
+  not drawn, and devices whose address answered as another device.
+
+Discover, Collect and Path-Trace are unchanged. The ARP reader they use is
+back exactly as it was in 2.22.2.
+
 ## 2.22.3 — 2026-11-27
 
 A pass over the whole application: every screen looked at in a small and a
