@@ -2,6 +2,76 @@
 
 Newest first.
 
+## 2.22.8 — 2026-11-28
+
+Found by reading the whole of four areas of the app (the diagram, saving,
+checks and discovery) for faults, each reproduced by a test before it was
+fixed.
+
+**Fixed: work that could be lost or removed unasked**
+- **An edit made while a save was being written is no longer marked
+  saved.** The top bar read *Saved* over a change that was not on disk,
+  and closing lost it. A save that came back after its project was closed,
+  or another opened, could also put the old project's details over the
+  open one.
+- **Delete on another screen no longer removes what is selected on the
+  diagram behind it.** With Addresses, Racks, Inventory or the guide open,
+  Delete and Backspace removed the diagram's selection unseen, and the
+  arrows moved it. The diagram's keys now act only while the diagram is in
+  use: not from another screen, and not under an open menu or dialog.
+  Ctrl+S and undo still work everywhere. Ctrl+C on text you have selected
+  copies the text.
+- **Delete removes what is selected, and only that.** A device clicked and
+  then left out of a box drawn round others went with them; the inspector
+  could show, and edit, a device other than the one highlighted. A
+  right-click on an object that is not selected now selects it alone, so
+  its **Delete** takes that object and not everything else selected.
+- **Deleting a selection no longer strips the checks from a locked device
+  it leaves in place**, and no longer leaves the checks of links that went
+  with their device running unseen.
+- **Throwing a paste away no longer deletes the original links.**
+- **Unsaved work offered back after a crash stays on offer until you
+  answer.** The next autosave used to discard it, and *Restore* then did
+  nothing.
+- **A Diagnose run started from a device no longer starts again by itself**
+  the next time a project is opened in the same window.
+- **The diagram stops when the window loses focus in the middle of a
+  drag.** Held at the edge, it used to go on scrolling by itself, carrying
+  the device with it, until the button came up.
+- **The Discover form remembers what a run may log in to.** Kinds of device
+  unticked under *Log in to*, the engine, the transport, *hop through* and
+  the second-factor tick came back as their defaults after a look at
+  another tab, so a run could try logins on routers and firewalls that had
+  been taken out. They are now kept with the project like the rest of the
+  scan.
+
+**Fixed: checks that said the wrong thing**
+- **A TCP or UDP check left on the port its form shows now works.** It was
+  run with no port and failed for ever until the same number was typed in.
+- **On Windows, a target that is down no longer shows Up when a router
+  answers the ping** with an error ("TTL expired in transit", or any
+  unreachable reply on a Windows that is not in English).
+- **A check that could not be made is "Not checked", not Down.** A locked
+  vault, or a check with nothing to send to, used to turn the device red
+  and log an outage.
+- **A device or link in maintenance no longer has outages logged** for a
+  planned reload.
+- **ICMP checks of an IPv6 address on macOS** go to the program that speaks
+  IPv6.
+- **The availability report** no longer counts the time between two
+  monitoring sessions as whatever each check was last seen as, ends its
+  period when checks last ran, and gives a device with several checks a
+  history for each.
+- **A rack's status lights follow the checks as they run.**
+- **A check's 24-hour history** asks for as much as is kept and says from
+  when the results shown begin, where it used to show the last three hours
+  under that name.
+
+**Fixed: smaller**
+- Choosing a link no longer marks the project unsaved.
+- A right-click on the frame a selection box leaves opens the selection's
+  own menu.
+
 ## 2.22.7 — 2026-11-28
 
 **Fixed**
