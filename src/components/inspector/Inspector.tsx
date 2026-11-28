@@ -7,6 +7,7 @@ import { deviceContext } from '../../lib/aiChat';
 import { isDesktop } from '../../lib/ipc';
 import { InventorySection } from './InventorySection';
 import { whySays } from '../../lib/evidence';
+import { defaultPort, portForKind } from '../../lib/probePort';
 // The catalogue's `t`, aliased: this file already has a `t` of its own.
 import { t as tr } from '../../i18n';
 import { allEdges, allNodes } from '../../lib/pages';
@@ -2022,7 +2023,12 @@ function ProbeEditor({
               <select
                 className="cv-input"
                 value={probe.kind}
-                onChange={(e) => patch({ kind: e.target.value as ProbeKind })}
+                onChange={(e) => {
+                  // The port goes with the type: the one the field shows
+                  // is the one the check is run on.
+                  const kind = e.target.value as ProbeKind;
+                  patch({ kind, tcpPort: portForKind(probe.kind, probe.tcpPort, kind) });
+                }}
               >
                 <option value="icmp">{tr('inspector.icmpPing')}</option>
                 <option value="tcp">{tr('inspector.tcpPortConnect')}</option>
@@ -2049,7 +2055,7 @@ function ProbeEditor({
                   type="number"
                   min={1}
                   max={65535}
-                  value={probe.tcpPort ?? (probe.kind === 'http' ? 80 : probe.kind === 'udp' ? 53 : 443)}
+                  value={probe.tcpPort ?? defaultPort(probe.kind)}
                   onChange={(e) => patch({ tcpPort: Number(e.target.value) })}
                 />
               </Field>

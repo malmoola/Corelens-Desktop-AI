@@ -1220,6 +1220,10 @@ pub struct SessionRow {
     pub id: String,
     pub started_at: i64,
     pub stopped_at: Option<i64>,
+    /// When its last result was recorded. For a session that was never
+    /// stopped (the window closed, the machine went down) this is as far
+    /// as anyone can say it ran.
+    pub last_sample_at: Option<i64>,
     pub samples: i64,
     pub transitions: i64,
 }
@@ -1227,12 +1231,13 @@ pub struct SessionRow {
 pub fn list_sessions(conn: &Connection, project_id: &str) -> rusqlite::Result<Vec<SessionRow>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.started_at, s.stopped_at,
+                (SELECT MAX(p.timestamp_ms) FROM probe_samples p WHERE p.session_id = s.id),
                 (SELECT COUNT(*) FROM probe_samples p WHERE p.session_id = s.id),
                 (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id AND e.event_type = 'transition')
          FROM validation_sessions s WHERE s.project_id = ?1 ORDER BY s.started_at DESC LIMIT 200",
     )?;
     let rows = stmt.query_map(params![project_id], |r| {
-        Ok(SessionRow { id: r.get(0)?, started_at: r.get(1)?, stopped_at: r.get(2)?, samples: r.get(3)?, transitions: r.get(4)? })
+        Ok(SessionRow { id: r.get(0)?, started_at: r.get(1)?, stopped_at: r.get(2)?, last_sample_at: r.get(3)?, samples: r.get(4)?, transitions: r.get(5)? })
     })?;
     rows.collect()
 }
@@ -3263,6 +3268,11 @@ mod document_round_trip {
         assert_eq!(sum[0].p95_rtt_ms, Some(300.0));
         let sessions = super::list_sessions(&c, "p1").unwrap();
         assert_eq!((sessions.len(), sessions[0].samples), (1, 4));
+        // Never stopped: how far it ran is its last recorded result.
+        assert_eq!((sessions[0].stopped_at, sessions[0].last_sample_at), (None, Some(3)));
+        super::open_session(&c, "s-empty", "p1", "").unwrap();
+        let empty = super::list_sessions(&c, "p1").unwrap().into_iter().find(|x| x.id == "s-empty").unwrap();
+        assert_eq!(empty.last_sample_at, None, "a session with no results has no last one");
 
         for i in 0..(super::CRAWL_RUNS_KEPT + 3) {
             super::insert_crawl_run(&c, &format!("r{i}"), "p1", i, "192.0.2.1", 2, "{\"devices\":[]}").unwrap();

@@ -820,6 +820,7 @@ export const en = {
   'portView.vlan': 'VLAN',
   'portView.errors': 'Errors',
   'probeHistory.historyWindow': 'History window',
+  'probeHistory.cut': 'the newest results only, from {when}: older ones in this window are not shown or counted',
   'probeHistory.history': 'History',
   'deviceNode.doubleClickToRename': 'Double-click to rename',
   'deviceNode.locked': 'Locked',

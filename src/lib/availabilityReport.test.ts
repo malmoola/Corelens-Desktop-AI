@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { availabilityHtml, availabilityModel } from './availabilityReport';
+import { availabilityHtml, availabilityModel, monitoredSpans } from './availabilityReport';
 import type { EventRow, HealthStatus } from '../types/domain';
 
 const T0 = Date.UTC(2026, 0, 5, 12, 0, 0);
@@ -95,5 +95,113 @@ describe('availabilityHtml', () => {
     expect(html).toMatch(/12:00:00[\s\S]*?Down[\s\S]*?2m/);
     expect(html).toContain('98.33%');
     expect(html).toContain('Times in Zulu (UTC)');
+  });
+});
+
+describe('time when checks were not running', () => {
+  const hour = 60 * min;
+  // Monday 09:00 to 17:00, then Tuesday from 09:00, the report made at 10:00.
+  const monday = { id: 'mon', fromMs: T0, toMs: T0 + 8 * hour };
+  const tuesday = { id: 'tue', fromMs: T0 + 24 * hour, toMs: T0 + 25 * hour };
+  const at = (session: string, e: EventRow): EventRow => ({ ...e, sessionId: session });
+  const twoDays: EventRow[] = [
+    at('mon', ev('fw', 'FW-01', 3_000, 'unknown', 'healthy', 'Reply, 2 ms', '192.0.2.1')),
+    // Down ten minutes before the checks were stopped for the night.
+    at('mon', ev('fw', 'FW-01', 8 * hour - 10 * min, 'healthy', 'down', 'Request timed out', '192.0.2.1')),
+    at('tue', ev('fw', 'FW-01', 24 * hour + 3_000, 'unknown', 'healthy', 'Reply, 2 ms', '192.0.2.1')),
+    // One that was up at the stop.
+    at('mon', ev('sw', 'SW-01', 3_000, 'unknown', 'healthy', 'Reply, 1 ms', '192.0.2.2')),
+    at('tue', ev('sw', 'SW-01', 24 * hour + 3_000, 'unknown', 'healthy', 'Reply, 1 ms', '192.0.2.2')),
+  ];
+
+  it('is not counted as the state a check was last seen in', () => {
+    const m = availabilityModel(twoDays, T0 + 25 * hour, [monday, tuesday]);
+    const fw = m.checks.find((c) => c.name === 'FW-01')!;
+    expect(fw.outages.map((o) => o.toMs - o.fromMs), 'the night was counted as an outage').toEqual([10 * min]);
+    expect(fw.downMs).toBe(10 * min);
+    // Ten minutes down in nine hours watched, less the first seconds of each day.
+    const watched = 8 * hour - 3_000 + (hour - 3_000);
+    expect(fw.availability).toBeCloseTo(100 * (1 - (10 * min) / watched), 6);
+    const gap = fw.periods.find((p) => p.gap);
+    expect(gap && [gap.status, gap.fromMs - T0, gap.toMs - T0]).toEqual(['unknown', 8 * hour, 24 * hour + 3_000]);
+    expect(fw.now).toBe('healthy');
+    // And the one that was up is not said to have been up all night either.
+    const sw = m.checks.find((c) => c.name === 'SW-01')!;
+    expect(sw.periods.filter((p) => p.gap).length).toBe(1);
+    expect(sw.availability).toBe(100);
+  });
+
+  it('ends the period when the checks were last running, not when the report is made', () => {
+    // Made on Wednesday with nothing running since Tuesday 10:00.
+    const m = availabilityModel(twoDays, T0 + 50 * hour, [monday, tuesday]);
+    expect(m.toMs - T0, 'the last state was stretched to the moment of the report').toBe(25 * hour);
+    const fw = m.checks.find((c) => c.name === 'FW-01')!;
+    expect(fw.periods[fw.periods.length - 1]!.toMs - T0).toBe(25 * hour);
+    expect(fw.downMs).toBe(10 * min);
+  });
+
+  it('says so in the report', () => {
+    const html = availabilityHtml(availabilityModel(twoDays, T0 + 25 * hour, [monday, tuesday]), { title: 'T', subtitle: 'S', zone: 'UTC', when: (ms) => new Date(ms).toISOString(), clock: (ms) => new Date(ms).toISOString().slice(11, 16) });
+    expect(html).toContain('Checks were not running');
+    expect(html).toMatch(/not running is left out/);
+  });
+
+  it('is as before for history with no sessions known', () => {
+    const m = availabilityModel(twoDays, T0 + 25 * hour);
+    expect(m.checks.find((c) => c.name === 'FW-01')!.periods.some((p) => p.gap)).toBe(false);
+  });
+});
+
+describe('a device with more than one check', () => {
+  // A ping and a web check on one switch: the web interface is turned off
+  // at +10 and stays off; the ping is slow for a minute at +15.
+  const both: EventRow[] = [
+    { ...ev('core', 'CORE-SW1', 0, 'unknown', 'healthy', 'Reply, 2 ms', '192.0.2.1'), probeType: 'icmp' },
+    { ...ev('core', 'CORE-SW1', 1_000, 'unknown', 'healthy', '200 OK', 'https://192.0.2.1/'), probeType: 'https' },
+    { ...ev('core', 'CORE-SW1', 10 * min, 'healthy', 'down', 'Connection refused', 'https://192.0.2.1/'), probeType: 'https' },
+    { ...ev('core', 'CORE-SW1', 15 * min, 'healthy', 'warning', 'Reply, 300 ms', '192.0.2.1'), probeType: 'icmp' },
+    { ...ev('core', 'CORE-SW1', 16 * min, 'warning', 'healthy', 'Reply, 2 ms', '192.0.2.1'), probeType: 'icmp' },
+  ];
+  const m = availabilityModel(both, T0 + 60 * min);
+
+  it('has a history for each, not one made of both', () => {
+    const mine = m.checks.filter((c) => c.name.startsWith('CORE-SW1'));
+    expect(mine.length, 'two checks were folded into one history').toBe(2);
+    const web = mine.find((c) => c.probe === 'HTTPS')!;
+    const ping = mine.find((c) => c.probe === 'ICMP')!;
+    expect(web.now, 'the web check is still down').toBe('down');
+    expect(web.downMs).toBe(50 * min);
+    expect(ping.now).toBe('healthy');
+    expect(ping.downMs).toBe(0);
+    expect(ping.slowMs).toBe(1 * min);
+    // Each is told apart by name where the device has several.
+    expect(new Set(mine.map((c) => c.name)).size).toBe(2);
+  });
+});
+
+describe('the stretches checks were running', () => {
+  const hour = 60 * min;
+  const change = (session: string, at: number): EventRow => ({ ...ev('fw', 'FW-01', at, 'healthy', 'down'), sessionId: session });
+
+  it('end at the stop, at now for the one running, and at the last thing recorded for one never stopped', () => {
+    const spans = monitoredSpans(
+      [
+        { id: 'stopped', startedAt: T0, stoppedAt: T0 + 8 * hour },
+        { id: 'window-closed', startedAt: T0 + 24 * hour, stoppedAt: null, lastSampleAt: T0 + 30 * hour },
+        { id: 'no-results-kept', startedAt: T0 + 48 * hour, stoppedAt: null, lastSampleAt: null },
+        { id: 'nothing-at-all', startedAt: T0 + 60 * hour, stoppedAt: null },
+        { id: 'running', startedAt: T0 + 72 * hour, stoppedAt: null, lastSampleAt: T0 + 72 * hour + 5_000 },
+      ],
+      [change('no-results-kept', 49 * hour), change('no-results-kept', 50 * hour), change('stopped', 2 * hour)],
+      'running',
+      T0 + 73 * hour,
+    );
+    expect(spans.map((sp) => [sp.id, (sp.toMs - T0) / hour])).toEqual([
+      ['stopped', 8],
+      ['window-closed', 30],
+      ['no-results-kept', 50],
+      ['nothing-at-all', 60],
+      ['running', 73],
+    ]);
   });
 });

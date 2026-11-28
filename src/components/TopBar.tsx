@@ -6,7 +6,7 @@ import { migrateDocument } from '../lib/migrate';
 import { ipc } from '../lib/ipc';
 import { ChromeIcon, IconButton } from './chromeIcons';
 import { formatTime, isLocalFormat, zoneLabel } from '../lib/timeFormat';
-import { availabilityHtml, availabilityModel } from '../lib/availabilityReport';
+import { availabilityHtml, availabilityModel, monitoredSpans } from '../lib/availabilityReport';
 import { isDesktop } from '../lib/ipc';
 import { buildMarkdownReport, saveExport, slug, svgToPng } from '../lib/exports';
 import { cableSchedule, cableScheduleCsv } from '../lib/cableSchedule';
@@ -505,7 +505,12 @@ export function TopBar({ onExit }: { onExit: () => void }) {
    *  history, not only what the dock has loaded. */
   const exportAvailability = async () => {
     const history = isDesktop ? await ipc.listEvents(meta.id, 200_000).catch(() => events) : events;
-    const model = availabilityModel(history, Date.now());
+    // When checks were running. A check's last state says nothing of the
+    // night after they were stopped, and is not counted through it.
+    const kept = isDesktop ? await ipc.listSessions(meta.id).catch(() => []) : [];
+    const live = useStore.getState().session;
+    const made = Date.now();
+    const model = availabilityModel(history, made, monitoredSpans(kept, history, live.state === 'running' ? live.id : null, made));
     if (model.checks.length === 0) {
       useStore.getState().setStatusMessage(t('export.availabilityNone'));
       return;

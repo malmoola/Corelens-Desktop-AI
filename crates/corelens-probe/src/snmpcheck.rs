@@ -14,9 +14,20 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::types::{Outcome, ProbeConfig, ProbeResult};
 
+/// Why an uptime was not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UptimeError {
+    /// Nothing was sent: the saved credential the check names could not be
+    /// opened (the vault is locked, the credential is gone). Says nothing
+    /// about the device.
+    NotRun(String),
+    /// The device was asked and did not answer, or answered without it.
+    NoAnswer(String),
+}
+
 /// Reads a device's uptime in hundredths of a second, or says why it could not.
 pub type UptimeReader =
-    Box<dyn Fn(ProbeConfig) -> Pin<Box<dyn Future<Output = Result<u64, String>> + Send>> + Send + Sync>;
+    Box<dyn Fn(ProbeConfig) -> Pin<Box<dyn Future<Output = Result<u64, UptimeError>> + Send>> + Send + Sync>;
 
 static READER: OnceLock<UptimeReader> = OnceLock::new();
 /// The last uptime each probe saw, to notice a restart.
@@ -60,14 +71,15 @@ pub fn judge(probe_id: &str, now_ms: i64, rtt_ms: f64, ticks: u64, previous: Opt
 
 pub async fn run(cfg: &ProbeConfig, now_ms: i64) -> ProbeResult {
     let Some(reader) = READER.get() else {
-        return ProbeResult::failed(&cfg.id, now_ms, Outcome::OsError, "SNMP checks are not available in this build");
+        return ProbeResult::failed(&cfg.id, now_ms, Outcome::NotRun, "SNMP checks are not available in this build");
     };
     if cfg.snmp_credential_id.as_deref().unwrap_or("").is_empty() {
         return ProbeResult::failed(&cfg.id, now_ms, Outcome::InvalidTarget, "Choose a saved SNMP credential for this check");
     }
     let started = std::time::Instant::now();
     match reader(cfg.clone()).await {
-        Err(why) => ProbeResult::failed(&cfg.id, now_ms, Outcome::NoAnswer, &why),
+        Err(UptimeError::NotRun(why)) => ProbeResult::failed(&cfg.id, now_ms, Outcome::NotRun, &why),
+        Err(UptimeError::NoAnswer(why)) => ProbeResult::failed(&cfg.id, now_ms, Outcome::NoAnswer, &why),
         Ok(ticks) => {
             let last = LAST.get_or_init(|| Mutex::new(HashMap::new()));
             let previous = last.lock().ok().and_then(|mut m| m.insert(cfg.id.clone(), ticks));

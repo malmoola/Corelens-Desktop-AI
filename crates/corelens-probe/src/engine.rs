@@ -372,6 +372,15 @@ pub fn now_ms() -> i64 {
         .unwrap_or_default()
 }
 
+/// The port a TCP or UDP check is run on when it carries none of its own:
+/// the one its form shows for that type until another is typed.
+pub fn default_port(kind: ProbeKind) -> u32 {
+    match kind {
+        ProbeKind::Udp => 53,
+        _ => 443,
+    }
+}
+
 /// One probe attempt. Also used by `Test Now`, which is why it takes no
 /// session context — a one-off test must never register a schedule.
 pub async fn run_once(cfg: &ProbeConfig) -> ProbeResult {
@@ -382,7 +391,7 @@ pub async fn run_once(cfg: &ProbeConfig) -> ProbeResult {
             probe_tcp(
                 &cfg.id,
                 &cfg.target,
-                cfg.tcp_port.unwrap_or(0),
+                cfg.tcp_port.unwrap_or_else(|| default_port(ProbeKind::Tcp)),
                 cfg.timeout_ms,
                 t,
             )
@@ -437,7 +446,7 @@ pub async fn run_once(cfg: &ProbeConfig) -> ProbeResult {
             .await
         }
         ProbeKind::Udp => {
-            crate::udp::probe_udp(&cfg.id, &cfg.target, cfg.tcp_port.unwrap_or(0), cfg.udp_payload.as_deref(), cfg.timeout_ms, t)
+            crate::udp::probe_udp(&cfg.id, &cfg.target, cfg.tcp_port.unwrap_or_else(|| default_port(ProbeKind::Udp)), cfg.udp_payload.as_deref(), cfg.timeout_ms, t)
                 .await
         }
         ProbeKind::Snmp => crate::snmpcheck::run(cfg, t).await,
@@ -550,6 +559,25 @@ mod tests {
         engine.start("s2".into(), "proj-b".into(), vec![b]).await.unwrap();
         assert_eq!(engine.active_project().await.as_deref(), Some("proj-b"));
         engine.stop().await;
+    }
+
+    /// A TCP or UDP check made in the form and left on the port the form
+    /// shows carries no port of its own. It is that port that is tried:
+    /// 0 was, which is no port, and the check failed for ever with "port
+    /// must be between 1 and 65535" beside a field reading 443.
+    #[tokio::test]
+    async fn a_check_left_on_the_port_its_form_shows_is_run_on_that_port() {
+        assert_eq!(default_port(ProbeKind::Tcp), 443);
+        assert_eq!(default_port(ProbeKind::Udp), 53);
+        for kind in [ProbeKind::Tcp, ProbeKind::Udp] {
+            let mut cfg = ProbeConfig::defaults("p1", "proj", "n1", "127.0.0.1");
+            cfg.kind = kind;
+            cfg.tcp_port = None;
+            cfg.timeout_ms = 300;
+            let r = run_once(&cfg).await;
+            assert_ne!(r.outcome, crate::types::Outcome::InvalidTarget, "{kind:?}: {r:?}");
+            assert!(!r.error_message.clone().unwrap_or_default().contains("port must be"), "{kind:?}: {r:?}");
+        }
     }
 
     #[tokio::test]

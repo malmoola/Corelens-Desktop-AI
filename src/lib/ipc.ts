@@ -93,6 +93,7 @@ export interface ProbeResultDto {
     | 'no_answer'
     | 'os_error'
     | 'invalid_target'
+    | 'not_run'
     | 'http_error'
     | 'certificate_error'
     | 'address_mismatch'
@@ -1789,7 +1790,7 @@ export const ipc = {
   },
 
   /** A project's validation sessions, and what each probe did in one. */
-  async listSessions(projectId: string): Promise<{ id: string; startedAt: number; stoppedAt: number | null; samples: number; transitions: number }[]> {
+  async listSessions(projectId: string): Promise<{ id: string; startedAt: number; stoppedAt: number | null; lastSampleAt?: number | null; samples: number; transitions: number }[]> {
     if (!isDesktop) return [];
     return invoke('list_sessions', { projectId });
   },

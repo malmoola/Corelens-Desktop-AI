@@ -150,11 +150,22 @@ pub enum Outcome {
     /// `Snmp`: the device answered, and its uptime went backwards —
     /// it restarted since the last check. Reachable, so not down; a warning.
     Restarted,
+    /// The check could not be made: nothing was sent, because something it
+    /// needs on this side was not to be had (the saved credential it names
+    /// could not be opened). Nothing is known of the device from it.
+    NotRun,
 }
 
 impl Outcome {
     pub fn is_success(self) -> bool {
         matches!(self, Outcome::Success | Outcome::Restarted)
+    }
+
+    /// Whether anything was asked of the device. A check with nothing to
+    /// send to, or that could not be made on this side, asked nothing: it
+    /// is not a miss, and must not count towards the device being down.
+    pub fn was_carried_out(self) -> bool {
+        !matches!(self, Outcome::InvalidTarget | Outcome::NotRun)
     }
 }
 

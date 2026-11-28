@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 
+import { coverage, HISTORY_LIMIT } from '../../lib/historyWindow';
 import { ipc } from '../../lib/ipc';
 import { availability, rttSpark, statusBars, type Sample } from '../../lib/sparkline';
 import { useStore } from '../../state/store';
@@ -32,7 +33,9 @@ export function ProbeHistory({ probeId }: { probeId: string }) {
     }
     let cancelled = false;
     void ipc
-      .probeHistory(probeId, Date.now() - span)
+      // As many as there are to be had: the default is two thousand, which
+      // at five seconds a result is under three hours of a day asked for.
+      .probeHistory(probeId, Date.now() - span, HISTORY_LIMIT)
       .then((rows) => {
         if (!cancelled) setStored(rows.map((r) => ({ timestampMs: r.timestampMs, status: r.status, rttMs: r.rttMs })));
       })
@@ -46,6 +49,8 @@ export function ProbeHistory({ probeId }: { probeId: string }) {
   const spark = rttSpark(samples, W, H);
   const bars = statusBars(samples, W, STRIP);
   const up = availability(samples);
+  // A stored window longer than what came back: said, with where it begins.
+  const covered = span === 0 ? { cut: false, fromMs: null } : coverage(samples, HISTORY_LIMIT);
 
   return (
     <div className="cv-probe-history">
@@ -58,6 +63,9 @@ export function ProbeHistory({ probeId }: { probeId: string }) {
           {samples.length === 0
             ? span === 0 ? 'Nothing yet — start validation' : 'Nothing recorded in this window'
             : `${t('plural.result', { count: samples.length })}${up !== null ? ` · ${up}% up` : ''}${spark.min !== null ? ` · ${Math.round(spark.min)}–${Math.round(spark.max!)} ms` : ''}`}
+          {covered.cut && covered.fromMs !== null && (
+            <span className="cv-probe-history-cut" data-hint="history-cut"> · {t('probeHistory.cut', { when: new Date(covered.fromMs).toLocaleString() })}</span>
+          )}
         </span>
       </div>
       {samples.length > 0 && (

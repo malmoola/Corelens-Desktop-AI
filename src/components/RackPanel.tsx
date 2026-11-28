@@ -61,7 +61,7 @@ import { FloorView } from './FloorView';
 import { rackElevationDxf } from '../lib/rackDxf';
 import { rackElevationSvg } from '../lib/rackSvg';
 import { STACK_PRESETS, roleOf, stackCables, stackPreset, type Stack, type StackTopology } from '../lib/stacking';
-import { useStore } from '../state/store';
+import { useRuntimeSlowly, useStore } from '../state/store';
 import { GROUP_WHEEL_DARK, deviceColor } from '../theme';
 import type { DeviceNodeData, DeviceType, LinkData } from '../types/domain';
 import { t } from '../i18n';
@@ -102,6 +102,12 @@ export function RackPanel() {
   const exportFolder = useStore((s) => s.settings.exportFolder);
   const ground = useStore((s) => s.settings.ground);
   const nodeStatus = useStore((s) => s.nodeStatus);
+  // A light is the device's status as the checks find it. `nodeStatus` is
+  // one function for the life of the store, so on its own it says nothing
+  // of a result arriving or the checks being stopped: the lights kept the
+  // colours they had when the screen was opened.
+  const results = useRuntimeSlowly();
+  const checking = useStore((s) => s.session.state);
   const linkStatus = useStore((s) => s.linkStatus);
   const store = useStore.getState;
   const [view, setView] = useState<View>('front');
@@ -154,7 +160,8 @@ export function RackPanel() {
         if (st) r.stack = st;
         return r;
       });
-  }, [pages, stacks, nodeStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pages, stacks, nodeStatus, results, checking]);
   const byId = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
   const furnitureById = useMemo(() => {
     const m = new Map<string, { rack: Rack; item: Rackable }>();

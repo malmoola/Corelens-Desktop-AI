@@ -162,17 +162,19 @@ fn register_snmp_uptime(handle: tauri::AppHandle) {
             let id = cfg.snmp_credential_id.clone().unwrap_or_default();
             let auth = {
                 let state = handle.state::<AppState>();
-                let auth = vault_commands::snmp_credentials(&state, &id)?;
+                // No credential to ask with is a check not made, not a
+                // device that did not answer.
+                let auth = vault_commands::snmp_credentials(&state, &id).map_err(corelens_probe::snmpcheck::UptimeError::NotRun)?;
                 vault_commands::note_use(&state, &id, "SNMP uptime check", &cfg.target);
                 auth
             };
             let timeout = std::time::Duration::from_millis(cfg.timeout_ms.max(500));
             let found = corelens_discover::snmp::identify(&cfg.target, 161, &auth, timeout)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| corelens_probe::snmpcheck::UptimeError::NoAnswer(e.to_string()))?;
             found
                 .uptime_ticks
-                .ok_or_else(|| format!("{} answered SNMP but gave no uptime", cfg.target))
+                .ok_or_else(|| corelens_probe::snmpcheck::UptimeError::NoAnswer(format!("{} answered SNMP but gave no uptime", cfg.target)))
         })
     }));
 }

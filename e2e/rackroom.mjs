@@ -359,6 +359,28 @@ check("× takes the colour away again", (await st(() => window.__cvStore.getStat
 
 check("a switch's faceplate carries port blocks, uplinks and a status light",
   (await item("sw1").locator(".cv-fascia.is-ports").getAttribute("data-count")) === "48" && (await item("sw1").locator(".cv-fascia.is-uplinks").count()) === 1 && (await item("sw1").locator(".cv-rack-led").count()) === 1);
+// The light is the device's status as the checks find it, while they run:
+// a result arriving changes it with no edit to the document.
+{
+  const led = () => item("sw1").locator(".cv-rack-led").getAttribute("class");
+  await st(() => {
+    const s = window.__cvStore.getState();
+    const probe = { id: "p-sw1", projectId: "x", objectKind: "node", objectId: "sw1", name: "Primary", kind: "icmp", target: "192.0.2.1", enabled: true, isPrimary: true, intervalSeconds: 5, timeoutMs: 1000, failureThreshold: 3, recoveryThreshold: 1 };
+    window.__cvStore.setState({ doc: { ...s.doc, probes: [probe] } });
+  });
+  await page.waitForTimeout(300);
+  const idle = await led();
+  await st(() => window.__cvStore.setState({
+    session: { id: "s1", state: "running", startedAt: 1 },
+    runtime: new Map([["p-sw1", { probeId: "p-sw1", status: "down", lastRttMs: null, lastSuccessMs: null, lastFailureMs: 1, lastSummary: "Request timed out", consecutiveFailures: 3, failureThreshold: 3 }]]),
+  }));
+  await page.waitForTimeout(1600);
+  check("a device's light follows its checks as they run", /is-unknown/.test(idle) && /is-down/.test(await led()), `${idle} -> ${await led()}`);
+  await st(() => window.__cvStore.setState({ session: { id: null, state: "stopped", startedAt: null }, runtime: new Map() }));
+  await page.waitForTimeout(1600);
+  check("and reads not checked again when they are stopped", /is-unknown/.test(await led()), await led());
+  await st(() => { const s = window.__cvStore.getState(); window.__cvStore.setState({ doc: { ...s.doc, probes: [] } }); });
+}
 check("a server's carries drive bays", (await item("srv").locator(".cv-fascia.is-bays").count()) === 1);
 check("a PDU's carries outlets and a patch panel's jacks", (await page.locator('.cv-rack-item[data-kind="pdu"] .cv-fascia.is-outlets').count()) === 1 && (await page.locator('.cv-rack-item[data-kind="patch-panel"] .cv-fascia.is-jacks').count()) === 1);
 await page.locator(".cv-seg button", { hasText: "Rear" }).click();

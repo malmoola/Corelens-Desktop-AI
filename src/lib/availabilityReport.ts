@@ -7,6 +7,16 @@
  * from its first recorded transition to the end of the period. Nothing before
  * that first transition is claimed.
  *
+ * Nothing is claimed either for time when checks were not running. A check
+ * is watched for the length of a monitoring session; what it was last seen
+ * as when the session stopped says nothing of the night after it. Those
+ * stretches are in the timeline as "Not checked" and out of every sum. The
+ * period ends when checks were last running, not when the report is made.
+ *
+ * A device may have several checks. Each is its own row and its own
+ * history: an event names the device and the kind and target of the check,
+ * which between them tell one check of a device from another.
+ *
  * What it says, in order:
  *   - tiles: how many checks, up and down at the end, how many had an outage,
  *     how many wide events;
@@ -28,6 +38,16 @@ export interface ReportPeriod {
   fromMs: number;
   toMs: number;
   detail: string;
+  /** Checks were not running: no state is known, and none is counted. */
+  gap?: true;
+}
+
+/** A stretch when checks were running: one monitoring session, from its
+ *  start to its stop (or to now, for the one running). */
+export interface MonitoredSpan {
+  id: string;
+  fromMs: number;
+  toMs: number;
 }
 
 export interface ReportCheck {
@@ -70,45 +90,104 @@ const DEVICES = 'Devices';
 const WIDE_WINDOW_MS = 90_000;
 const WIDE_MIN = 3;
 
-export function availabilityModel(events: EventRow[], toMs: number): AvailabilityModel {
-  const byObject = new Map<string, EventRow[]>();
+/** A monitoring session as the app keeps it. */
+export interface KeptSession {
+  id: string;
+  startedAt: number;
+  stoppedAt: number | null;
+  /** When its last result was recorded; for a session never stopped. */
+  lastSampleAt?: number | null;
+}
+
+/**
+ * The stretches checks were running, from the sessions as kept.
+ *
+ * A session that was stopped ran until then. The one running now runs
+ * until now. One that was never stopped (the window was closed, the
+ * machine went down) ran, as far as anyone can say, until its last
+ * recorded result, or failing that its last change of state.
+ */
+export function monitoredSpans(sessions: KeptSession[], events: EventRow[], running: string | null, now: number): MonitoredSpan[] {
+  const lastChange = new Map<string, number>();
+  for (const e of events) {
+    if (e.sessionId === null) continue;
+    if ((lastChange.get(e.sessionId) ?? -Infinity) < e.timestampMs) lastChange.set(e.sessionId, e.timestampMs);
+  }
+  return sessions.map((s) => {
+    const until = s.stoppedAt ?? (s.id === running ? now : (s.lastSampleAt ?? lastChange.get(s.id) ?? s.startedAt));
+    return { id: s.id, fromMs: s.startedAt, toMs: Math.max(s.startedAt, until) };
+  });
+}
+
+const NOT_RUNNING = 'Checks were not running';
+
+export function availabilityModel(events: EventRow[], until: number, sessions: MonitoredSpan[] = []): AvailabilityModel {
+  // The period ends when checks were last running. With no sessions known
+  // (history from before they were asked for) it ends when asked, as it did.
+  const toMs = sessions.length ? Math.min(until, Math.max(...sessions.map((s) => s.toMs))) : until;
+  const endOf = new Map(sessions.map((s) => [s.id, s.toMs]));
+
+  // One history per check, not per device: the device, and the kind and
+  // target of the check, which is what an event says of its check.
+  const byCheck = new Map<string, EventRow[]>();
+  const perObject = new Map<string, Set<string>>();
   for (const e of events) {
     if (e.eventType !== 'transition' || e.currentStatus === null || e.timestampMs > toMs) continue;
-    const list = byObject.get(e.objectId);
+    const key = `${e.objectId}\u0000${e.probeType ?? ''}\u0000${e.target ?? ''}`;
+    const list = byCheck.get(key);
     if (list) list.push(e);
-    else byObject.set(e.objectId, [e]);
+    else byCheck.set(key, [e]);
+    const keys = perObject.get(e.objectId);
+    if (keys) keys.add(key);
+    else perObject.set(e.objectId, new Set([key]));
   }
 
   const checks: ReportCheck[] = [];
-  for (const [id, list] of byObject) {
+  for (const [key, list] of byCheck) {
     list.sort((a, b) => a.timestampMs - b.timestampMs);
-    const periods: ReportPeriod[] = list.map((e, i) => ({
-      status: e.currentStatus!,
-      fromMs: e.timestampMs,
-      toMs: i + 1 < list.length ? list[i + 1]!.timestampMs : toMs,
-      detail: e.message,
-    }));
+    const periods: ReportPeriod[] = [];
+    list.forEach((e, i) => {
+      const next = list[i + 1];
+      const nextAt = next ? next.timestampMs : toMs;
+      // A state lasts until the next change, or until its session stopped
+      // if that came first; from there to the next change nothing is known.
+      const stopped = e.sessionId !== null && (!next || next.sessionId !== e.sessionId) ? endOf.get(e.sessionId) : undefined;
+      const end = stopped === undefined ? nextAt : Math.min(nextAt, Math.max(stopped, e.timestampMs));
+      periods.push({ status: e.currentStatus!, fromMs: e.timestampMs, toMs: end, detail: e.message });
+      if (end < nextAt) periods.push({ status: 'unknown', fromMs: end, toMs: nextAt, detail: NOT_RUNNING, gap: true });
+    });
     const last = list[list.length - 1]!;
-    const name = last.objectName || id;
+    const id = last.objectId;
+    const probe = (last.probeType ?? '').toUpperCase();
+    // Told apart by name where the device has several checks.
+    const several = (perObject.get(id)?.size ?? 1) > 1;
+    const name = `${last.objectName || id}${several ? ` (${[probe, last.target ?? ''].filter(Boolean).join(' ')})` : ''}`;
     const cut = name.indexOf(' · ');
-    const observed = toMs - periods[0]!.fromMs;
-    const lasting = (s: HealthStatus) => periods.filter((p) => p.status === s).reduce((n, p) => n + (p.toMs - p.fromMs), 0);
+    const lasting = (st: HealthStatus) => periods.filter((p) => !p.gap && p.status === st).reduce((n, p) => n + (p.toMs - p.fromMs), 0);
+    // The time something is known about: not the gaps, and not a stretch
+    // the check itself could not be made in.
+    const known = periods.filter((p) => !p.gap && p.status !== 'unknown');
+    const observed = known.reduce((n, p) => n + (p.toMs - p.fromMs), 0);
     const downMs = lasting('down');
-    const alwaysDown = periods.every((p) => p.status === 'down');
+    const alwaysDown = known.length > 0 && known.every((p) => p.status === 'down');
+    const final = periods[periods.length - 1]!;
     checks.push({
-      id,
+      // The device's id, as it was, where the device has one check.
+      id: several ? key : id,
       name,
       group: cut > 0 ? name.slice(0, cut) : DEVICES,
       label: cut > 0 ? name.slice(cut + 3) : name,
-      probe: (last.probeType ?? '').toUpperCase(),
+      probe,
       target: last.target ?? '',
       periods,
       downMs,
       slowMs: lasting('warning'),
-      outages: periods.filter((p) => p.status === 'down'),
+      outages: periods.filter((p) => !p.gap && p.status === 'down'),
       alwaysDown,
       neverRan: alwaysDown && periods.some((p) => /could not be resolved/i.test(p.detail)),
-      now: last.currentStatus!,
+      // As last seen while checks ran; not checked where they stopped
+      // running for this one before the end of the period.
+      now: final.gap ? 'unknown' : last.currentStatus!,
       availability: observed > 0 ? 100 * (1 - downMs / observed) : 100,
     });
   }
@@ -241,7 +320,7 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)
       out.push(`<tr><td>${esc(c.label)}</td><td class="mono">${esc(c.target)} <span class="note">${esc(c.probe)}</span></td><td class="num">${c.outages.length}</td><td class="num mono">${c.downMs ? spanOf(0, c.downMs) : '—'}</td><td class="num">${pct(c)}</td><td class="num">${badge(c.now)}</td></tr>`);
     }
   }
-  out.push('</table><p class="note">Availability is the share of the period the check was not down, from the moment it was first checked. Slow periods count as up.</p>');
+  out.push('</table><p class="note">Availability is the share of the time the check was being made that it was not down, from the moment it was first checked. Slow periods count as up. Time when checks were not running is left out.</p>');
 
   out.push('<h2 class="pb">Timeline of each check</h2><p class="note">Each row is a change of state and how long that state lasted, newest first.</p>');
   for (const g of m.groups) {

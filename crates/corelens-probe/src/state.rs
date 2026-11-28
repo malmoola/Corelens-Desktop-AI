@@ -47,7 +47,15 @@ impl ProbeState {
             return self.transition(cfg, previous, result, "Probe disabled");
         }
 
-        if result.outcome.is_success() {
+        if !result.outcome.was_carried_out() {
+            // Nothing was asked of the device, so nothing is known of it:
+            // not checked, with the reason kept to be shown. Not a miss,
+            // and not one towards down for the misses that may follow.
+            self.consecutive_successes = 0;
+            self.consecutive_failures = 0;
+            self.last_error = result.error_message.clone().or_else(|| Some(result.summary.clone()));
+            self.status = HealthStatus::Unknown;
+        } else if result.outcome.is_success() {
             self.consecutive_failures = 0;
             self.consecutive_successes = self.consecutive_successes.saturating_add(1);
             self.last_success_ms = Some(result.timestamp_ms);
@@ -248,6 +256,39 @@ mod tests {
         s.apply(&cfg(), &fail(2));
         assert_eq!(s.status, HealthStatus::Unknown);
         s.apply(&cfg(), &fail(3));
+        assert_eq!(s.status, HealthStatus::Down);
+    }
+
+    /// Down means a check was made and the device did not answer. A check
+    /// that could not be made at all (no target to send to, a credential
+    /// that could not be opened) has learned nothing about the device: it
+    /// is not checked, however many times that happens, and no outage is
+    /// logged for it.
+    #[test]
+    fn a_check_that_could_not_be_carried_out_is_not_a_device_that_is_down() {
+        let c = cfg();
+        let not_made = |t: i64| ProbeResult::failed("p1", t, Outcome::InvalidTarget, "target is empty");
+        let mut s = ProbeState::default();
+        for t in 1..=6 {
+            assert!(s.apply(&c, &not_made(t)).is_none(), "attempt {t} reported a change of status");
+            assert_eq!(s.status, HealthStatus::Unknown, "attempt {t}");
+        }
+        assert_eq!(s.last_error.as_deref(), Some("target is empty"), "the reason is kept to be shown");
+        // A device that was answering, whose check can no longer be made,
+        // is not checked; it is not down, and it says why.
+        s.apply(&c, &ok(7, 2.0));
+        assert_eq!(s.status, HealthStatus::Healthy);
+        let t = s.apply(&c, &not_made(8)).expect("the status changed");
+        assert_eq!((t.previous, t.current), (HealthStatus::Healthy, HealthStatus::Unknown));
+        assert!(t.message.contains("target is empty"), "{}", t.message);
+        // Attempts that were not made do not count towards down either:
+        // two real misses after them are still two.
+        s.apply(&c, &ok(9, 2.0));
+        s.apply(&c, &not_made(10));
+        s.apply(&c, &fail(11));
+        s.apply(&c, &fail(12));
+        assert_ne!(s.status, HealthStatus::Down, "attempts not made were counted as misses");
+        s.apply(&c, &fail(13));
         assert_eq!(s.status, HealthStatus::Down);
     }
 

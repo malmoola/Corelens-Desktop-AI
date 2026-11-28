@@ -51,6 +51,21 @@ impl PingFlavour {
     }
 }
 
+/// The program that pings this target on a platform of this flavour.
+///
+/// macOS's `ping`, and the BSDs', speak IPv4 only: an IPv6 address given to
+/// it is refused, so every ICMP check of one failed there. Theirs for IPv6
+/// is `ping6`. iputils' `ping` and `ping.exe` take either family. A host
+/// name stays with `ping`: which family it resolves to is not known here.
+/// From the macOS manual pages; not run on a Mac.
+pub fn ping_program_for(flavour: PingFlavour, target: &Target) -> &'static str {
+    match (flavour, target) {
+        (PingFlavour::Windows, _) => "ping.exe",
+        (PingFlavour::Bsd, Target::Ip(ip)) if ip.is_ipv6() => "ping6",
+        _ => "ping",
+    }
+}
+
 /// Build the argument vector for a single-shot ping, for this machine.
 pub fn ping_args(target: &Target, timeout_ms: u64) -> Vec<String> {
     ping_args_for(PingFlavour::here(), target, timeout_ms)
@@ -76,6 +91,12 @@ pub fn ping_args_for(flavour: PingFlavour, target: &Target, timeout_ms: u64) -> 
         PingFlavour::Linux => {
             let secs = timeout_ms.div_ceil(1000).max(1).to_string();
             vec!["-c".into(), "1".into(), "-W".into(), secs, t]
+        }
+        // `ping6`, for an IPv6 address (`ping_program_for`), has no wait
+        // for a reply to set: its `-W` is another thing and takes no value.
+        // One packet, and the wall clock in `ping_once` is its timeout.
+        PingFlavour::Bsd if matches!(target, Target::Ip(ip) if ip.is_ipv6()) => {
+            vec!["-c".into(), "1".into(), t]
         }
         // Milliseconds, as given. Rounding these up to a second would be
         // harmless; rounding them *down* to one is what broke the sweep.
@@ -108,6 +129,16 @@ pub fn parse_ping_output(stdout: &str, stderr: &str, exit_code: Option<i32>) -> 
             outcome: Outcome::DnsFailure,
             rtt_ms: None,
             summary: "Host name could not be resolved".into(),
+        };
+    }
+
+    // A router on the way saying the packet's time to live ran out: a
+    // loop, or a path longer than the packet was allowed. Not the target.
+    if lower.contains("ttl expired in transit") || lower.contains("time to live exceeded") {
+        return PingParse {
+            outcome: Outcome::Unreachable,
+            rtt_ms: None,
+            summary: "A router on the way answered that the packet's time to live ran out (a routing loop, or too long a path); the target did not answer".into(),
         };
     }
 
@@ -144,10 +175,22 @@ pub fn parse_ping_output(stdout: &str, stderr: &str, exit_code: Option<i32>) -> 
     }
 
     match exit_code {
-        Some(0) => PingParse {
+        // An exit code of 0 is not a reply by itself: `ping.exe` gives it
+        // for anything that came back, an ICMP error from a router
+        // included, in whatever language Windows speaks. An echo reply
+        // carries the reply's own TTL (a hop limit, for IPv6) even where
+        // its time could not be read; that is believed.
+        Some(0) if lower.contains("ttl=") || lower.contains("hlim=") => PingParse {
             outcome: Outcome::Success,
             rtt_ms: None,
             summary: "Reply received".into(),
+        },
+        // Something answered, and nothing in it is an echo reply from the
+        // target: an error from a router, worded in a way not known here.
+        Some(0) => PingParse {
+            outcome: Outcome::Unreachable,
+            rtt_ms: None,
+            summary: first_meaningful_reply(&text).unwrap_or_else(|| "Something answered, but not the target with an echo reply".into()),
         },
         _ => PingParse {
             outcome: Outcome::OsError,
@@ -196,6 +239,16 @@ fn extract_rtt(lower: &str) -> Option<f64> {
     None
 }
 
+/// The line of ping's output that says what came back: the one after its
+/// opening line, which only says what was pinged.
+fn first_meaningful_reply(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .nth(1)
+        .map(|l| l.chars().take(200).collect())
+}
+
 fn first_meaningful_line(text: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
@@ -215,8 +268,12 @@ pub struct PingFailure {
 /// so the sweep and the validation engine cannot drift apart on argument
 /// construction, timeout handling, or console suppression.
 pub async fn ping_once(target: &Target, timeout_ms: u64) -> Result<PingParse, PingFailure> {
-    let program = if cfg!(windows) { "ping.exe" } else { "ping" };
+    let program = ping_program_for(PingFlavour::here(), target);
     let mut cmd = Command::new(program);
+    // In its own words, not the system language's: what came back is told
+    // by its text. (`ping.exe` has no such switch; see `parse_ping_output`.)
+    #[cfg(not(windows))]
+    cmd.env("LC_ALL", "C");
     cmd.args(ping_args(target, timeout_ms))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -375,6 +432,61 @@ rtt min/avg/max/mdev = 0.044/0.044/0.044/0.000 ms\n";
         let err = "ping: no-such-host.invalid: Name or service not known\n";
         let p = parse_ping_output("", err, Some(2));
         assert_eq!(p.outcome, Outcome::DnsFailure);
+    }
+
+    /// `ping.exe` exits 0 whenever anything at all came back, an ICMP error
+    /// from a router included, and counts it as "Received = 1". Only an
+    /// echo reply from the target is a reply: it has a time on it, or at
+    /// the least a TTL. The outputs are reconstructed from ping.exe's
+    /// documented messages, not captured, with documentation addresses.
+    #[test]
+    fn an_icmp_error_that_ping_counts_as_a_reply_is_not_a_reply() {
+        // A routing loop: a router on the way answers that the packet's
+        // time to live ran out.
+        let looped = "\r\nPinging 192.0.2.9 with 32 bytes of data:\r\n\
+                      Reply from 198.51.100.1: TTL expired in transit.\r\n\r\n\
+                      Ping statistics for 192.0.2.9:\r\n    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),\r\n";
+        let p = parse_ping_output(looped, "", Some(0));
+        assert_eq!(p.outcome, Outcome::Unreachable, "{p:?}");
+        // A Windows in another language: the words are not the ones looked
+        // for, the exit code is still 0, and nothing in it is an echo reply.
+        let german = "\r\nPing wird ausgef\u{fc}hrt f\u{fc}r 192.0.2.5 mit 32 Bytes Daten:\r\n\
+                      Antwort von 192.0.2.1: Zielhost nicht erreichbar.\r\n\r\n\
+                      Ping-Statistik f\u{fc}r 192.0.2.5:\r\n    Pakete: Gesendet = 1, Empfangen = 1, Verloren = 0\r\n";
+        let p = parse_ping_output(german, "", Some(0));
+        assert_ne!(p.outcome, Outcome::Success, "{p:?}");
+        assert_eq!(p.outcome, Outcome::Unreachable);
+        // The same Windows, the target answering: a reply, with its time.
+        let answered = "Antwort von 192.0.2.5: Bytes=32 Zeit=3ms TTL=64\r\n";
+        let p = parse_ping_output(answered, "", Some(0));
+        assert_eq!((p.outcome, p.rtt_ms), (Outcome::Success, Some(3.0)));
+        // An echo reply with no time that can be read is still one: it has
+        // the reply's own TTL on it.
+        let no_time = "Reply from 192.0.2.5: bytes=32 TTL=64\r\n";
+        assert_eq!(parse_ping_output(no_time, "", Some(0)).outcome, Outcome::Success);
+        // iputils says it in its own words, and exits 1.
+        let linux = "From 198.51.100.1 icmp_seq=1 Time to live exceeded\n\n--- 192.0.2.9 ping statistics ---\n1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms\n";
+        assert_eq!(parse_ping_output(linux, "", Some(1)).outcome, Outcome::Unreachable);
+    }
+
+    /// macOS's `ping` speaks IPv4 only; an IPv6 address is `ping6`'s, which
+    /// has no flag for how long to wait for a reply (its `-W` means
+    /// something else and takes no value), so the wall clock is its
+    /// timeout. From the macOS manual pages; not run on a Mac.
+    #[test]
+    fn an_ipv6_address_goes_to_the_program_that_speaks_it() {
+        let v4 = parse_target("192.0.2.1").unwrap();
+        let v6 = parse_target("2001:db8::1").unwrap();
+        let name = parse_target("core-sw1.example.test").unwrap();
+        assert_eq!(ping_program_for(PingFlavour::Bsd, &v4), "ping");
+        assert_eq!(ping_program_for(PingFlavour::Bsd, &v6), "ping6");
+        assert_eq!(ping_program_for(PingFlavour::Bsd, &name), "ping");
+        assert_eq!(ping_args_for(PingFlavour::Bsd, &v6, 1500), ["-c", "1", "2001:db8::1"]);
+        // iputils and ping.exe take either family themselves.
+        assert_eq!(ping_program_for(PingFlavour::Linux, &v6), "ping");
+        assert_eq!(ping_program_for(PingFlavour::Windows, &v6), "ping.exe");
+        assert_eq!(ping_program_for(PingFlavour::Windows, &v4), "ping.exe");
+        assert_eq!(ping_args_for(PingFlavour::Linux, &v6, 1500), ["-c", "1", "-W", "2", "2001:db8::1"]);
     }
 
     #[test]

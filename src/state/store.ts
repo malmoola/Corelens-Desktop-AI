@@ -61,6 +61,8 @@ import { deviceFieldsFrom, type DeviceTemplate } from '../lib/deviceTemplates';
 import { deviceColor as computeDeviceColor } from '../theme';
 import { activePage, allEdges, allNodes, duplicatePage as duplicatePageIn, newPage, renamePage as renamePageIn, reorderPages as reorderPagesIn, setActivePage as setActivePageIn, withNewPage, withoutPage, withPage, nodeById, edgeById } from '../lib/pages';
 import { pageForContent } from '../lib/pageRect';
+import { answered, missesAfter, wasCarriedOut } from '../lib/probeOutcome';
+import { maintenanceKey, probesForEngine } from '../lib/enginePlan';
 import type { ColourBy } from '../lib/tinting';
 import {
   linkStatus as computeLinkStatus,
@@ -4423,9 +4425,9 @@ export const useStore = create<Store>((set, get) => ({
     if (!meta) return;
     set({ session: { ...get().session, state: 'starting' }, statusMessage: null });
     try {
-      const probes = doc.probes
-        .filter((p) => p.enabled && p.kind !== 'manual')
-        .map((p) => ({ ...p, projectId: meta.id }));
+      // With the maintenance of what each checks: the engine knows nothing
+      // of the diagram, and logged a planned reload as an outage.
+      const probes = probesForEngine(doc, meta.id);
       if (probes.length === 0) {
         set({
           session: { id: null, state: 'stopped', startedAt: null },
@@ -4533,11 +4535,12 @@ export const useStore = create<Store>((set, get) => ({
               probeId: r.probeId,
               status,
               lastRttMs: r.rttMs,
-              lastSuccessMs: r.outcome === 'success' ? r.timestampMs : (prev?.lastSuccessMs ?? null),
-              lastFailureMs: r.outcome !== 'success' ? r.timestampMs : (prev?.lastFailureMs ?? null),
+              lastSuccessMs: answered(r.outcome) ? r.timestampMs : (prev?.lastSuccessMs ?? null),
+              lastFailureMs: !answered(r.outcome) && wasCarriedOut(r.outcome) ? r.timestampMs : (prev?.lastFailureMs ?? null),
               lastSummary: r.summary,
-              consecutiveFailures:
-                r.outcome === 'success' ? 0 : (prev?.consecutiveFailures ?? 0) + 1,
+              // A device that answered and had restarted missed nothing,
+              // and a check that could not be made is not a miss.
+              consecutiveFailures: missesAfter(r.outcome, prev?.consecutiveFailures ?? 0),
               failureThreshold: thresholds.get(r.probeId)?.failureThreshold ?? 3,
             });
             // The live sparkline's window.
@@ -4976,20 +4979,28 @@ function linkName(state: Store, edgeId: string): string {
 // Debounced so a burst of edits lands as one push; the engine diffs.
 let probeSync: ReturnType<typeof setTimeout> | null = null;
 let lastSyncedProbes: unknown = null;
+// A device or link going into or out of maintenance changes what the
+// engine should be running as much as a check does. Looked for only when
+// the document has changed at all.
+let lastSyncedDoc: unknown = null;
+let lastSyncedMaintenance = '';
 useStore.subscribe((s) => {
+  if (s.doc === lastSyncedDoc) return;
+  lastSyncedDoc = s.doc;
+  const quiet = maintenanceKey(s.doc);
   if (s.session.state !== 'running') {
     lastSyncedProbes = s.doc.probes;
+    lastSyncedMaintenance = quiet;
     return;
   }
-  if (s.doc.probes === lastSyncedProbes) return;
+  if (s.doc.probes === lastSyncedProbes && quiet === lastSyncedMaintenance) return;
   lastSyncedProbes = s.doc.probes;
+  lastSyncedMaintenance = quiet;
   if (probeSync) clearTimeout(probeSync);
   probeSync = setTimeout(() => {
     const { session, doc, meta } = useStore.getState();
     if (session.state !== 'running' || !meta) return;
-    const probes = doc.probes
-      .filter((p) => p.enabled && p.kind !== 'manual')
-      .map((p) => ({ ...p, projectId: meta.id }));
+    const probes = probesForEngine(doc, meta.id);
     void ipc
       .updateValidation(probes)
       .then((info) => {
