@@ -43,6 +43,7 @@ import { ChangeReport } from './ChangeReport';
 import { inferredSwitches, selectAttached, vendorCounts, attachedRows, sortAttachedRows, type AttachedColumn } from '../lib/attached';
 import type { DeviceNodeData } from '../types/domain';
 import { activePage } from '../lib/pages';
+import { loginKindsFromSetting, loginKindsToSetting, oneOf } from '../lib/scanMemory';
 
 import { ChromeIcon } from './chromeIcons';
 const CLASS_LABEL: Record<DeviceClassName, string> = {
@@ -361,6 +362,18 @@ export function CrawlPanel({
         // still restored, because that is this form's own memory rather than
         // somebody else's credential.
         if (st.scanCredentialId) setCredentialId(st.scanCredentialId);
+        // What the run may log in to, and how. These were not kept, and
+        // came back as their defaults each time the form was put on the
+        // screen again: kinds of device unticked for this network were
+        // ticked again after a look at another tab.
+        const kinds = loginKindsFromSetting(st.scanLoginKinds, LOGIN_CHOICES.map((c) => c.value));
+        if (kinds) setLoginClasses(kinds);
+        const keptEngine = oneOf(st.scanEngine, ['collector', 'classic'] as const);
+        if (keptEngine) setEngine(keptEngine);
+        const keptTransport = oneOf(st.scanTransport, ['ssh', 'telnet', 'sshThenTelnet'] as const);
+        if (keptTransport) setTransport(keptTransport);
+        if (st.scanHopThrough) setHopThrough(st.scanHopThrough === 'true');
+        if (st.scanSecondFactor) setSecondFactor(st.scanSecondFactor === 'true');
 
         if (st.scanSnmpRows) {
           const restored = restoreSnmpRows(st.scanSnmpRows);
@@ -392,9 +405,14 @@ export function CrawlPanel({
       ['scanMaxHops', String(maxHops)],
       ['scanCredentialId', credentialId],
       ['scanSnmpRows', snmpOpen ? snmpRowsShape(snmpRows) : null],
+      ['scanLoginKinds', loginKindsToSetting(loginClasses)],
+      ['scanEngine', engine === 'collector' ? null : engine],
+      ['scanTransport', transport === 'ssh' ? null : transport],
+      ['scanHopThrough', hopThrough ? 'true' : null],
+      ['scanSecondFactor', secondFactor ? 'true' : null],
     ];
     for (const [key, value] of save) void ipc.setSetting(key, value).catch(() => {});
-  }, [restored, seed, subnets, sweep, followAnywhere, port, maxHops, credentialId, snmpOpen, snmpRows]);
+  }, [restored, seed, subnets, sweep, followAnywhere, port, maxHops, credentialId, snmpOpen, snmpRows, loginClasses, engine, transport, hopThrough, secondFactor]);
 
   const seenKeys = useRef<Set<string>>(new Set());
 

@@ -1427,6 +1427,14 @@ export type StoredSettings = Partial<{
   scanPort: string;
   scanMaxHops: string;
   scanCredentialId: string;
+  /** What the run may log in to and how, kept with the project like the
+   *  rest of the scan: the kinds of device (a JSON list), the engine, the
+   *  transport, and "true" for hopping through and for the second factor. */
+  scanLoginKinds: string;
+  scanEngine: string;
+  scanTransport: string;
+  scanHopThrough: string;
+  scanSecondFactor: string;
   /** The SNMP credentials' *shape* as JSON: version, v3 user name,
    *  algorithms and any saved-credential id. Never a community string and
    *  never a passphrase — those are secrets and live in the vault. */

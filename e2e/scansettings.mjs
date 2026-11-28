@@ -222,6 +222,9 @@ const ALLOWED = new Set([
   "scanSweep",
   // Whether Discover everything is ticked.
   "scanFollowAnywhere",
+  // What the run may log in to, and how: the kinds of device, the engine,
+  // the transport, hopping through, the wait for a second factor.
+  "scanLoginKinds", "scanEngine", "scanTransport", "scanHopThrough", "scanSecondFactor",
 ]);
 const rejected = writes.map((w) => w.key).filter((k) => !ALLOWED.has(k));
 check("every key written is one the backend actually stores",
@@ -444,6 +447,27 @@ await page.waitForTimeout(300);
 const afterShowing = await field("Credentials").locator("option").allTextContents();
 check("and then it is there", afterShowing.join(" ").includes("Another Customer"),
   JSON.stringify(afterShowing));
+
+// ------------------------------- what the run may log in to is remembered
+// Chosen before a run, because a login attempt is what sets off an alarm:
+// routers and firewalls unticked here must still be unticked after a look
+// at another tab. The form is taken off the screen and put back by that.
+{
+  const chip = (label) => page.locator(".cv-login-classes .cv-chip", { hasText: new RegExp(`^${label}$`) });
+  const ticked = () => page.locator(".cv-login-classes .cv-chip.is-on").allInnerTexts();
+  const before = await ticked();
+  await chip("Routers").click();
+  await chip("Firewalls").click();
+  await page.waitForTimeout(400);
+  const chosen = await ticked();
+  check("(routers and firewalls unticked under Log in to)", before.includes("Routers") && !chosen.includes("Routers") && !chosen.includes("Firewalls") && chosen.includes("Switches"), `${before.join(",")} -> ${chosen.join(",")}`);
+  await page.locator('.cv-panel [role="tab"], .cv-panel button', { hasText: /^Event timeline/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.locator("button", { hasText: "Discover devices" }).first().click();
+  await page.waitForTimeout(900);
+  const after = await ticked();
+  check("what may be logged in to is as it was left, after a look at another tab", JSON.stringify(after) === JSON.stringify(chosen), `${chosen.join(",")} -> ${after.join(",")}`);
+}
 
 await browser.close();
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);

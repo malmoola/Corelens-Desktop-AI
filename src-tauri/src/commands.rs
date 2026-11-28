@@ -1035,7 +1035,7 @@ pub fn set_setting(
     // This table is plain text in the same database as the projects, and
     // nothing typed into Corelens is ever written where it could leave the
     // machine.
-    const ALLOWED: [&str; 38] = [
+    const ALLOWED: [&str; 43] = [
         // The shadow-mode feature flag, per project.
         "collectorShadow",
         "backupFolder",
@@ -1056,6 +1056,14 @@ pub fn set_setting(
         "scanPort",
         "scanMaxHops",
         "scanCredentialId",
+        // What the run may log in to and how: the kinds of device, the
+        // engine, the transport, hopping through, the wait for a second
+        // factor. Choices, no addresses and no secrets.
+        "scanLoginKinds",
+        "scanEngine",
+        "scanTransport",
+        "scanHopThrough",
+        "scanSecondFactor",
         // Several SNMP credentials, so their *shape* is one JSON
         // string rather than four keys. Version, v3 user name and the two
         // algorithm choices only — communities and passphrases are secrets

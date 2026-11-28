@@ -1634,7 +1634,7 @@ pub fn all_settings(conn: &Connection) -> rusqlite::Result<std::collections::Has
 ///
 /// Everything a backup run is shaped by: where it writes, what it names the
 /// files, which commands it sends, which checks it applies.
-pub const PROJECT_KEYS: [&str; 24] = [
+pub const PROJECT_KEYS: [&str; 29] = [
     // Shadow mode — both parsers on every collection in this project.
     "collectorShadow",
     // Where this customer's work is written.
@@ -1667,6 +1667,13 @@ pub const PROJECT_KEYS: [&str; 24] = [
     "scanMaxHops",
     "scanCredentialId",
     "scanSnmpRows",
+    // What one estate's run may log in to and how. Kinds of device left
+    // unticked for one customer's network are not another's.
+    "scanLoginKinds",
+    "scanEngine",
+    "scanTransport",
+    "scanHopThrough",
+    "scanSecondFactor",
     "addressPreference",
     // The SFTP server devices send their configuration to under a backup
     // over SNMP. A customer's server, so it stays with the customer's
