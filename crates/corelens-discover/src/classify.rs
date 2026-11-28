@@ -168,7 +168,9 @@ fn from_platform(s: &str) -> Option<DeviceClass> {
     // digits, so a hostname like "N1" cannot match.
     if s.contains("POWERCONNECT")
         || s.contains("FORCE10")
-        || (s.starts_with('N') && s.len() > 4 && s[1..5].chars().all(|c| c.is_ascii_digit()))
+        // `get`, not an index: the string is a neighbour's own, and a letter
+        // wider than a byte there would put the cut inside it.
+        || (s.starts_with('N') && s.get(1..5).is_some_and(|d| d.chars().all(|c| c.is_ascii_digit())))
     {
         return Some(DeviceClass::Switch);
     }
@@ -291,6 +293,18 @@ pub fn class_from_vendor(vendor: &str) -> Option<DeviceClass> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A platform string is whatever a neighbour says it is. One that
+    /// starts with `N` and has a letter wider than a byte where the
+    /// N-series rule looks for digits is read, not sliced through.
+    #[test]
+    fn a_platform_with_a_wide_letter_after_n_is_read_without_a_panic() {
+        for s in ["N12\u{800}", "N\u{800}123", "N123\u{e9}", "N\u{1F600}"] {
+            assert_eq!(super::from_platform(s), None, "{s:?}");
+        }
+        assert_eq!(super::from_platform("N1524P"), Some(super::DeviceClass::Switch));
+        assert_eq!(super::from_platform("N1"), None, "a short name is not the series");
+    }
 
     /// The last-resort classifier, and the makers it must refuse.
     #[test]
