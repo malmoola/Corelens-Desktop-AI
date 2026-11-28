@@ -605,6 +605,9 @@ interface Store {
   /** Removes a page and everything drawn on it, cascading to its probes.
    *  Refuses to remove the last page. */
   removePage: (id: string) => void;
+  /** Selects one object and lets go of everything else: its mark on the
+   *  canvas and the one the inspector shows. */
+  selectOnly: (nodeId: string | null, edgeId: string | null) => void;
   renamePage: (id: string, name: string) => void;
   /** A copy of one page with fresh ids throughout and no probes carried
    *  over — the same rule paste already applies to a copied selection. */
@@ -1301,6 +1304,30 @@ function patchDevices(doc: ProjectDocument, patches: ReadonlyMap<string, Partial
   };
 }
 
+/**
+ * The one object the inspector shows, brought into line with the marks the
+ * canvas keeps on the objects themselves.
+ *
+ * A click names an object; a box, a lasso and Ctrl+click only change the
+ * marks. Left alone, the name went stale: the inspector showed, and edited,
+ * a device that was no longer the one highlighted. So when the marks change
+ * and the named object is not among the marked, the name follows them: the
+ * single marked object, or nobody when there are several or none.
+ */
+function namedFromMarks(doc: ProjectDocument, s: { selectedNodeId: string | null; selectedEdgeId: string | null }): { selectedNodeId: string | null; selectedEdgeId: string | null } | Record<string, never> {
+  const page = activePage(doc);
+  const nodes = page.nodes.filter((n) => n.selected);
+  const edges = page.edges.filter((e) => e.selected);
+  const named = s.selectedNodeId ?? s.selectedEdgeId;
+  const stillMarked = nodes.some((n) => n.id === s.selectedNodeId) || edges.some((e) => e.id === s.selectedEdgeId);
+  // Named and marked, alone: as it should be.
+  if (named && stillMarked && nodes.length + edges.length === 1) return {};
+  if (nodes.length + edges.length === 1) return { selectedNodeId: nodes[0]?.id ?? null, selectedEdgeId: edges[0]?.id ?? null };
+  // Several marked, or none: the inspector's own several-objects view, or nothing.
+  if (!named) return {};
+  return { selectedNodeId: null, selectedEdgeId: null };
+}
+
 /** Adds a paste to the open page, selected and with nothing else selected, so
  *  it can be dragged into place straight away. */
 function placePaste(set: (fn: (s: Store) => Partial<Store>) => void, fresh: Clipping): void {
@@ -1310,7 +1337,9 @@ function placePaste(set: (fn: (s: Store) => Partial<Store>) => void, fresh: Clip
         ...activePage(state.doc).nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
         ...fresh.nodes,
       ],
-      edges: [...activePage(state.doc).edges, ...fresh.edges],
+      // The links let go of too: a box marks the links between what it
+      // catches, and one still marked went with the paste at the next Delete.
+      edges: [...activePage(state.doc).edges.map((e) => (e.selected ? { ...e, selected: false } : e)), ...fresh.edges],
     }),
     dirty: true,
     selectedNodeId: fresh.nodes.length === 1 ? fresh.nodes[0]!.id : null,
@@ -1356,8 +1385,10 @@ async function watchLock(get: () => Store, set: (patch: Partial<Store>) => void,
 }
 
 function writeRecovery(get: () => Store): void {
-  const { meta, doc, dirty } = get();
-  if (!meta || !dirty) return;
+  const { meta, doc, dirty, recovery } = get();
+  // Unsaved work from before a crash is on offer and not yet answered:
+  // the slot holds it, and is not written over until it is.
+  if (!meta || !dirty || recovery) return;
   try {
     localStorage.setItem(
       recoveryKey(meta.id),
@@ -1824,7 +1855,7 @@ export const useStore = create<Store>((set, get) => ({
     if (!meta) return;
     const slot = readRecovery(meta.id);
     if (!slot) {
-      set({ recovery: null });
+      set({ recovery: null, statusMessage: 'The unsaved work could not be found any more, so nothing was restored. The project is as it was last saved.' });
       return;
     }
     // The restored state is an edit on top of what was loaded, so undo can
@@ -1908,38 +1939,62 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async saveProject(opts) {
-    const { meta, doc } = get();
+    // What is written is what there is now. The write takes time, more of
+    // it for a project kept in a company folder, and work goes on meanwhile:
+    // everything below judges what happened during it against these.
+    const { meta, doc, past, future } = get();
     if (!meta) return;
     const updated = { ...meta, updatedAt: Date.now() };
     await ipc.saveProject({ meta: updated, documentVersion: 1, document: doc });
-    // The save is real, so the crash slot for it is stale.
-    clearRecovery(meta.id);
+    /** The same project is still the one open. A save can come back after
+     *  its project was closed or another opened, and must then leave what
+     *  is open alone: its details written over the open project's would
+     *  file one project's drawing under another's name at the next save. */
+    const stillOpen = () => get().meta?.id === meta.id;
+    /** Nothing was drawn or typed while the write was away. */
+    const untouched = () => get().doc === doc && get().meta === meta;
+    // The save is real, so the crash slot for it is stale; unless work went
+    // on during the save, when the slot may hold exactly that work, or the
+    // slot is unsaved work from before a crash still on offer: a save made
+    // before the offer was answered used to throw it away, and Restore
+    // then restored nothing.
+    if (!stillOpen() || (untouched() && !get().recovery)) clearRecovery(meta.id);
     // And the shared copy, for a project kept in the company folder —
     // the same files the folder export writes, never the vault. A save that
     // replaced somebody's newer copy says so.
-    if (get().settings.projectFolder) {
+    if (stillOpen() && get().settings.projectFolder) {
       const { json, yaml } = projectFolderFiles({ meta: updated, documentVersion: 1, document: doc } as unknown as Record<string, unknown>);
       try {
         const written = await ipc.keepProject(meta.id, json, yaml, keptSeenAt);
-        keptSeenAt = updated.updatedAt;
-        const note = overwroteNotice(written, when);
-        set({ sharedNotice: heldBy(written.lock, when), ...(note ? { statusMessage: note } : {}) });
+        if (stillOpen()) {
+          keptSeenAt = updated.updatedAt;
+          const note = overwroteNotice(written, when);
+          set({ sharedNotice: heldBy(written.lock, when), ...(note ? { statusMessage: note } : {}) });
+        }
       } catch (err) {
-        set({ statusMessage: `Saved on this machine, but not to the shared folder: ${err instanceof Error ? err.message : String(err)}` });
+        if (stillOpen()) set({ statusMessage: `Saved on this machine, but not to the shared folder: ${err instanceof Error ? err.message : String(err)}` });
       }
     }
     // What the project card says about it, as of now, on this machine.
     rememberSummary(meta.id, summarise(doc, get().nodeStatus, updated.updatedAt));
-    // An explicit save says so; autosave stays quiet, because a
-    // flash on its own schedule would answer no press in particular.
-    set({
-      meta: updated,
-      dirty: false,
-      lastSavedAt: updated.updatedAt,
-      savedAck: opts?.auto ? get().savedAck : updated.updatedAt,
-    });
-    // This save's undo history, kept on this machine only.
-    void saveHistory(meta.id, updated.updatedAt, get().past, get().future);
+    // This save's undo history, kept on this machine only: the steps that
+    // led to what was written, not the ones taken since.
+    void saveHistory(meta.id, updated.updatedAt, past, future);
+    if (stillOpen()) {
+      const now = get();
+      // An explicit save says so; autosave stays quiet, because a
+      // flash on its own schedule would answer no press in particular.
+      // What was drawn or typed during the save is not in it: the project
+      // stays unsaved, and its details keep what was typed, with only the
+      // time of this save added. A new object either way, which is what
+      // arms the next autosave.
+      set({
+        meta: { ...now.meta!, updatedAt: updated.updatedAt },
+        dirty: !untouched(),
+        lastSavedAt: updated.updatedAt,
+        savedAck: opts?.auto ? now.savedAck : updated.updatedAt,
+      });
+    }
     await get().refreshProjects();
   },
 
@@ -3578,9 +3633,11 @@ export const useStore = create<Store>((set, get) => ({
           return { ...n, data: { ...n.data, placedBy: 'hand' } } as TopoNode;
         });
       }
+      const doc = withPage(s.doc, { nodes });
       return {
-        doc: withPage(s.doc, { nodes }),
+        doc,
         ...(substantive ? { dirty: true } : {}),
+        ...(changes.some((c) => c.type === 'select') ? namedFromMarks(doc, s) : {}),
       };
     });
   },
@@ -4004,10 +4061,17 @@ export const useStore = create<Store>((set, get) => ({
   onEdgesChange(changes) {
     const structural = changes.some((c) => c.type === 'remove' || c.type === 'add');
     if (structural) get().commit();
-    set((s) => ({
-      doc: withPage(s.doc, { edges: applyEdgeChanges(changes, activePage(s.doc).edges) as TopoEdge[] }),
-      dirty: true,
-    }));
+    // Which link is selected is the view's, as which device is: a click on
+    // a link is not unsaved work.
+    const substantive = changes.some((c) => c.type !== 'select');
+    set((s) => {
+      const doc = withPage(s.doc, { edges: applyEdgeChanges(changes, activePage(s.doc).edges) as TopoEdge[] });
+      return {
+        doc,
+        ...(substantive ? { dirty: true } : {}),
+        ...(changes.some((c) => c.type === 'select') ? namedFromMarks(doc, s) : {}),
+      };
+    });
   },
 
   addNode(node) {
@@ -4179,13 +4243,15 @@ export const useStore = create<Store>((set, get) => ({
   deleteSelected() {
     const { doc, selectedNodeId, selectedEdgeId } = get();
     const page = activePage(doc);
-    get().commit();
-    const selectedNodes = new Set(
-      page.nodes.filter((n) => n.selected || n.id === selectedNodeId).map((n) => n.id),
-    );
-    const selectedEdges = new Set(
-      page.edges.filter((e) => e.selected || e.id === selectedEdgeId).map((e) => e.id),
-    );
+    // What is marked on the canvas is the selection. The one object chosen
+    // by name (a row of a table, a search) counts only when nothing is
+    // marked: left over from an earlier click, beside a box drawn round
+    // others, it used to go with them.
+    const marked = page.nodes.some((n) => n.selected) || page.edges.some((e) => e.selected);
+    const selectedNodes = new Set(page.nodes.filter((n) => (marked ? n.selected : n.id === selectedNodeId)).map((n) => n.id));
+    const selectedEdges = new Set(page.edges.filter((e) => (marked ? e.selected : e.id === selectedEdgeId)).map((e) => e.id));
+    // Nothing selected, nothing done: no empty step to undo, nothing unsaved.
+    if (selectedNodes.size === 0 && selectedEdges.size === 0) return;
     const lockedIds = new Set(
       page.nodes.filter((n) => (n.data as { locked?: boolean }).locked).map((n) => n.id),
     );
@@ -4195,16 +4261,38 @@ export const useStore = create<Store>((set, get) => ({
       (e) =>
         !selectedEdges.has(e.id) && keptNodeIds.has(e.source) && keptNodeIds.has(e.target),
     );
-    const removed = new Set([...selectedNodes, ...selectedEdges]);
+    // Only a selection of locked devices: they stay, and so does the rest.
+    if (nodes.length === page.nodes.length && edges.length === page.edges.length) return;
+    get().commit();
+    // The checks that go are those of what went: a locked device kept in
+    // place keeps its own, and a link removed with its device takes its
+    // own with it, where they used to be left running with nothing on the
+    // page to show them.
+    const keptEdgeIds = new Set(edges.map((e) => e.id));
+    const gone = new Set([
+      ...page.nodes.filter((n) => !keptNodeIds.has(n.id)).map((n) => n.id),
+      ...page.edges.filter((e) => !keptEdgeIds.has(e.id)).map((e) => e.id),
+    ]);
     set({
       doc: {
         ...withPage(doc, { nodes, edges }),
-        probes: doc.probes.filter((p) => !removed.has(p.objectId)),
+        probes: doc.probes.filter((p) => !gone.has(p.objectId)),
       },
       selectedNodeId: null,
       selectedEdgeId: null,
       dirty: true,
     });
+  },
+
+  selectOnly(nodeId, edgeId) {
+    set((state) => ({
+      doc: withPage(state.doc, {
+        nodes: activePage(state.doc).nodes.map((n) => (Boolean(n.selected) === (n.id === nodeId) ? n : { ...n, selected: n.id === nodeId })),
+        edges: activePage(state.doc).edges.map((e) => (Boolean(e.selected) === (e.id === edgeId) ? e : { ...e, selected: e.id === edgeId })),
+      }),
+      selectedNodeId: nodeId,
+      selectedEdgeId: edgeId,
+    }));
   },
 
   select(nodeId, edgeId) {

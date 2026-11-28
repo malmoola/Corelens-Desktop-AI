@@ -309,6 +309,32 @@ export function Canvas() {
       for (const ev of ['pointerup', 'pointercancel', 'blur'] as const) window.removeEventListener(ev, clear);
     };
   }, []);
+  /** React Flow has a device, or a selection of them, in a drag. */
+  const dragHeld = useRef(false);
+  // The window gone from under a drag. React Flow ends a drag when the
+  // button comes up and on nothing else, and a button let go in another
+  // window, or behind a locked screen, never comes up here. The drag then
+  // stays alive, and at the edge of the canvas so does its auto-pan: the
+  // diagram scrolls on by itself, the device carried with it, for as long
+  // as nobody comes back. So the drag is ended where it is, as if the
+  // button had been let go: the mouse-up React Flow is waiting for is
+  // given to it. A hand dragging the diagram hears the same and lets go.
+  useEffect(() => {
+    const letGo = () => {
+      if (!dragHeld.current) return;
+      const at = pointerHeld.current ?? { x: 0, y: 0 };
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: at.x, clientY: at.y }));
+    };
+    const hidden = () => {
+      if (document.hidden) letGo();
+    };
+    window.addEventListener('blur', letGo);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('blur', letGo);
+      document.removeEventListener('visibilitychange', hidden);
+    };
+  }, []);
   /** Space held: the pointer becomes a hand and drags the diagram. */
   const [panning, setPanning] = useState(false);
   /** Space was let go mid-drag: the hand stays until the button comes up. */
@@ -682,8 +708,11 @@ export function Canvas() {
         label: 'Delete',
         danger: true,
         onSelect: () => {
-          useStore.getState().select(nodeId, null);
-          useStore.getState().deleteSelected();
+          // The object the menu was opened on, alone, unless it is one of
+          // several selected, when the menu was for all of them.
+          const st = useStore.getState();
+          if (!activePage(st.doc).nodes.find((n) => n.id === nodeId)?.selected) st.selectOnly(nodeId, null);
+          st.deleteSelected();
         },
       },
     ];
@@ -792,8 +821,9 @@ export function Canvas() {
         label: 'Delete',
         danger: true,
         onSelect: () => {
-          useStore.getState().select(null, edgeId);
-          useStore.getState().deleteSelected();
+          const st = useStore.getState();
+          if (!activePage(st.doc).edges.find((x) => x.id === edgeId)?.selected) st.selectOnly(null, edgeId);
+          st.deleteSelected();
         },
       },
     ];
@@ -1247,7 +1277,8 @@ export function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printingNow, printScale, rf]);
 
-  // Keyboard shortcuts. Ignored while typing in a field.
+  // Keyboard shortcuts. Ignored while typing in a field, and the diagram's
+  // own only while the diagram is what is in use.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Taken already — the arrows moving between a table's rows, say,
@@ -1256,6 +1287,36 @@ export function Canvas() {
       const el = e.target as HTMLElement | null;
       if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return;
       const mod = e.ctrlKey || e.metaKey;
+      // This listener is the window's, and the canvas stays mounted, with
+      // its selection, behind the Addresses, Racks, Inventory and guide
+      // screens: Delete pressed there removed what was selected on a
+      // diagram nobody could see, and autosave kept it. From another
+      // screen, and with a menu or a dialog open over the diagram, only
+      // what is the project's is heard: save, undo and redo.
+      const now = useStore.getState();
+      const elsewhere = now.registerOpen || now.toolsOpen || now.helpOpen;
+      const over =
+        Boolean(el?.closest?.('.cv-menu, [role="menu"], [role="listbox"], [role="dialog"]:not(.cv-drawer)')) ||
+        document.querySelector('.cv-modal-backdrop, .cv-modal, [aria-modal="true"]') !== null;
+      if (elsewhere || over) {
+        const key = e.key.toLowerCase();
+        if (mod && key === 's') {
+          e.preventDefault();
+          void now.saveProject();
+        } else if (elsewhere && !over && mod && key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          now.undo();
+        } else if (elsewhere && !over && mod && (key === 'y' || (e.shiftKey && key === 'z'))) {
+          e.preventDefault();
+          now.redo();
+        } else if (help && (e.key === 'Escape' || e.key === '?')) {
+          // The list of shortcuts is this canvas's own, and is closed by
+          // the keys that open and close it.
+          e.preventDefault();
+          setHelp(false);
+        }
+        return;
+      }
       // Ctrl+Alt+letter arranges a multiple selection — the keyboard half of
       // the context menu's align and distribute.
       if (mod && e.altKey) {
@@ -1333,6 +1394,10 @@ export function Canvas() {
         e.preventDefault();
         useStore.getState().selectAll();
       } else if (mod && e.key.toLowerCase() === 'c') {
+        // Text selected to be copied is what Ctrl+C is for: an answer in
+        // the chat, a cell of a table. The browser copies it.
+        const text = window.getSelection();
+        if (text && !text.isCollapsed && text.toString().trim() !== '') return;
         const copied = useStore.getState().copySelection();
         if (copied > 0) {
           e.preventDefault();
@@ -1953,6 +2018,18 @@ export function Canvas() {
   );
 
 
+  /** A click names the object for the inspector, unless the click was the
+   *  one that took it out of the selection (Ctrl or Shift on a selected
+   *  object): then the marks have already said who is left, and naming the
+   *  object just let go would show it, and delete it, unselected. */
+  const nameClicked = (event: React.MouseEvent, nodeId: string | null, edgeId: string | null) => {
+    const st = useStore.getState();
+    const page = activePage(st.doc);
+    const marked = nodeId ? page.nodes.find((n) => n.id === nodeId)?.selected : page.edges.find((x) => x.id === edgeId)?.selected;
+    if (!marked && (event.ctrlKey || event.metaKey || event.shiftKey)) return;
+    st.select(nodeId, edgeId);
+  };
+
   return (
     <div
       className={`cv-canvas${panning ? ' is-panning' : ''}${far ? ' is-far' : ''}${close ? ' is-close' : ''}`}
@@ -2040,9 +2117,18 @@ export function Canvas() {
         onConnect={onConnect}
         onNodeDragStart={() => {
           guidesLive.current = true;
+          dragHeld.current = true;
+        }}
+        // A box of selected devices dragged as one is the same hold.
+        onSelectionDragStart={() => {
+          dragHeld.current = true;
+        }}
+        onSelectionDragStop={() => {
+          dragHeld.current = false;
         }}
         onNodeDragStop={() => {
           guidesLive.current = false;
+          dragHeld.current = false;
           setGuides([]);
           // After React Flow's own last change for the drag, if it sent one.
           setTimeout(flushDrag, 0);
@@ -2060,8 +2146,8 @@ export function Canvas() {
         connectionRadius={48}
         minZoom={0.01}
         maxZoom={100}
-        onNodeClick={(_, n) => useStore.getState().select(n.id, null)}
-        onEdgeClick={(_, e) => useStore.getState().select(null, e.id)}
+        onNodeClick={(event, n) => nameClicked(event, n.id, null)}
+        onEdgeClick={(event, e) => nameClicked(event, null, e.id)}
         /* Double-click a spot on a link and write straight onto it.
            The empty text renders as an open caret; committing nothing removes
            it, so a stray double-click leaves no debris. */
@@ -2090,7 +2176,15 @@ export function Canvas() {
         }}
         onNodeContextMenu={(e, n) => {
           e.preventDefault();
-          useStore.getState().select(n.id, null);
+          // A right-click on one of several selected objects keeps them,
+          // and the menu is for all of them; on anything else it selects
+          // that object alone, so the menu acts on what was pointed at
+          // and on nothing that happened to be selected elsewhere.
+          const st = useStore.getState();
+          const page = activePage(st.doc);
+          const marked = page.nodes.filter((x) => x.selected).length + page.edges.filter((x) => x.selected).length;
+          const several = Boolean(page.nodes.find((x) => x.id === n.id)?.selected) && marked > 1;
+          if (!several) st.selectOnly(n.id, null);
           setMenu({ x: e.clientX, y: e.clientY, items: nodeMenu(n.id) });
         }}
         onEdgeContextMenu={(e, edge) => {
@@ -2098,8 +2192,16 @@ export function Canvas() {
           // On one of several selected links the selection stays as it
           // is, and the menu is for all of them.
           const several = edge.selected && pg.edges.filter((x) => x.selected).length > 1;
-          if (!several) useStore.getState().select(null, edge.id);
+          if (!several) useStore.getState().selectOnly(null, edge.id);
           setMenu({ x: e.clientX, y: e.clientY, items: edgeMenu(edge.id) });
+        }}
+        // The frame a box leaves round what it caught is not a device, and
+        // a right-click on it reached nobody: the web view's own menu came
+        // up. It is the selection's menu.
+        onSelectionContextMenu={(e, chosen) => {
+          e.preventDefault();
+          const first = chosen[0];
+          if (first) setMenu({ x: e.clientX, y: e.clientY, items: nodeMenu(first.id) });
         }}
         onPaneContextMenu={(e) => {
           e.preventDefault();

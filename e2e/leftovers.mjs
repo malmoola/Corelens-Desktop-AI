@@ -136,11 +136,33 @@ async function touchIntoLine() {
   }
   await page.waitForTimeout(150);
   check("a guide shows before the window loses focus", (await guides()) >= 1, `${await guides()}`);
+  // Where the diagram is scrolled to, and where the device is kept.
+  const scrolled = () => page.evaluate(() => getComputedStyle(document.querySelector(".react-flow__viewport")).transform);
+  const kept = () => page.evaluate(() => {
+    const d = window.__cvStore.getState().doc;
+    const mover = (d.pages ? Object.values(d.pages).flatMap((p) => p.nodes ?? []) : d.nodes).find((n) => n.id === "m");
+    return `${Math.round(mover.position.x)},${Math.round(mover.position.y)}`;
+  });
+  const before = await kept();
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
   await page.waitForTimeout(300);
   check("no guide outlives the window losing focus", (await guides()) === 0, `${await guides()} left`);
+  // The device was held at the canvas's edge, where a drag scrolls the
+  // diagram along. With the window gone nobody is holding it: the diagram
+  // stops, and the device is put down where it was.
+  const then = await scrolled();
+  const put = await kept();
+  await page.waitForTimeout(700);
+  check("the diagram stops scrolling once the window has lost focus", (await scrolled()) === then, `${then} -> ${await scrolled()}`);
+  check("and the device is put down there", put !== before, `${before} -> ${put}`);
   await page.mouse.up();
   await page.waitForTimeout(300);
+  check("the button coming up later moves nothing", (await kept()) === put && (await scrolled()) === then, `${put} -> ${await kept()}`);
+  // The drag scrolled the diagram while it was held at the edge, by an
+  // amount that depends on how long that took. Fitted to the window again,
+  // so what the next step clicks is on the screen.
+  await page.evaluate(() => window.__cvStore.getState().requestFit());
+  await page.waitForTimeout(600);
 }
 
 // --- a link's end, its drag cancelled -----------------------------------------
