@@ -46,6 +46,7 @@ await page.addInitScript(({ p, exe, activity }) => {
       { client: "claudeCode", text: `claude mcp add --transport stdio --scope user corelens -- "${exe}" --mcp` },
       { client: "claudeDesktop", text: JSON.stringify({ mcpServers: { corelens: { command: exe, args: ["--mcp"] } } }, null, 2) },
       { client: "vscode", text: JSON.stringify({ servers: { corelens: { type: "stdio", command: exe, args: ["--mcp"] } } }, null, 2) },
+      { client: "vscodeCli", text: JSON.stringify({ mcpServers: { corelens: { type: "stdio", command: exe, args: ["--mcp"], tools: ["*"] } } }, null, 2) },
       { client: "copilotCli", text: `copilot mcp add corelens -- "${exe}" --mcp` },
       { client: "visualStudio", text: JSON.stringify({ servers: { corelens: { type: "stdio", command: exe, args: ["--mcp"] } } }, null, 2) },
       { client: "codex", text: `[mcp_servers.corelens]\ncommand = ${JSON.stringify(exe)}\nargs = ["--mcp"]` },
@@ -117,7 +118,7 @@ check("and the state says an MCP client can use the open project", (await ai.loc
 const setupShown = () => ai.locator('[data-field="mcp-setup-text"]').innerText();
 const clients = await ai.locator('[data-field="mcp-client"] option').allInnerTexts();
 check("one dropdown names every assistant it can set up",
-  JSON.stringify(clients) === JSON.stringify(["Claude Code", "Claude Desktop", "GitHub Copilot in VS Code", "GitHub Copilot CLI", "GitHub Copilot in Visual Studio or JetBrains", "ChatGPT desktop / OpenAI Codex", "Cursor", "Windsurf", "Gemini CLI", "Any other MCP client"]), JSON.stringify(clients));
+  JSON.stringify(clients) === JSON.stringify(["Claude Code", "Claude Desktop", "GitHub Copilot in VS Code (Local agent)", "GitHub Copilot in VS Code (Copilot CLI agent)", "GitHub Copilot CLI", "GitHub Copilot in Visual Studio or JetBrains", "ChatGPT desktop / OpenAI Codex", "Cursor", "Windsurf", "Gemini CLI", "Any other MCP client"]), JSON.stringify(clients));
 check("and one setup is shown at a time", (await ai.locator('[data-field="mcp-setup-text"]').count()) === 1 && (await ai.locator('[data-action="copy-mcp-setup"]').count()) === 1);
 check("Claude Code's command first, naming this installation, with --mcp", (await setupShown()) === `claude mcp add --transport stdio --scope user corelens -- "${EXE}" --mcp`, await setupShown());
 await ai.locator('[data-field="mcp-client"]').selectOption("claudeDesktop");
@@ -127,6 +128,14 @@ await ai.locator('[data-field="mcp-client"]').selectOption("vscode");
 const vscode = JSON.parse(await setupShown());
 check("Copilot in VS Code: a stdio server under servers, and how to reach it in Agent mode",
   vscode.servers.corelens.type === "stdio" && vscode.servers.corelens.command === EXE && /Agent mode/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()));
+check("and says which agent reads it", /Local agent/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()) && /Copilot CLI agent does not read this file/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()));
+await ai.locator('[data-field="mcp-client"]').selectOption("vscodeCli");
+{
+  const cli = JSON.parse(await setupShown());
+  const hint = await ai.locator('[data-hint="mcp-client-hint"]').innerText();
+  check("Copilot in VS Code on the Copilot CLI agent: Copilot's own file, under mcpServers, with its tools",
+    cli.mcpServers.corelens.type === "stdio" && cli.mcpServers.corelens.command === EXE && cli.mcpServers.corelens.tools[0] === "*" && cli.servers === undefined && /\.copilot\\mcp-config\.json/.test(hint), hint);
+}
 await ai.locator('[data-field="mcp-client"]').selectOption("codex");
 check("ChatGPT desktop / Codex: the config.toml entry, and what a browser cannot do",
   (await setupShown()).startsWith("[mcp_servers.corelens]\ncommand = ") && /ChatGPT in a browser cannot start a program/.test(await ai.locator('[data-hint="mcp-client-hint"]').innerText()));

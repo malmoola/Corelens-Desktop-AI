@@ -1911,8 +1911,9 @@ Settings are kept in two places, by whose they are.
   **Provider**, and each name there says whether its key is kept. Under
   **Use with an AI assistant (MCP)**, once the switch is on, choose your
   assistant under **Your assistant** — Claude Code, Claude Desktop, GitHub
-  Copilot in VS Code, the Copilot CLI, Copilot in Visual Studio or
-  JetBrains, the ChatGPT desktop app or Codex, Cursor, Windsurf, Gemini CLI,
+  Copilot in VS Code (one entry for a chat on its Local agent and one for
+  a chat on the Copilot CLI agent, which read different files), the Copilot
+  CLI, Copilot in Visual Studio or JetBrains, the ChatGPT desktop app or Codex, Cursor, Windsurf, Gemini CLI,
   or any other client that runs local MCP servers — and Corelens shows the
   one command or configuration entry it needs, with **Copy**. Every one
   starts this program with `--mcp`; what the assistant is then given

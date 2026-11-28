@@ -416,12 +416,17 @@ pub fn setup_text(exe: &str) -> Vec<ClientSetup> {
     let mcp_servers = pretty(json!({ "mcpServers": { "corelens": { "command": exe, "args": ["--mcp"] } } }));
     // VS Code, Visual Studio and JetBrains read `servers` with a type.
     let servers = pretty(json!({ "servers": { "corelens": { "type": "stdio", "command": exe, "args": ["--mcp"] } } }));
+    // VS Code's chat on the Copilot CLI agent reads Copilot's own file
+    // (`~/.copilot/mcp-config.json`), not the editor's: `mcpServers`, each
+    // entry with a type and the tools it may offer.
+    let copilot_file = pretty(json!({ "mcpServers": { "corelens": { "type": "stdio", "command": exe, "args": ["--mcp"], "tools": ["*"] } } }));
     // A JSON string is a valid TOML basic string: the same escapes.
     let toml_exe = serde_json::to_string(exe).unwrap_or_default();
     let setups = [
         ("claudeCode", format!("claude mcp add --transport stdio --scope user corelens -- {quoted} --mcp")),
         ("claudeDesktop", mcp_servers.clone()),
         ("vscode", servers.clone()),
+        ("vscodeCli", copilot_file),
         ("copilotCli", format!("copilot mcp add corelens -- {quoted} --mcp")),
         ("visualStudio", servers),
         ("codex", format!("[mcp_servers.corelens]\ncommand = {toml_exe}\nargs = [\"--mcp\"]")),
@@ -537,7 +542,7 @@ mod tests {
         let all = setup_text(EXE);
         let of = |c: &str| all.iter().find(|x| x.client == c).unwrap_or_else(|| panic!("no setup for {c}")).text.clone();
         let ids: Vec<_> = all.iter().map(|x| x.client).collect();
-        assert_eq!(ids, ["claudeCode", "claudeDesktop", "vscode", "copilotCli", "visualStudio", "codex", "cursor", "windsurf", "gemini", "other"]);
+        assert_eq!(ids, ["claudeCode", "claudeDesktop", "vscode", "vscodeCli", "copilotCli", "visualStudio", "codex", "cursor", "windsurf", "gemini", "other"]);
 
         assert_eq!(of("claudeCode"), r#"claude mcp add --transport stdio --scope user corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
         assert_eq!(of("copilotCli"), r#"copilot mcp add corelens -- "C:\Program Files\Corelens Desktop AI\corelens-desktop-ai.exe" --mcp"#);
@@ -547,6 +552,12 @@ mod tests {
             assert_eq!(v["mcpServers"]["corelens"]["command"], EXE, "{c}");
             assert_eq!(v["mcpServers"]["corelens"]["args"], json!(["--mcp"]), "{c}");
         }
+        // VS Code's chat on the Copilot CLI agent reads Copilot's own file,
+        // which is a different shape from the editor's: `mcpServers`, a
+        // type, and the tools the server may offer.
+        let v: Value = serde_json::from_str(&of("vscodeCli")).unwrap();
+        assert_eq!(v["mcpServers"]["corelens"], json!({ "type": "stdio", "command": EXE, "args": ["--mcp"], "tools": ["*"] }));
+        assert!(v.get("servers").is_none());
         for c in ["vscode", "visualStudio"] {
             let v: Value = serde_json::from_str(&of(c)).unwrap();
             assert_eq!(v["servers"]["corelens"]["type"], "stdio", "{c}");
