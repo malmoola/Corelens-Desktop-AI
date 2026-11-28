@@ -76,6 +76,9 @@ export function DiagnosePanel() {
   // A button elsewhere (a device, a link, two devices) asks for a run.
   useEffect(() => {
     if (!request) return;
+    // Taken once. Left in the store it was acted on again every time this
+    // panel was put on the screen anew: the same run, started unasked.
+    useStore.setState({ diagnoseRequest: null });
     setArgs({ depth: 'quick', ...request.args });
     if (request.start) void start({ depth: 'quick', ...request.args });
     else {

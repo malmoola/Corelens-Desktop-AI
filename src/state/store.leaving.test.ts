@@ -18,6 +18,36 @@ const meta = { id: 'p-a', name: 'Customer A', customer: '', site: '', ticket: ''
 
 afterEach(() => vi.restoreAllMocks());
 
+describe('what was asked of the assistant about a project', () => {
+  it('goes with the project: a diagnosis asked for, a question in hand, a change waiting', async () => {
+    vi.spyOn(ipc, 'cancelCrawl').mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, 'cancelCollection').mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, 'cancelBackup').mockResolvedValue(undefined as never);
+    useStore.setState({ meta, dirty: false });
+    // Diagnose chosen on a device: the panel is asked to start a run.
+    useStore.getState().requestDiagnose({ scope: 'device', device: 'CORE-A-01' } as never, true);
+    useStore.setState({
+      aiChatContext: 'About: CORE-A-01',
+      aiChatDraft: 'why is its uplink flapping',
+      aiChanges: { c1: { id: 'c1', status: 'pending', device: 'CORE-A-01' } as never },
+      approvalOpen: 'c1',
+    });
+    expect(useStore.getState().diagnoseRequest?.start).toBe(true);
+
+    await useStore.getState().closeProject();
+
+    const after = useStore.getState();
+    // Left in place, the request started the same run again, on its own,
+    // the next time any project opened in the window.
+    expect(after.diagnoseRequest, 'the next project to open would be diagnosed unasked').toBeNull();
+    expect(after.diagnoseOpen).toBe(false);
+    expect(after.aiChatContext, "the next project's first question would carry this device's name").toBeNull();
+    expect(after.aiChatDraft).toBeNull();
+    expect(after.aiChanges).toEqual({});
+    expect(after.approvalOpen).toBeNull();
+  });
+});
+
 describe('closing a project', () => {
   it('ends its jobs and drops everything they found, asked and copied', async () => {
     const cancelled: string[] = [];

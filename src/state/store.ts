@@ -1233,6 +1233,16 @@ const LEFT_WITH_THE_PROJECT = () => ({
   drill: [],
   focus: null,
   inkDraft: null,
+  // What the assistant was asked about this project. A diagnosis asked
+  // for from a device stayed here and started again by itself when the
+  // next project opened; a question in hand named this project's device
+  // in the next one's chat; a change waiting was still up for approval.
+  diagnoseOpen: false,
+  diagnoseRequest: null,
+  aiChatContext: null,
+  aiChatDraft: null,
+  aiChanges: {},
+  approvalOpen: null,
 });
 
 /** Every device on every page, as a rack sees it. */
